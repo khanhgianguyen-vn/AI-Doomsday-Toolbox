@@ -124,6 +124,7 @@
 ## 🏗️ How It Was Built
 
 Built with the help of Antigravity
+
 This app integrates several native C++ AI inference engines into an Android app using JNI and native binaries:
 
 ### Core Technologies
