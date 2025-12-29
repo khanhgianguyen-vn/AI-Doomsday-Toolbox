@@ -179,20 +179,33 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
         File(context.getExternalFilesDir(null), "zim_downloads").also { it.mkdirs() }
     }
     
-    // Import picker - copies SAF file to app storage
+    // Import picker - tries to use direct path reference, only copies if necessary
     val importPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
             scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
+                    // Take persistable permission for future access
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            it, 
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (e: Exception) {
+                        com.example.llamadroid.util.DebugLog.log("[ZIM] Could not take persistable permission: ${e.message}")
+                    }
+                    
                     // Get filename from SAF
                     val cursor = context.contentResolver.query(it, null, null, null, null)
                     var filename = "imported_${System.currentTimeMillis()}.zim"
+                    var fileSize = 0L
                     cursor?.use { c ->
                         val nameIndex = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (c.moveToFirst() && nameIndex >= 0) {
-                            filename = c.getString(nameIndex)
+                        val sizeIndex = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (c.moveToFirst()) {
+                            if (nameIndex >= 0) filename = c.getString(nameIndex)
+                            if (sizeIndex >= 0) fileSize = c.getLong(sizeIndex)
                         }
                     }
                     
@@ -201,18 +214,58 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                         filename += ".zim"
                     }
                     
-                    // Destination file in app storage
-                    val destFile = File(zimDir, filename)
-                    
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Importing $filename...", android.widget.Toast.LENGTH_SHORT).show()
+                    // Try to resolve actual file path from URI (works for local files on external storage)
+                    var resolvedPath: String? = null
+                    try {
+                        // Try file:// scheme
+                        if (it.scheme == "file") {
+                            resolvedPath = it.path
+                        } else if (it.scheme == "content") {
+                            // Try DocumentsContract for content:// URIs - external storage only
+                            try {
+                                val docId = android.provider.DocumentsContract.getDocumentId(it)
+                                // Handle external storage provider (Downloads, Documents, etc)
+                                if (it.authority == "com.android.externalstorage.documents") {
+                                    val split = docId.split(":")
+                                    if (split.size >= 2 && split[0] == "primary") {
+                                        resolvedPath = android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + split[1]
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                // Not a documents URI, skip
+                            }
+                        }
+                    } catch (e: Exception) {
+                        com.example.llamadroid.util.DebugLog.log("[ZIM] Could not resolve path: ${e.message}")
                     }
                     
-                    // Copy from SAF URI to local file
-                    context.contentResolver.openInputStream(it)?.use { input ->
-                        java.io.FileOutputStream(destFile).use { output ->
-                            input.copyTo(output)
+                    // Check if resolved path is accessible
+                    val finalPath: String
+                    val wasCopied: Boolean
+                    
+                    if (resolvedPath != null && File(resolvedPath).canRead()) {
+                        // Use direct path reference - no copy needed!
+                        finalPath = resolvedPath
+                        wasCopied = false
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Using reference: $filename", android.widget.Toast.LENGTH_SHORT).show()
                         }
+                        com.example.llamadroid.util.DebugLog.log("[ZIM] Using direct path: $resolvedPath")
+                    } else {
+                        // Fallback: copy to app storage
+                        val destFile = File(zimDir, filename)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Copying $filename...", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        context.contentResolver.openInputStream(it)?.use { input ->
+                            java.io.FileOutputStream(destFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        finalPath = destFile.absolutePath
+                        fileSize = destFile.length()
+                        wasCopied = true
+                        com.example.llamadroid.util.DebugLog.log("[ZIM] Copied to: $finalPath")
                     }
                     
                     // Register in database
@@ -220,26 +273,26 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                     val zimEntity = com.example.llamadroid.data.db.ZimEntity(
                         id = java.util.UUID.randomUUID().toString(),
                         filename = filename,
-                        path = destFile.absolutePath,
+                        path = finalPath,
                         title = filename.substringBeforeLast("."),
-                        description = "Imported ZIM file",
+                        description = if (wasCopied) "Imported (copied)" else "Imported (reference)",
                         language = "unknown",
-                        sizeBytes = destFile.length(),
+                        sizeBytes = fileSize,
                         articleCount = 0,
                         mediaCount = 0,
                         date = "",
                         creator = "",
                         publisher = "",
                         downloadUrl = "",
-                        catalogEntryId = null
+                        catalogEntryId = null,
+                        sourceUri = it.toString()
                     )
                     db.zimDao().insertZim(zimEntity)
                     
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Imported: $filename", android.widget.Toast.LENGTH_SHORT).show()
+                        val msg = if (wasCopied) "Imported (copied): $filename" else "Imported (reference): $filename"
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                     }
-                    
-                    com.example.llamadroid.util.DebugLog.log("[ZIM] Imported: $filename to ${destFile.absolutePath}")
                 } catch (e: Exception) {
                     com.example.llamadroid.util.DebugLog.log("[ZIM] Import failed: ${e.message}")
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -262,37 +315,55 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                     return@launch
                 }
                 
-                // Use MediaStore for Android 10+
-                val contentValues = android.content.ContentValues().apply {
-                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, zim.filename)
-                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-                    put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
-                }
-                
-                val resolver = context.contentResolver
-                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                
-                if (uri != null) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    // Use MediaStore for Android 10+
+                    val contentValues = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME, zim.filename)
+                        put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                        put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                    
+                    val resolver = context.contentResolver
+                    val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    
+                    if (uri != null) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Exporting to Downloads...", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        
+                        resolver.openOutputStream(uri)?.use { output ->
+                            java.io.FileInputStream(sourceFile).use { input ->
+                                input.copyTo(output)
+                            }
+                        }
+                        
+                        // Mark as complete
+                        contentValues.clear()
+                        contentValues.put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
+                        resolver.update(uri, contentValues, null, null)
+                        
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Exported to Downloads: ${zim.filename}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        
+                        com.example.llamadroid.util.DebugLog.log("[ZIM] Exported: ${zim.filename} to Downloads")
+                    }
+                } else {
+                    // Legacy fallback for API < 29
+                    val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    val destFile = File(downloadsDir, zim.filename)
+                    
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         android.widget.Toast.makeText(context, "Exporting to Downloads...", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     
-                    resolver.openOutputStream(uri)?.use { output ->
-                        java.io.FileInputStream(sourceFile).use { input ->
-                            input.copyTo(output)
-                        }
-                    }
-                    
-                    // Mark as complete
-                    contentValues.clear()
-                    contentValues.put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
-                    resolver.update(uri, contentValues, null, null)
+                    sourceFile.copyTo(destFile, overwrite = true)
                     
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         android.widget.Toast.makeText(context, "Exported to Downloads: ${zim.filename}", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     
-                    com.example.llamadroid.util.DebugLog.log("[ZIM] Exported: ${zim.filename} to Downloads")
+                    com.example.llamadroid.util.DebugLog.log("[ZIM] Exported: ${zim.filename} to Downloads (legacy)")
                 }
             } catch (e: Exception) {
                 com.example.llamadroid.util.DebugLog.log("[ZIM] Export failed: ${e.message}")

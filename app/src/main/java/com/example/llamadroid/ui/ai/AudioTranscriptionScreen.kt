@@ -600,11 +600,20 @@ fun AudioTranscriptionScreen(navController: NavController) {
             },
             confirmButton = {
                 if (!isRecording && recordingSeconds > 0) {
-                    // Use recording
+                    // Use and save recording to permanent storage
                     TextButton(onClick = {
-                        selectedAudioPath = recordingFile.absolutePath
-                        showRecordingDialog = false
-                        recordingSeconds = 0
+                        try {
+                            val recordingsDir = java.io.File(context.filesDir, "sd_output/Recordings").apply { mkdirs() }
+                            val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                            val savedFile = java.io.File(recordingsDir, "recording_$timestamp.m4a")
+                            recordingFile.copyTo(savedFile, overwrite = true)
+                            recordingFile.delete()
+                            selectedAudioPath = savedFile.absolutePath
+                            showRecordingDialog = false
+                            recordingSeconds = 0
+                        } catch (e: Exception) {
+                            errorMessage = "Failed to save recording: ${e.message}"
+                        }
                     }) {
                         Text("Use Recording")
                     }

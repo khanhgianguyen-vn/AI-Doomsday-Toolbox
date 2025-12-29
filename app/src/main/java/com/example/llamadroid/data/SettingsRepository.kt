@@ -443,4 +443,105 @@ class SettingsRepository(context: Context) {
         ModelType.SD_LORA -> "sd/lora"
         ModelType.WHISPER -> "whisper"
     }
+    
+    // ========== Distributed Inference Layer Distribution Memory ==========
+    
+    /**
+     * Store the last layer distribution for a model (JSON: {workerId: layerProportion})
+     * This allows reusing the same distribution to take advantage of worker caches.
+     * Format: JSON object like {"worker1:50052": 0.6, "worker2:50052": 0.4}
+     */
+    private val _lastLayerDistribution = MutableStateFlow(prefs.getString("last_layer_distribution", null))
+    val lastLayerDistribution = _lastLayerDistribution.asStateFlow()
+    
+    fun setLastLayerDistribution(distribution: String?) {
+        prefs.edit().putString("last_layer_distribution", distribution).apply()
+        _lastLayerDistribution.value = distribution
+    }
+    
+    /**
+     * Store the model path that the layer distribution was calculated for.
+     * If the model changes, the distribution should be recalculated.
+     */
+    private val _lastDistributionModelPath = MutableStateFlow(prefs.getString("last_distribution_model_path", null))
+    val lastDistributionModelPath = _lastDistributionModelPath.asStateFlow()
+    
+    fun setLastDistributionModelPath(path: String?) {
+        prefs.edit().putString("last_distribution_model_path", path).apply()
+        _lastDistributionModelPath.value = path
+    }
+    
+    /**
+     * Clear distribution memory (forces recalculation on next run)
+     */
+    fun clearLayerDistributionMemory() {
+        setLastLayerDistribution(null)
+        setLastDistributionModelPath(null)
+    }
+    
+    // ========== Workflow Settings (Transcribe+Summary) ==========
+    
+    private val _workflowWhisperModelPath = MutableStateFlow(prefs.getString("workflow_whisper_model", null))
+    val workflowWhisperModelPath = _workflowWhisperModelPath.asStateFlow()
+    
+    fun setWorkflowWhisperModelPath(path: String?) {
+        prefs.edit().putString("workflow_whisper_model", path).apply()
+        _workflowWhisperModelPath.value = path
+    }
+    
+    private val _workflowLlmModelPath = MutableStateFlow(prefs.getString("workflow_llm_model", null))
+    val workflowLlmModelPath = _workflowLlmModelPath.asStateFlow()
+    
+    fun setWorkflowLlmModelPath(path: String?) {
+        prefs.edit().putString("workflow_llm_model", path).apply()
+        _workflowLlmModelPath.value = path
+    }
+    
+    private val _workflowWhisperThreads = MutableStateFlow(prefs.getInt("workflow_whisper_threads", 4))
+    val workflowWhisperThreads = _workflowWhisperThreads.asStateFlow()
+    
+    fun setWorkflowWhisperThreads(count: Int) {
+        prefs.edit().putInt("workflow_whisper_threads", count).apply()
+        _workflowWhisperThreads.value = count
+    }
+    
+    private val _workflowLlmThreads = MutableStateFlow(prefs.getInt("workflow_llm_threads", 4))
+    val workflowLlmThreads = _workflowLlmThreads.asStateFlow()
+    
+    fun setWorkflowLlmThreads(count: Int) {
+        prefs.edit().putInt("workflow_llm_threads", count).apply()
+        _workflowLlmThreads.value = count
+    }
+    
+    private val _workflowWhisperLanguage = MutableStateFlow(prefs.getString("workflow_whisper_language", "auto") ?: "auto")
+    val workflowWhisperLanguage = _workflowWhisperLanguage.asStateFlow()
+    
+    fun setWorkflowWhisperLanguage(lang: String) {
+        prefs.edit().putString("workflow_whisper_language", lang).apply()
+        _workflowWhisperLanguage.value = lang
+    }
+    
+    private val _workflowContext = MutableStateFlow(prefs.getInt("workflow_context", 2048))
+    val workflowContext = _workflowContext.asStateFlow()
+    
+    fun setWorkflowContext(size: Int) {
+        prefs.edit().putInt("workflow_context", size).apply()
+        _workflowContext.value = size
+    }
+    
+    private val _workflowTemperature = MutableStateFlow(prefs.getFloat("workflow_temperature", 0.7f))
+    val workflowTemperature = _workflowTemperature.asStateFlow()
+    
+    fun setWorkflowTemperature(temp: Float) {
+        prefs.edit().putFloat("workflow_temperature", temp).apply()
+        _workflowTemperature.value = temp
+    }
+    
+    private val _workflowMaxTokens = MutableStateFlow(prefs.getInt("workflow_max_tokens", 300))
+    val workflowMaxTokens = _workflowMaxTokens.asStateFlow()
+    
+    fun setWorkflowMaxTokens(tokens: Int) {
+        prefs.edit().putInt("workflow_max_tokens", tokens).apply()
+        _workflowMaxTokens.value = tokens
+    }
 }

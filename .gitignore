@@ -1,3 +1,6 @@
+# Personal documentation (not for GitHub)
+ARCHITECTURE.md
+
 # Built application files
 *.apk
 *.ap_
@@ -65,3 +68,7 @@ termux-app/
 # Icon source files - keep only necessary
 icon/*.psd
 icon/*.ai
+
+# Sync files
+.sync_*
+.nextcloudsync.log

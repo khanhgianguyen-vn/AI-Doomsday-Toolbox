@@ -62,6 +62,33 @@ class ProcessController {
             DebugLog.log("ProcessController: KV cache enabled - K=${config.kvCacheTypeK}, V=${config.kvCacheTypeV}, reuse=${config.kvCacheReuse}")
         }
         
+        // Add RPC workers for distributed inference
+        if (config.rpcWorkers.isNotEmpty()) {
+            val rpcArg = config.rpcWorkers.joinToString(",")
+            args.add("--rpc")
+            args.add(rpcArg)
+            // Disable automatic memory fitting for distributed inference - it can cause SIGSEGV
+            args.add("--fit")
+            args.add("off")
+            
+            // Use -ngl to specify how many layers to offload to RPC workers
+            if (config.nGpuLayers > 0) {
+                args.add("-ngl")
+                args.add(config.nGpuLayers.toString())
+            }
+            
+            // Use -ts to split the offloaded layers among multiple workers
+            // Only needed when there are 2+ workers
+            if (!config.tensorSplit.isNullOrEmpty() && config.rpcWorkers.size > 1) {
+                args.add("-ts")
+                args.add(config.tensorSplit)
+            }
+            
+            DebugLog.log("ProcessController: Distributed mode - workers: $rpcArg, ngl: ${config.nGpuLayers}" +
+                if (config.rpcWorkers.size > 1 && !config.tensorSplit.isNullOrEmpty()) 
+                    ", tensor-split: ${config.tensorSplit}" else "")
+        }
+        
         try {
             DebugLog.log("ProcessController: Starting binary: $binaryPath")
             DebugLog.log("ProcessController: Args: ${args.joinToString(" ")}")

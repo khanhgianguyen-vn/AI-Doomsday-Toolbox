@@ -33,7 +33,7 @@ object WakeLockManager {
             
             refCount++
             if (refCount == 1) {
-                wakeLock?.acquire(10 * 60 * 60 * 1000L) // 10 hours max
+                wakeLock?.acquire()  // No timeout - hold indefinitely for long AI tasks
                 DebugLog.log("[WakeLock] Acquired by $tag (refCount=$refCount)")
             } else {
                 DebugLog.log("[WakeLock] Ref increased by $tag (refCount=$refCount)")

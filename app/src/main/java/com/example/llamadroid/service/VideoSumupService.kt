@@ -39,6 +39,7 @@ object VideoSumupService {
     private var currentProcess: Process? = null
     private var isCancelled = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private var notificationTaskId: Int? = null
     
     fun startSummarization(
         context: Context,
@@ -50,11 +51,20 @@ object VideoSumupService {
         threads: Int = 4,
         contextSize: Int = 2048,
         maxTokens: Int = 300,
-        temperature: Float = 0.7f
+        temperature: Float = 0.7f,
+        saveToNotes: Boolean = true,
+        noteType: NoteType = NoteType.VIDEO_SUMMARY,  // WORKFLOW for workflow calls
+        audioSourcePath: String? = null  // Original audio path for workflow notes
     ) {
         currentJob?.cancel()
         _result.value = null
         isCancelled = false
+        
+        // Start notification for workflow
+        notificationTaskId = UnifiedNotificationManager.startTask(
+            UnifiedNotificationManager.TaskType.TRANSCRIPTION,
+            "Transcribe+Summary: $videoFileName"
+        )
         
         // Acquire wake lock
         try {
@@ -68,10 +78,29 @@ object VideoSumupService {
         
         currentJob = serviceScope.launch {
             try {
-                val result = summarizeVideo(context, videoPath, videoFileName, whisperModelPath, llmModelPath, language, threads, contextSize, maxTokens, temperature)
+                val result = summarizeVideo(context, videoPath, videoFileName, whisperModelPath, llmModelPath, language, threads, contextSize, maxTokens, temperature, saveToNotes, noteType, audioSourcePath)
                 _result.value = result
+                
+                // Complete notification on success
+                result.fold(
+                    onSuccess = {
+                        notificationTaskId?.let { id ->
+                            UnifiedNotificationManager.completeTask(id, "Summary ready!")
+                        }
+                    },
+                    onFailure = { e ->
+                        notificationTaskId?.let { id ->
+                            UnifiedNotificationManager.failTask(id, e.message ?: "Failed")
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                notificationTaskId?.let { id ->
+                    UnifiedNotificationManager.failTask(id, e.message ?: "Error")
+                }
             } finally {
                 releaseWakeLock()
+                notificationTaskId = null
             }
         }
     }
@@ -86,12 +115,16 @@ object VideoSumupService {
         threads: Int,
         contextSize: Int,
         maxTokens: Int,
-        temperature: Float
+        temperature: Float,
+        saveToNotes: Boolean,
+        noteType: NoteType,
+        audioSourcePath: String?
     ): Result<VideoSumupResult> = withContext(Dispatchers.IO) {
         try {
             // Step 1: Extract audio
             _state.value = VideoSumupState.ExtractingAudio
             _progress.value = "Extracting audio..."
+            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.1f, "Extracting audio...") }
             DebugLog.log("[VIDEO-SUMUP] Step 1: Extracting audio")
             
             val audioFile = File(context.cacheDir, "video_audio.wav")
@@ -105,6 +138,7 @@ object VideoSumupService {
             // Step 2: Transcribe
             _state.value = VideoSumupState.Transcribing
             _progress.value = "Transcribing with Whisper..."
+            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.5f, "Transcribing...") }
             DebugLog.log("[VIDEO-SUMUP] Step 2: Transcribing")
             
             val transcriptResult = transcribe(context, audioFile.absolutePath, whisperModelPath, language, threads)
@@ -118,6 +152,7 @@ object VideoSumupService {
             // Step 3: Summarize
             _state.value = VideoSumupState.Summarizing
             _progress.value = "Summarizing with AI..."
+            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.9f, "Summarizing...") }
             DebugLog.log("[VIDEO-SUMUP] Step 3: Summarizing (${transcript.length} chars)")
             
             val summaryResult = summarize(context, llmModelPath, transcript, 
@@ -131,20 +166,80 @@ object VideoSumupService {
             // Cleanup and save
             audioFile.delete()
             
-            try {
-                val db = AppDatabase.getDatabase(context)
-                db.noteDao().insert(NoteEntity(
-                    title = "Video: $videoFileName",
-                    content = "## Summary\n\n$summary\n\n## Transcript\n\n$transcript",
-                    type = NoteType.TRANSCRIPTION,
-                    sourceFile = videoFileName
-                ))
-                DebugLog.log("[VIDEO-SUMUP] Saved to Notes")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Video summary saved!", Toast.LENGTH_SHORT).show()
+            // Save to notes - always save, use noteType parameter (VIDEO_SUMMARY or WORKFLOW)
+            if (saveToNotes) {
+                try {
+                    val db = AppDatabase.getDatabase(context)
+                    val settingsRepo = SettingsRepository(context)
+                    
+                    // Copy audio to permanent Recordings folder
+                    var permanentAudioPath: String? = null
+                    val sourceAudio = audioSourcePath ?: videoPath
+                    if (sourceAudio.isNotEmpty() && java.io.File(sourceAudio).exists()) {
+                        try {
+                            val recordingsDir = java.io.File(context.filesDir, "sd_output/Recordings").apply { mkdirs() }
+                            val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                            val extension = sourceAudio.substringAfterLast(".", "m4a")
+                            val savedFile = java.io.File(recordingsDir, "audio_${timestamp}.$extension")
+                            java.io.File(sourceAudio).copyTo(savedFile, overwrite = true)
+                            permanentAudioPath = savedFile.absolutePath
+                            DebugLog.log("[VIDEO-SUMUP] Audio saved to app storage: $permanentAudioPath")
+                            
+                            // Also copy to user's SAF output folder if configured
+                            val outputFolderUri = settingsRepo.outputFolderUri.value
+                            if (!outputFolderUri.isNullOrEmpty()) {
+                                try {
+                                    val treeUri = android.net.Uri.parse(outputFolderUri)
+                                    val rootFolder = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
+                                    
+                                    // Create/get Recordings subfolder
+                                    var recordingsDoc = rootFolder?.findFile("Recordings")
+                                    if (recordingsDoc == null) {
+                                        recordingsDoc = rootFolder?.createDirectory("Recordings")
+                                    }
+                                    
+                                    if (recordingsDoc != null) {
+                                        val mimeType = when (extension) {
+                                            "mp3" -> "audio/mpeg"
+                                            "m4a" -> "audio/mp4"
+                                            "wav" -> "audio/wav"
+                                            "ogg" -> "audio/ogg"
+                                            else -> "audio/*"
+                                        }
+                                        val destFile = recordingsDoc.createFile(mimeType, "audio_${timestamp}.$extension")
+                                        destFile?.uri?.let { destUri ->
+                                            context.contentResolver.openOutputStream(destUri)?.use { output ->
+                                                savedFile.inputStream().use { input ->
+                                                    input.copyTo(output)
+                                                }
+                                            }
+                                            DebugLog.log("[VIDEO-SUMUP] Audio copied to output folder: ${destFile.name}")
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    DebugLog.log("[VIDEO-SUMUP] Failed to copy to output folder: ${e.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            DebugLog.log("[VIDEO-SUMUP] Failed to save audio: ${e.message}")
+                        }
+                    }
+                    
+                    db.noteDao().insert(NoteEntity(
+                        title = if (noteType == NoteType.WORKFLOW) "Transcription: $videoFileName" else "Video: $videoFileName",
+                        content = "## Summary\n\n$summary\n\n## Transcript\n\n$transcript",
+                        type = noteType,
+                        sourceFile = videoFileName,
+                        language = language,
+                        audioPath = permanentAudioPath
+                    ))
+                    DebugLog.log("[VIDEO-SUMUP] Saved to Notes with audio: $permanentAudioPath")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Summary saved!", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    DebugLog.log("[VIDEO-SUMUP] Save failed: ${e.message}")
                 }
-            } catch (e: Exception) {
-                DebugLog.log("[VIDEO-SUMUP] Save failed: ${e.message}")
             }
             
             _state.value = VideoSumupState.Idle

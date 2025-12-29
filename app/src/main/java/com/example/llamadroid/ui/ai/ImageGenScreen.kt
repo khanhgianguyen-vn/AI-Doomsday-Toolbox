@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +44,8 @@ import com.example.llamadroid.ui.navigation.Screen
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import kotlinx.coroutines.launch
+import com.example.llamadroid.ui.components.SliderWithInput
+import com.example.llamadroid.ui.components.IntSliderWithInput
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -105,6 +108,12 @@ fun ImageGenScreen(navController: NavController) {
     var selectedLoraPath by remember { mutableStateOf<String?>(null) }
     var loraStrength by remember { mutableFloatStateOf(1.0f) }
     
+    // Main tab selection: 0 = Generate, 1 = Gallery
+    var mainTab by remember { mutableIntStateOf(0) }
+    
+    // Gallery filter: 0 = All, 1 = txt2img, 2 = img2img, 3 = upscaled
+    var galleryFilter by remember { mutableIntStateOf(0) }
+    
     // Mode selection: 0 = txt2img, 1 = img2img, 2 = upscale
     var selectedMode by remember { mutableIntStateOf(0) }
     
@@ -122,6 +131,9 @@ fun ImageGenScreen(navController: NavController) {
     // Upscale factor and repeats
     var upscaleFactor by remember { mutableIntStateOf(2) } // Default 2, will be auto-detected from model
     var upscaleRepeats by remember { mutableIntStateOf(1) } // User-controlled repeats (1-4)
+    
+    // Threads for generation (user-controlled, -1 = auto)
+    var threads by remember { mutableIntStateOf(-1) }
     
     // Determine if selected model is FLUX type
     val isFluxModel = selectedModelType == ModelType.SD_DIFFUSION
@@ -260,8 +272,8 @@ fun ImageGenScreen(navController: NavController) {
     // Load existing images from disk (including subfolders)
     LaunchedEffect(Unit) {
         val allImages = mutableListOf<File>()
-        // Scan root and subfolders (txt2img, img2img, upscaled)
-        listOf(outputDir, File(outputDir, "txt2img"), File(outputDir, "img2img"), File(outputDir, "upscaled"))
+        // Scan root and subfolders (txt2img, img2img, upscaled, workflow)
+        listOf(outputDir, File(outputDir, "txt2img"), File(outputDir, "img2img"), File(outputDir, "upscaled"), File(outputDir, "workflow"))
             .forEach { dir ->
                 dir.listFiles()
                     ?.filter { it.extension.lowercase() in listOf("png", "jpg", "jpeg") }
@@ -333,8 +345,8 @@ fun ImageGenScreen(navController: NavController) {
             // Get custom folder URI for copy-on-success
             val customFolderUri = settingsRepo.outputFolderUri.value
             
-            // Get mode-specific thread count from settings
-            val threadCount = when (mode) {
+            // Get mode-specific thread count - use local if set, otherwise from settings
+            val threadCount = if (threads > 0) threads else when (mode) {
                 SDMode.TXT2IMG -> settingsRepo.sdTxt2imgThreads.value
                 SDMode.IMG2IMG -> settingsRepo.sdImg2imgThreads.value
                 SDMode.UPSCALE -> settingsRepo.sdUpscaleThreads.value
@@ -535,11 +547,31 @@ fun ImageGenScreen(navController: NavController) {
             )
         }
         
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState())
+        // Main Tab Selector: Generate vs Gallery
+        val mainTabs = listOf("🎨 Generate", "📂 Gallery")
+        TabRow(
+            selectedTabIndex = mainTab,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) {
+            mainTabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = mainTab == index,
+                    onClick = { mainTab = index },
+                    text = { Text(title) }
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Content based on main tab
+        if (mainTab == 0) {
+            // GENERATE TAB
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .verticalScroll(rememberScrollState())
         ) {
             // Mode Tabs
             val modes = listOf("txt2img", "img2img", "upscale")
@@ -626,11 +658,12 @@ fun ImageGenScreen(navController: NavController) {
                         // Img2img strength slider
                         if (selectedMode == 1) {
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("Strength: %.2f".format(strength), style = MaterialTheme.typography.bodyMedium)
-                            Slider(
+                            SliderWithInput(
                                 value = strength,
                                 onValueChange = { strength = it },
-                                valueRange = 0.1f..1.0f
+                                valueRange = 0.1f..1.0f,
+                                label = "Strength",
+                                decimalPlaces = 2
                             )
                             Text(
                                 "Lower = more like original, Higher = more creative",
@@ -667,11 +700,11 @@ fun ImageGenScreen(navController: NavController) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 
                                 // Upscale repeats slider
-                                Text("Upscale Repeats: $upscaleRepeats", style = MaterialTheme.typography.bodyMedium)
-                                Slider(
-                                    value = upscaleRepeats.toFloat(),
-                                    onValueChange = { upscaleRepeats = it.toInt() },
-                                    valueRange = 1f..4f,
+                                IntSliderWithInput(
+                                    value = upscaleRepeats,
+                                    onValueChange = { upscaleRepeats = it },
+                                    valueRange = 1..4,
+                                    label = "Upscale Repeats",
                                     steps = 2
                                 )
                                 
@@ -1190,45 +1223,44 @@ fun ImageGenScreen(navController: NavController) {
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         // Dimensions
-                        Row(modifier = Modifier.fillMaxWidth()) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Width: $width", style = MaterialTheme.typography.bodyMedium)
-                                Slider(
-                                    value = width.toFloat(),
-                                    onValueChange = { width = it.toInt() },
-                                    valueRange = 256f..1024f,
-                                    steps = 6
+                                IntSliderWithInput(
+                                    value = width,
+                                    onValueChange = { width = it },
+                                    valueRange = 256..1024,
+                                    label = "Width"
                                 )
                             }
-                            Spacer(modifier = Modifier.width(16.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Height: $height", style = MaterialTheme.typography.bodyMedium)
-                                Slider(
-                                    value = height.toFloat(),
-                                    onValueChange = { height = it.toInt() },
-                                    valueRange = 256f..1024f,
-                                    steps = 6
+                                IntSliderWithInput(
+                                    value = height,
+                                    onValueChange = { height = it },
+                                    valueRange = 256..1024,
+                                    label = "Height"
                                 )
                             }
                         }
                         
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
                         // Steps and CFG
-                        Row(modifier = Modifier.fillMaxWidth()) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Steps: $steps", style = MaterialTheme.typography.bodyMedium)
-                                Slider(
-                                    value = steps.toFloat(),
-                                    onValueChange = { steps = it.toInt() },
-                                    valueRange = 1f..50f
+                                IntSliderWithInput(
+                                    value = steps,
+                                    onValueChange = { steps = it },
+                                    valueRange = 1..50,
+                                    label = "Steps"
                                 )
                             }
-                            Spacer(modifier = Modifier.width(16.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("CFG: %.1f".format(cfgScale), style = MaterialTheme.typography.bodyMedium)
-                                Slider(
+                                SliderWithInput(
                                     value = cfgScale,
                                     onValueChange = { cfgScale = it },
-                                    valueRange = 1f..20f
+                                    valueRange = 1f..20f,
+                                    label = "CFG",
+                                    decimalPlaces = 1
                                 )
                             }
                         }
@@ -1286,6 +1318,22 @@ fun ImageGenScreen(navController: NavController) {
                                 Icon(Icons.Default.Refresh, "Random seed")
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Threads
+                        IntSliderWithInput(
+                            value = if (threads <= 0) 4 else threads,
+                            onValueChange = { threads = it },
+                            valueRange = 1..16,
+                            label = "Threads (-1 = auto)",
+                            steps = 14
+                        )
+                        Text(
+                            "Number of CPU threads for generation",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -1412,45 +1460,151 @@ fun ImageGenScreen(navController: NavController) {
                 }
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Generated Images Gallery
-            if (galleryImages.isNotEmpty()) {
-                Text(
-                    "Generated Images",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        } else {
+            // GALLERY TAB
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                // Filter buttons (with emoji for workflow)
+                val filterLabels = listOf("All", "txt2img", "img2img", "upscaled", "⚙️")
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    filterLabels.forEachIndexed { index, label ->
+                        SegmentedButton(
+                            selected = galleryFilter == index,
+                            onClick = { galleryFilter = index },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = filterLabels.size
+                            )
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.height(300.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        items = galleryImages,
-                        key = { it.absolutePath }
-                    ) { imageFile ->
-                        val bitmap = remember(imageFile.absolutePath) {
-                            BitmapFactory.decodeFile(imageFile.absolutePath)?.asImageBitmap()
+                // Filter images based on selection
+                val filteredImages = remember(galleryImages, galleryFilter) {
+                    when (galleryFilter) {
+                        1 -> galleryImages.filter { it.parentFile?.name == "txt2img" }
+                        2 -> galleryImages.filter { it.parentFile?.name == "img2img" }
+                        3 -> galleryImages.filter { it.parentFile?.name == "upscaled" }
+                        4 -> galleryImages.filter { it.parentFile?.name == "workflow" }
+                        else -> galleryImages
+                    }
+                }
+                
+                if (filteredImages.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("📷", style = MaterialTheme.typography.displayLarge)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                if (galleryFilter == 0) "No images yet" else "No ${filterLabels[galleryFilter]} images",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        bitmap?.let {
-                            Image(
-                                bitmap = it,
-                                contentDescription = null,
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            items = filteredImages,
+                            key = { it.absolutePath }
+                        ) { imageFile ->
+                            // Progressive loading: async load thumbnail with placeholder
+                            var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+                            
+                            LaunchedEffect(imageFile.absolutePath) {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    try {
+                                        // Load thumbnail at 1/4 resolution for fast scrolling
+                                        val options = BitmapFactory.Options().apply {
+                                            inSampleSize = 4
+                                        }
+                                        bitmap = BitmapFactory.decodeFile(imageFile.absolutePath, options)?.asImageBitmap()
+                                    } catch (e: Exception) {
+                                        // Ignore decode errors
+                                    }
+                                }
+                            }
+                            
+                            // Determine type badge from folder
+                            val typeBadge = when (imageFile.parentFile?.name) {
+                                "txt2img" -> "🎨"
+                                "img2img" -> "🔄"
+                                "upscaled" -> "⬆️"
+                                "workflow" -> "⚙️"
+                                else -> null
+                            }
+                            
+                            Box(
                                 modifier = Modifier
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .clickable { fullscreenImage = imageFile },
-                                contentScale = ContentScale.Crop
-                            )
+                                    .clickable { fullscreenImage = imageFile }
+                            ) {
+                                if (bitmap != null) {
+                                    Image(
+                                        bitmap = bitmap!!,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    // Placeholder while loading
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    }
+                                }
+                                // Type badge
+                                typeBadge?.let {
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .padding(4.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                                    ) {
+                                        Text(
+                                            it,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
     
@@ -1502,8 +1656,12 @@ fun ImageGenScreen(navController: NavController) {
                             fullscreenImage?.let { file ->
                                 // Show confirmation then delete
                                 if (file.delete()) {
-                                    // Remove from list
+                                    // Remove from disk images list
                                     diskImages = diskImages.filter { it.absolutePath != file.absolutePath }
+                                    // Remove from all mode state holders (to fix phantom image)
+                                    SDModeStateHolder.txt2img.removeImage(file)
+                                    SDModeStateHolder.img2img.removeImage(file)
+                                    SDModeStateHolder.upscale.removeImage(file)
                                     android.widget.Toast.makeText(context, "Image deleted", android.widget.Toast.LENGTH_SHORT).show()
                                 } else {
                                     android.widget.Toast.makeText(context, "Failed to delete", android.widget.Toast.LENGTH_SHORT).show()

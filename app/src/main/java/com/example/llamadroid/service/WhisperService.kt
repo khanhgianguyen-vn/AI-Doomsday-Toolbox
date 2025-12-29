@@ -13,6 +13,7 @@ import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.NoteEntity
 import com.example.llamadroid.data.db.NoteType
 import com.example.llamadroid.util.DebugLog
+import com.example.llamadroid.util.WakeLockManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -90,6 +91,7 @@ class WhisperService : Service() {
         )
         notificationTaskId = taskId
         startForeground(taskId, notification)
+        WakeLockManager.acquire(applicationContext, "WhisperService")
         return START_NOT_STICKY
     }
     
@@ -97,6 +99,7 @@ class WhisperService : Service() {
         super.onDestroy()
         scope.cancel()
         currentProcess?.destroy()
+        WakeLockManager.release("WhisperService")
         notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
     }
     
@@ -265,22 +268,26 @@ class WhisperService : Service() {
                 ?: results.values.firstOrNull() 
                 ?: output.toString()
             
-            // Auto-save to Notes database
-            try {
-                val db = AppDatabase.getDatabase(this@WhisperService)
-                val noteTitle = "Transcription: ${config.audioPath.substringAfterLast("/").substringBeforeLast(".")}"
-                db.noteDao().insert(
-                    NoteEntity(
-                        title = noteTitle,
-                        content = resultText,
-                        type = NoteType.TRANSCRIPTION,
-                        sourceFile = config.audioPath,
-                        language = extractDetectedLanguage(output.toString())
+            // Auto-save to Notes database - use NonCancellable to ensure this completes
+            // even if the calling scope is cancelled (e.g., user navigating away)
+            withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    val db = AppDatabase.getDatabase(this@WhisperService)
+                    val noteTitle = "Transcription: ${config.audioPath.substringAfterLast("/").substringBeforeLast(".")}"
+                    db.noteDao().insert(
+                        NoteEntity(
+                            title = noteTitle,
+                            content = resultText,
+                            type = NoteType.TRANSCRIPTION,
+                            sourceFile = config.audioPath,
+                            language = extractDetectedLanguage(output.toString()),
+                            audioPath = config.audioPath  // Link to audio for playback
+                        )
                     )
-                )
-                DebugLog.log("[WHISPER] Transcription saved to Notes")
-            } catch (e: Exception) {
-                DebugLog.log("[WHISPER] Failed to save note: ${e.message}")
+                    DebugLog.log("[WHISPER] Transcription saved to Notes with audio: ${config.audioPath}")
+                } catch (e: Exception) {
+                    DebugLog.log("[WHISPER] Failed to save note: ${e.message}")
+                }
             }
             
             Result.success(WhisperResult(

@@ -6,6 +6,7 @@ import android.os.Binder
 import android.os.IBinder
 import com.example.llamadroid.data.binary.BinaryRepository
 import com.example.llamadroid.util.DebugLog
+import com.example.llamadroid.util.WakeLockManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,6 +95,7 @@ class VideoUpscalerService : Service() {
         super.onDestroy()
         scope.cancel()
         currentProcess?.destroy()
+        WakeLockManager.release("VideoUpscalerService")
     }
     
     /**
@@ -144,6 +146,7 @@ class VideoUpscalerService : Service() {
         )
         notificationTaskId = taskId
         startForeground(taskId, notification)
+        WakeLockManager.acquire(applicationContext, "VideoUpscalerService")
     }
     
     /**

@@ -45,11 +45,10 @@ class ModelRepository(
         listOf(ModelType.LLM, ModelType.VISION_PROJECTOR, ModelType.EMBEDDING)
     )
     
-    suspend fun searchModels(query: String): List<HfModelDto> = withContext(Dispatchers.IO) {
+    suspend fun searchModels(query: String, filter: String? = null): List<HfModelDto> = withContext(Dispatchers.IO) {
         try {
-            // Search without strict "gguf" filter to find checkpoints that might be safetensors
-            // But we still prioritize results with "gguf" tag if they exist
-            hfService.searchModels(query, filter = null, limit = 40)
+            // Pass filter to HuggingFace API ("gguf" for LLM, null for SD)
+            hfService.searchModels(query, filter = filter, limit = 40)
         } catch (e: Exception) {
             emptyList()
         }
@@ -89,7 +88,7 @@ class ModelRepository(
         try {
             val treeItems = hfService.getRepoTree(repoId)
             
-            // Find model files (GGUF files that are NOT mmproj)
+            // Find model files (GGUF files only for LLM - llama.cpp doesn't support safetensors)
             val modelFiles = treeItems
                 .filter { it.type == "file" && it.path.endsWith(".gguf") && !it.path.contains("mmproj") }
                 .map { FileInfo(it.path, it.size, FileType.MODEL) }

@@ -48,8 +48,13 @@ import com.example.llamadroid.ui.models.WhisperModelsScreen
 import com.example.llamadroid.ui.models.ModelShareScreen
 import com.example.llamadroid.ui.notes.NotesManagerScreen
 import com.example.llamadroid.ui.ai.VideoSumupScreen
+import com.example.llamadroid.ui.ai.WorkflowsScreen
 import com.example.llamadroid.ui.kiwix.ZimManagerScreen
 import com.example.llamadroid.ui.kiwix.KiwixViewerScreen
+import com.example.llamadroid.ui.distributed.DistributedScreen
+import com.example.llamadroid.ui.distributed.WorkerModeScreen
+import com.example.llamadroid.ui.distributed.MasterModeScreen
+import com.example.llamadroid.ui.distributed.NetworkVisualizationScreen
 import com.example.llamadroid.ui.settings.WelcomeScreen
 import com.example.llamadroid.ui.settings.AboutScreen
 import com.example.llamadroid.data.SettingsRepository
@@ -84,17 +89,20 @@ fun LlamaApp(
             pendingShareData = data  // Store for later use by chooser
             val mimeType = data.mimeType
             when {
-                // Audio -> Whisper (direct, no choice needed)
+                // Audio -> User chooses Whisper or Workflow
                 mimeType.startsWith("audio/") -> {
-                    com.example.llamadroid.data.SharedFileHolder.setPendingFile(data.uri, data.mimeType, Screen.AudioTranscription.route)
-                    navController.navigate(Screen.AudioTranscription.route)
-                    onSharedFileHandled()
+                    shareOptions = listOf(
+                        "🎤 Transcribe" to Screen.AudioTranscription.route,
+                        "⚙️ Transcribe + Summary Workflow" to Screen.Workflows.route
+                    )
+                    showShareChooser = true
                 }
-                // Video -> User chooses Whisper or Video Upscaler
+                // Video -> User chooses Whisper, Video Upscaler, or Workflow
                 mimeType.startsWith("video/") -> {
                     shareOptions = listOf(
                         "🎬 Video Upscaler" to Screen.VideoUpscaler.route,
-                        "🎤 Whisper (extract audio)" to Screen.AudioTranscription.route
+                        "🎤 Transcribe" to Screen.AudioTranscription.route,
+                        "⚙️ Transcribe + Summary Workflow" to Screen.Workflows.route
                     )
                     showShareChooser = true
                 }
@@ -276,6 +284,7 @@ fun LlamaApp(
             composable(Screen.AudioTranscription.route) { AudioTranscriptionScreen(navController) }
             composable(Screen.VideoUpscaler.route) { VideoUpscalerScreen(navController) }
             composable(Screen.NotesManager.route) { NotesManagerScreen(navController) }
+            composable(Screen.Workflows.route) { WorkflowsScreen(navController) }
             // Model screens
             composable(Screen.ModelHub.route) { ModelHubScreen(navController) }
             composable(Screen.LLMModels.route) { ModelManagerScreen(navController) }
@@ -311,6 +320,11 @@ fun LlamaApp(
                 val zimPath = backStackEntry.arguments?.getString("zimPath")
                 KiwixViewerScreen(navController, zimPath)
             }
+            // Distributed inference screens
+            composable(Screen.DistributedHub.route) { DistributedScreen(navController) }
+            composable(Screen.WorkerMode.route) { WorkerModeScreen(navController) }
+            composable(Screen.MasterMode.route) { MasterModeScreen(navController) }
+            composable(Screen.NetworkVisualization.route) { NetworkVisualizationScreen(navController) }
         }
     }
 }

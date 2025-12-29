@@ -459,4 +459,34 @@
     <string name="whisper_cpp_models">WhisperCPP Models</string>
     <string name="whisper_english_only">EN</string>
     <string name="whisper_quantized">Q</string>
+    
+    <!-- Missing strings from Spanish translation -->
+    <string name="whisper_recording">Recording…</string>
+    <string name="whisper_save_note">Save to notes</string>
+    <string name="video_sumup_transcript">Transcript</string>
+    <string name="video_sumup_cancel">Cancel</string>
+    <string name="video_sumup_no_model">Whisper and LLM required</string>
+    <string name="upscaler_no_model">No upscaler model</string>
+    <string name="upscaler_extracting">Extracting frames…</string>
+    <string name="upscaler_encoding">Encoding video…</string>
+    <string name="pdf_merge">Merge PDFs</string>
+    <string name="pdf_split">Split PDF</string>
+    <string name="pdf_no_model">No LLM model for summary</string>
+    <string name="models_select">Select</string>
+    <string name="models_selected">Selected</string>
+    <string name="models_cancel_download">Cancel download</string>
+    <string name="llm_port">Port</string>
+    <string name="llm_system_prompt">System prompt</string>
+    <string name="imagegen_threads">Threads</string>
+    <string name="pdf_summary_prompt">Summary prompt</string>
+    <string name="pdf_unification_prompt">Unification prompt</string>
+    <string name="prompts_reset">Reset</string>
+    <string name="notes_search">Search…</string>
+    <string name="notes_all">All</string>
+    <string name="notes_transcription">Transcriptions</string>
+    <string name="notes_summary">Summaries</string>
+    <string name="notes_manual">Manual</string>
+    <string name="error_no_space">No space</string>
+    <string name="error_cancelled">Cancelled</string>
+    <string name="whisper_processing">Processing…</string>
 </resources>

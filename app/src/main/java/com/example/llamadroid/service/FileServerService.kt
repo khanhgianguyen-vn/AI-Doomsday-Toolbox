@@ -22,6 +22,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.concurrent.thread
 import com.example.llamadroid.util.FormatUtils
+import com.example.llamadroid.util.WakeLockManager
 
 /**
  * Service that hosts an HTTP file server for sharing files from a user-selected folder.
@@ -106,6 +107,7 @@ class FileServerService : Service() {
                 
                 _isRunning.value = true
                 _serverUrls.value = allIps.map { (ifName, ip) -> Pair(ifName, "http://$ip:$port") }
+                WakeLockManager.acquire(this@FileServerService, "FileServerService")
                 
                 Log.i(TAG, "File server started on ${allIps.size} interfaces")
                 
@@ -135,6 +137,7 @@ class FileServerService : Service() {
         _isRunning.value = false
         _serverUrls.value = emptyList()
         folderUri = null
+        WakeLockManager.release("FileServerService")
     }
     
     private fun getAllLocalIpAddresses(): List<Pair<String, String>> {

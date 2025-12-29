@@ -64,8 +64,8 @@ class ModelManagerViewModel(
         viewModelScope.launch {
             _isSearching.value = true
             val filter = if (type == ModelType.EMBEDDING) "bert" else "gguf" 
-            // In real app pass filter to repo
-            val results = repository.searchModels(query)
+            // Pass filter to repo for LLM/GGUF filtering
+            val results = repository.searchModels(query, filter)
             _searchResults.value = results
             _isSearching.value = false
             
@@ -183,7 +183,8 @@ class ModelManagerViewModel(
         modelType: ModelType,
         hasVision: Boolean = false,
         hasEmbedding: Boolean = false,
-        sdCapabilities: String? = null
+        sdCapabilities: String? = null,
+        layerCount: Int = 0  // Number of layers from GGUF parsing
     ) {
         viewModelScope.launch {
             try {
@@ -203,11 +204,12 @@ class ModelManagerViewModel(
                     sizeBytes = sizeBytes,
                     type = effectiveType,
                     isVision = hasVision,
-                    sdCapabilities = sdCapabilities
+                    sdCapabilities = sdCapabilities,
+                    layerCount = layerCount
                 )
                 
                 repository.insertModel(modelEntity)
-                DebugLog.log("Imported local model: $filename as ${effectiveType.name} (vision=$hasVision, caps=$sdCapabilities)")
+                DebugLog.log("Imported local model: $filename as ${effectiveType.name} (vision=$hasVision, layers=$layerCount)")
             } catch (e: Exception) {
                 DebugLog.log("Failed to import model: ${e.message}")
             }

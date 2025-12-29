@@ -14,7 +14,9 @@ data class ModelEntity(
     val isVision: Boolean = false, // Whether this is a vision-capable model (for LLM)
     val mmprojPath: String? = null, // Path to the mmproj file for vision models
     // SD-specific fields
-    val sdCapabilities: String? = null // Comma-separated: "txt2img,img2img,upscale"
+    val sdCapabilities: String? = null, // Comma-separated: "txt2img,img2img,upscale"
+    // Layer count for distributed inference
+    val layerCount: Int = 0  // Number of transformer layers (from GGUF metadata)
 )
 
 enum class ModelType {

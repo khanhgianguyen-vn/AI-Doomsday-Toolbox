@@ -24,5 +24,6 @@ data class ZimEntity(
     val favicon: String? = null,           // Base64 favicon or path
     val tags: String = "",                 // Comma-separated tags
     val downloadUrl: String? = null,       // For re-download capability
-    val catalogEntryId: String? = null     // ID from Kiwix catalog for updates
+    val catalogEntryId: String? = null,     // ID from Kiwix catalog for updates
+    val sourceUri: String? = null           // Original SAF URI for re-verification
 )

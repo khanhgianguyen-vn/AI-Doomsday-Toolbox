@@ -21,8 +21,11 @@ object UnifiedNotificationManager {
     
     private const val CHANNEL_ID = "doomsday_ai_tasks"
     private const val CHANNEL_NAME = "AI Tasks"
+    private const val COMPLETION_CHANNEL_ID = "doomsday_completion"
+    private const val COMPLETION_CHANNEL_NAME = "Task Completions"
     private const val GROUP_KEY = "com.example.llamadroid.AI_TASKS"
     private const val SUMMARY_ID = 0
+    private const val COMPLETION_ID = 99
     
     /**
      * Represents a running task
@@ -66,19 +69,89 @@ object UnifiedNotificationManager {
         appContext = context.applicationContext
         notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
+        
+        // Clean up any stale notifications from previous app sessions
+        // This fixes the bug where multiple notifications appear after force-close
+        cleanupStaleNotifications()
+    }
+    
+    /**
+     * Clean up stale notifications from previous sessions.
+     * Called on init to prevent duplicate notification ghosts.
+     */
+    private fun cleanupStaleNotifications() {
+        try {
+            // Clear any existing progress notifications from our channel
+            // Only keep active ones that match current _activeTasks
+            val nm = notificationManager ?: return
+            
+            // Cancel summary and all task notifications from previous sessions
+            nm.activeNotifications.forEach { notification ->
+                // Only cancel our app's notifications (IDs >= 100 are task IDs, SUMMARY_ID is 0)
+                if (notification.id >= 100 || notification.id == SUMMARY_ID) {
+                    // Check if this notification is from a currently active task
+                    if (!_activeTasks.containsKey(notification.id)) {
+                        nm.cancel(notification.id)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore errors during cleanup
+        }
+    }
+    
+    /**
+     * Cancel all active notifications.
+     * Call this when the app is completely shutting down.
+     */
+    fun cancelAllNotifications() {
+        try {
+            val nm = notificationManager ?: return
+            
+            // Cancel all task notifications
+            _activeTasks.keys.forEach { taskId ->
+                nm.cancel(taskId)
+            }
+            
+            // Clear the active tasks
+            _activeTasks.clear()
+            updateTasksFlow()
+            
+            // Cancel summary
+            nm.cancel(SUMMARY_ID)
+            
+            // Cancel completion notification  
+            nm.cancel(COMPLETION_ID)
+        } catch (e: Exception) {
+            // Ignore errors
+        }
     }
     
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            // Progress channel (silent, ongoing updates)
+            val progressChannel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "AI task progress and completion notifications"
+                description = "AI task progress notifications"
                 setShowBadge(true)
             }
-            notificationManager?.createNotificationChannel(channel)
+            notificationManager?.createNotificationChannel(progressChannel)
+            
+            // Completion channel (with sound and vibration)
+            val completionChannel = NotificationChannel(
+                COMPLETION_CHANNEL_ID,
+                COMPLETION_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts when AI tasks complete"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 200, 100, 200)  // Short double vibrate
+                setShowBadge(true)
+            }
+            notificationManager?.createNotificationChannel(completionChannel)
         }
     }
     
@@ -139,13 +212,57 @@ object UnifiedNotificationManager {
             )
             _activeTasks[taskId] = updated
             updateTasksFlow()
-            showTaskNotification(updated)
+            
+            // Show completion notification with sound/vibration
+            showCompletionNotification(updated)
+            
+            // Remove from active tasks immediately
+            _activeTasks.remove(taskId)
+            updateTasksFlow()
+            
+            // Cancel the progress notification
+            try {
+                NotificationManagerCompat.from(appContext).cancel(taskId)
+            } catch (e: Exception) {}
+            
             updateSummaryNotification()
             
-            // Auto-dismiss completed task after 5 seconds
+            // Auto-dismiss completion notification after 10 seconds
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                dismissTask(taskId)
-            }, 5000)
+                try {
+                    NotificationManagerCompat.from(appContext).cancel(COMPLETION_ID)
+                } catch (e: Exception) {}
+            }, 10000)
+        }
+    }
+    
+    /**
+     * Show completion notification with sound and vibration
+     */
+    private fun showCompletionNotification(task: TaskInfo) {
+        if (!::appContext.isInitialized) return
+        
+        val intent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            appContext, COMPLETION_ID, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        val builder = NotificationCompat.Builder(appContext, COMPLETION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("✅ ${task.type.emoji} ${task.title}")
+            .setContentText(task.progressText)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+        
+        try {
+            NotificationManagerCompat.from(appContext).notify(COMPLETION_ID, builder.build())
+        } catch (e: SecurityException) {
+            // Notification permission not granted
         }
     }
     

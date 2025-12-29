@@ -16,11 +16,17 @@ class Converters {
     
     @TypeConverter
     fun toNoteType(value: String): NoteType = NoteType.valueOf(value)
+    
+    @TypeConverter
+    fun fromWorkflowType(value: WorkflowType): String = value.name
+    
+    @TypeConverter
+    fun toWorkflowType(value: String): WorkflowType = WorkflowType.valueOf(value)
 }
 
 @Database(
-    entities = [ModelEntity::class, ChunkEntity::class, KnowledgeBaseEntity::class, ChatMessageEntity::class, SystemPromptEntity::class, NoteEntity::class, ZimEntity::class], 
-    version = 7,
+    entities = [ModelEntity::class, ChunkEntity::class, KnowledgeBaseEntity::class, ChatMessageEntity::class, SystemPromptEntity::class, NoteEntity::class, ZimEntity::class, com.example.llamadroid.data.model.SavedWorker::class, WorkflowTemplateEntity::class], 
+    version = 14,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -31,6 +37,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun systemPromptDao(): SystemPromptDao
     abstract fun noteDao(): NoteDao
     abstract fun zimDao(): ZimDao
+    abstract fun savedWorkerDao(): SavedWorkerDao
+    abstract fun workflowTemplateDao(): WorkflowTemplateDao
 
     companion object {
         @Volatile

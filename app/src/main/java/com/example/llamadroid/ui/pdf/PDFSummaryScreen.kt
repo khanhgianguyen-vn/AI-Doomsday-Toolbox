@@ -29,6 +29,8 @@ import com.example.llamadroid.service.PDFService
 import com.example.llamadroid.service.PDFSummaryService
 import kotlinx.coroutines.launch
 import java.io.File
+import com.example.llamadroid.ui.components.SliderWithInput
+import com.example.llamadroid.ui.components.IntSliderWithInput
 
 /**
  * PDF AI Summary Screen - Uses LLM to summarize PDF text
@@ -234,79 +236,55 @@ fun PDFSummaryScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(8.dp))
             
             // Threads slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Threads: $threads", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = threads.toFloat(),
-                    onValueChange = { 
-                        threads = it.toInt()
-                        settingsRepo.setPdfThreads(threads)
-                    },
-                    valueRange = 1f..8f,
-                    steps = 6,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            IntSliderWithInput(
+                value = threads,
+                onValueChange = { 
+                    threads = it
+                    settingsRepo.setPdfThreads(threads)
+                },
+                valueRange = 1..16,
+                label = "Threads"
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Context size slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Context: $contextSize", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = contextSize.toFloat(),
-                    onValueChange = { 
-                        contextSize = it.toInt()
-                        settingsRepo.setPdfContextSize(contextSize)
-                    },
-                    valueRange = 512f..8192f,
-                    steps = 6,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            IntSliderWithInput(
+                value = contextSize,
+                onValueChange = { 
+                    contextSize = it
+                    settingsRepo.setPdfContextSize(contextSize)
+                },
+                valueRange = 512..8192,
+                label = "Context"
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Max tokens slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Max Tokens: $maxTokens", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = maxTokens.toFloat(),
-                    onValueChange = { 
-                        maxTokens = it.toInt()
-                        settingsRepo.setPdfMaxTokens(maxTokens)
-                    },
-                    valueRange = 64f..2048f,
-                    steps = 14,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            IntSliderWithInput(
+                value = maxTokens,
+                onValueChange = { 
+                    maxTokens = it
+                    settingsRepo.setPdfMaxTokens(maxTokens)
+                },
+                valueRange = 64..2048,
+                label = "Max Tokens"
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Temperature slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Temperature: ${"%.1f".format(temperature)}", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = temperature,
-                    onValueChange = { 
-                        temperature = it
-                        settingsRepo.setPdfTemperature(temperature)
-                    },
-                    valueRange = 0f..2f,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            SliderWithInput(
+                value = temperature,
+                onValueChange = { 
+                    temperature = it
+                    settingsRepo.setPdfTemperature(temperature)
+                },
+                valueRange = 0f..2f,
+                label = "Temperature",
+                decimalPlaces = 1
+            )
             
             Spacer(modifier = Modifier.height(8.dp))
             

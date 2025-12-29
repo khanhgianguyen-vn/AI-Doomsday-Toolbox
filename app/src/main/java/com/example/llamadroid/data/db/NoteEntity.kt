@@ -7,9 +7,11 @@ import androidx.room.PrimaryKey
  * Type of note for badge display
  */
 enum class NoteType {
-    TRANSCRIPTION,  // 🎤 From Whisper
-    PDF_SUMMARY,    // 📄 From PDF AI Summary
-    MANUAL          // 📝 User-created
+    TRANSCRIPTION,   // 🎤 From Whisper
+    PDF_SUMMARY,     // 📄 From PDF AI Summary
+    VIDEO_SUMMARY,   // 🎬 From Video Sumup
+    WORKFLOW,        // ⚙️ From Workflow
+    MANUAL           // 📝 User-created
 }
 
 /**
@@ -24,6 +26,7 @@ data class NoteEntity(
     val type: NoteType,
     val sourceFile: String? = null,  // Original file name if from transcription/PDF
     val language: String? = null,     // Language for transcriptions
+    val audioPath: String? = null,    // Path to associated recording for playback
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

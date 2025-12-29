@@ -34,6 +34,7 @@
   - Stable Diffusion (SD 1.5, SD 2.1, SDXL)
   - FLUX (schnell, dev) (very slow)
 - Adjustable parameters (steps, CFG scale, dimensions, tiling)
+- Export generated images to Output folder
 
 <table>
   <tr>
@@ -44,6 +45,7 @@
 
 ### 🎙️ Audio Transcription
 - Transcribe audio and video files to text using Whisper
+- Export transcriptions to Output folder
 - Support for multiple languages
 - Various model sizes (tiny, base, small, medium, large)
 
@@ -69,10 +71,11 @@
   </tr>
 </table>
 
-### 🖼️ Image Upscaling
+### 🖼️ Image and video Upscaling
 - Upscale images with RealESRGAN
 - Multiple scale factors (2x, 3x, 4x)
 - High-quality AI enhancement
+- Export image and videos to Output folder
 
 <table>
   <tr>
@@ -100,6 +103,7 @@
 - Web UI for downloading models
 - QR codes for easy connection
 - ZIM file sharing for offline content
+- Export models and zim files to internal storage
 
 <table>
   <tr>
@@ -116,7 +120,7 @@
 
 ### 📝 Notes
 - Create and manage notes
-- AI-powered note summarization
+- Automatic note creation for PDF and video summaries and for transcriptions
 - Markdown support
 
 <img src="https://github.com/user-attachments/assets/acb50b21-6079-42ed-9abc-925c64325b73" width="300"/>
@@ -186,9 +190,9 @@ If you find this app useful, consider supporting development:
 - ☕ [Ko-fi](https://ko-fi.com/L3L61QAJ1S)
 - 💳 [PayPal](https://paypal.me/ManuelG815)
 
-## 📄 License
+## License
 
-This project is open source. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License, Version 2.0.
 
 ## 👨‍💻 Author
 

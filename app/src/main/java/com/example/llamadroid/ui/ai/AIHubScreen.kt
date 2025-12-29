@@ -97,6 +97,16 @@ fun AIHubScreen(navController: NavController) {
                 Color(0xFFE64A19).copy(alpha = 0.3f)
             ),
             route = "video_sumup"
+        ),
+        AIToolItem(
+            emoji = "⚙️",
+            title = "Workflows",
+            description = "Chain AI operations",
+            gradientColors = listOf(
+                Color(0xFF607D8B).copy(alpha = 0.15f),
+                Color(0xFF455A64).copy(alpha = 0.3f)
+            ),
+            route = Screen.Workflows.route
         )
     )
 

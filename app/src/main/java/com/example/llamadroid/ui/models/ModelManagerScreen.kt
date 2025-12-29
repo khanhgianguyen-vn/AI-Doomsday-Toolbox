@@ -606,64 +606,112 @@ private suspend fun importModelWithProgress(
         }
         
         var finalPath: String
+        var didCopy = false
         
-        // Use app's external files directory if enabled, otherwise internal
-        val useExternalStorage = modelStorageUri != null
+        // Check if we have "All files access" permission for direct path access
+        val hasAllFilesAccess = com.example.llamadroid.util.StoragePermissionHelper.hasAllFilesAccess()
         
-        val modelsDir = if (useExternalStorage) {
-            val externalDir = context.getExternalFilesDir(null)
-            if (externalDir != null) {
-                File(externalDir, "models/$subfolder").apply { mkdirs() }
+        // FIRST: Try to resolve SAF URI to a real file path (for SD card/external storage)
+        val directPath = com.example.llamadroid.util.FilePathResolver.getPathFromUri(context, uri)
+        
+        if (directPath != null && hasAllFilesAccess && com.example.llamadroid.util.FilePathResolver.isPathAccessible(directPath)) {
+            // We can access the file directly! No copy needed.
+            com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Using direct path (no copy): $directPath")
+            finalPath = directPath
+            didCopy = false
+            
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onProgress(1f)  // Instant completion
+            }
+        } else {
+            // Check if direct path found but no permission
+            if (directPath != null && !hasAllFilesAccess) {
+                com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Direct path available but missing 'All files access' permission, copying...")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context, 
+                        "Tip: Grant 'All files access' in Settings to use models without copying", 
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            
+            // Fallback: Copy the file to app storage
+            com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Direct path not available, copying file...")
+            
+            // Use app's external files directory if enabled, otherwise internal
+            val useExternalStorage = modelStorageUri != null
+            
+            val modelsDir = if (useExternalStorage) {
+                val externalDir = context.getExternalFilesDir(null)
+                if (externalDir != null) {
+                    File(externalDir, "models/$subfolder").apply { mkdirs() }
+                } else {
+                    File(context.filesDir, "models").apply { mkdirs() }
+                }
             } else {
                 File(context.filesDir, "models").apply { mkdirs() }
             }
-        } else {
-            File(context.filesDir, "models").apply { mkdirs() }
-        }
-        
-        val targetFile = File(modelsDir, targetFilename)
-        
-        // Get total file size for progress tracking
-        val fileSize = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { 
-            it.length 
-        } ?: 0L
-        
-        com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Starting copy: $filename (${fileSize / (1024*1024)} MB)")
-        
-        // Copy with progress tracking
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            targetFile.outputStream().use { output ->
-                val buffer = ByteArray(8192)
-                var bytesRead: Int
-                var totalBytesRead = 0L
-                var lastProgressUpdate = 0L
-                
-                while (input.read(buffer).also { bytesRead = it } != -1) {
-                    output.write(buffer, 0, bytesRead)
-                    totalBytesRead += bytesRead
+            
+            val targetFile = File(modelsDir, targetFilename)
+            
+            // Get total file size for progress tracking
+            val fileSize = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { 
+                it.length 
+            } ?: 0L
+            
+            com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Starting copy: $filename (${fileSize / (1024*1024)} MB)")
+            
+            // Copy with progress tracking
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                targetFile.outputStream().use { output ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var totalBytesRead = 0L
+                    var lastProgressUpdate = 0L
                     
-                    // Update progress every 100KB to avoid too many UI updates
-                    if (totalBytesRead - lastProgressUpdate > 100_000) {
-                        val progress = if (fileSize > 0) {
-                            (totalBytesRead.toFloat() / fileSize).coerceIn(0f, 1f)
-                        } else {
-                            0f
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        totalBytesRead += bytesRead
+                        
+                        // Update progress every 100KB to avoid too many UI updates
+                        if (totalBytesRead - lastProgressUpdate > 100_000) {
+                            val progress = if (fileSize > 0) {
+                                (totalBytesRead.toFloat() / fileSize).coerceIn(0f, 1f)
+                            } else {
+                                0f
+                            }
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                onProgress(progress)
+                            }
+                            lastProgressUpdate = totalBytesRead
                         }
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            onProgress(progress)
-                        }
-                        lastProgressUpdate = totalBytesRead
                     }
                 }
             }
+            
+            finalPath = targetFile.absolutePath
+            didCopy = true
+            com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Saved to: $finalPath")
+            
+            // Final progress update
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onProgress(1f)
+            }
         }
         
-        finalPath = targetFile.absolutePath
-        com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Saved to: $finalPath")
-        
-        // Final progress update
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            onProgress(1f)
+        // Parse GGUF to detect layer count
+        var layerCount = 0
+        if (type == ModelType.LLM && finalPath.endsWith(".gguf")) {
+            try {
+                val modelInfo = com.example.llamadroid.util.GGUFParser.parse(finalPath)
+                if (modelInfo != null) {
+                    layerCount = modelInfo.layerCount
+                    com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Detected $layerCount layers from GGUF")
+                }
+            } catch (e: Exception) {
+                com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Failed to parse GGUF for layers: ${e.message}")
+            }
         }
         
         viewModel.importLocalModel(
@@ -672,8 +720,19 @@ private suspend fun importModelWithProgress(
             modelType = type,
             hasVision = isVision,
             hasEmbedding = false,
-            sdCapabilities = sdCaps
+            sdCapabilities = sdCaps,
+            layerCount = layerCount
         )
+        
+        if (!didCopy) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    context, 
+                    "Model linked from external storage (no copy needed)", 
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
     } catch (e: Exception) {
         com.example.llamadroid.util.DebugLog.log("[MODEL-IMPORT] Error: ${e.message}")
         e.printStackTrace()

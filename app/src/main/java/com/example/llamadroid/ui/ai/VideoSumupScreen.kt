@@ -29,6 +29,8 @@ import com.example.llamadroid.R
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
+import com.example.llamadroid.ui.components.SliderWithInput
+import com.example.llamadroid.ui.components.IntSliderWithInput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -228,67 +230,43 @@ fun VideoSumupScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(8.dp))
             
             // Threads slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Threads: $threads", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = threads.toFloat(),
-                    onValueChange = { threads = it.toInt() },
-                    valueRange = 1f..8f,
-                    steps = 6,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            IntSliderWithInput(
+                value = threads,
+                onValueChange = { threads = it },
+                valueRange = 1..16,
+                label = "Threads"
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Context size slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Context: $contextSize", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = contextSize.toFloat(),
-                    onValueChange = { contextSize = it.toInt() },
-                    valueRange = 512f..8192f,
-                    steps = 6,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            IntSliderWithInput(
+                value = contextSize,
+                onValueChange = { contextSize = it },
+                valueRange = 512..8192,
+                label = "Context Size"
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Max tokens slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Max Tokens: $maxTokens", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = maxTokens.toFloat(),
-                    onValueChange = { maxTokens = it.toInt() },
-                    valueRange = 64f..2048f,
-                    steps = 14,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            IntSliderWithInput(
+                value = maxTokens,
+                onValueChange = { maxTokens = it },
+                valueRange = 64..2048,
+                label = "Max Tokens"
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Temperature slider
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Temperature: ${"%.1f".format(temperature)}", style = MaterialTheme.typography.bodyMedium)
-                Slider(
-                    value = temperature,
-                    onValueChange = { temperature = it },
-                    valueRange = 0f..2f,
-                    modifier = Modifier.weight(1f).padding(start = 16.dp)
-                )
-            }
+            SliderWithInput(
+                value = temperature,
+                onValueChange = { temperature = it },
+                valueRange = 0f..2f,
+                label = "Temperature",
+                decimalPlaces = 1
+            )
             
             Spacer(modifier = Modifier.height(8.dp))
             

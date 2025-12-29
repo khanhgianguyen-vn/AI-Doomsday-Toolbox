@@ -1,11 +1,14 @@
 package com.example.llamadroid.ui.notes
 
+import android.media.MediaPlayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -27,6 +30,7 @@ import com.example.llamadroid.data.db.NoteType
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,6 +52,7 @@ fun NotesManagerScreen(navController: NavController) {
     var selectedNote by remember { mutableStateOf<NoteEntity?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var noteToDelete by remember { mutableStateOf<NoteEntity?>(null) }
+    var fullScreenNote by remember { mutableStateOf<NoteEntity?>(null) }  // Full screen view
     
     // Load notes
     val allNotes by db.noteDao().getAllNotes().collectAsState(initial = emptyList())
@@ -105,7 +110,7 @@ fun NotesManagerScreen(navController: NavController) {
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // Filter chips
+            // Filter chips - horizontal scroll for more filters
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -118,17 +123,27 @@ fun NotesManagerScreen(navController: NavController) {
                 FilterChip(
                     selected = selectedFilter == NoteType.TRANSCRIPTION,
                     onClick = { selectedFilter = if (selectedFilter == NoteType.TRANSCRIPTION) null else NoteType.TRANSCRIPTION },
-                    label = { Text("🎤 Transcriptions") }
+                    label = { Text("🎤") }
                 )
                 FilterChip(
                     selected = selectedFilter == NoteType.PDF_SUMMARY,
                     onClick = { selectedFilter = if (selectedFilter == NoteType.PDF_SUMMARY) null else NoteType.PDF_SUMMARY },
-                    label = { Text("📄 PDFs") }
+                    label = { Text("📄") }
+                )
+                FilterChip(
+                    selected = selectedFilter == NoteType.VIDEO_SUMMARY,
+                    onClick = { selectedFilter = if (selectedFilter == NoteType.VIDEO_SUMMARY) null else NoteType.VIDEO_SUMMARY },
+                    label = { Text("🎬") }
+                )
+                FilterChip(
+                    selected = selectedFilter == NoteType.WORKFLOW,
+                    onClick = { selectedFilter = if (selectedFilter == NoteType.WORKFLOW) null else NoteType.WORKFLOW },
+                    label = { Text("⚙️") }
                 )
                 FilterChip(
                     selected = selectedFilter == NoteType.MANUAL,
                     onClick = { selectedFilter = if (selectedFilter == NoteType.MANUAL) null else NoteType.MANUAL },
-                    label = { Text("📝 Notes") }
+                    label = { Text("📝") }
                 )
             }
             
@@ -167,6 +182,7 @@ fun NotesManagerScreen(navController: NavController) {
                     items(filteredNotes, key = { it.id }) { note ->
                         NoteCard(
                             note = note,
+                            onClick = { fullScreenNote = note },  // Open full screen
                             onEdit = { selectedNote = note },
                             onCopy = {
                                 clipboardManager.setText(AnnotatedString(note.content))
@@ -248,11 +264,32 @@ fun NotesManagerScreen(navController: NavController) {
             }
         )
     }
+    
+    // Full screen note view
+    fullScreenNote?.let { note ->
+        NoteFullScreenDialog(
+            note = note,
+            onDismiss = { fullScreenNote = null },
+            onEdit = {
+                fullScreenNote = null
+                selectedNote = note
+            },
+            onCopy = {
+                clipboardManager.setText(AnnotatedString(note.content))
+            },
+            onDelete = {
+                fullScreenNote = null
+                noteToDelete = note
+                showDeleteDialog = true
+            }
+        )
+    }
 }
 
 @Composable
 private fun NoteCard(
     note: NoteEntity,
+    onClick: () -> Unit,
     onEdit: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
@@ -262,7 +299,7 @@ private fun NoteCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onEdit() },
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -275,19 +312,31 @@ private fun NoteCard(
                 val (emoji, badgeColor) = when (note.type) {
                     NoteType.TRANSCRIPTION -> "🎤" to MaterialTheme.colorScheme.primaryContainer
                     NoteType.PDF_SUMMARY -> "📄" to MaterialTheme.colorScheme.secondaryContainer
-                    NoteType.MANUAL -> "📝" to MaterialTheme.colorScheme.tertiaryContainer
+                    NoteType.VIDEO_SUMMARY -> "🎬" to MaterialTheme.colorScheme.tertiaryContainer
+                    NoteType.WORKFLOW -> "⚙️" to MaterialTheme.colorScheme.surfaceVariant
+                    NoteType.MANUAL -> "📝" to MaterialTheme.colorScheme.surfaceContainerHigh
                 }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(badgeColor)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(emoji, style = MaterialTheme.typography.bodyMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(badgeColor)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(emoji, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    // Audio indicator
+                    if (note.audioPath != null) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.Default.PlayArrow, "Has audio", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 
                 // Actions
                 Row {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(18.dp))
+                    }
                     IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.Share, "Copy", modifier = Modifier.size(18.dp))
                     }
@@ -352,9 +401,14 @@ private fun NoteEditDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxSize(0.95f),
         title = { Text(if (note == null) "New Note" else "Edit Note") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -369,8 +423,8 @@ private fun NoteEditDialog(
                     label = { Text("Content") },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 150.dp),
-                    maxLines = 10
+                        .heightIn(min = 300.dp),
+                    maxLines = 50
                 )
             }
         },
@@ -389,3 +443,174 @@ private fun NoteEditDialog(
         }
     )
 }
+
+/**
+ * Full screen dialog for viewing long notes with audio playback
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteFullScreenDialog(
+    note: NoteEntity,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
+    
+    // Audio playback state
+    var isPlaying by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    
+    // Cleanup media player
+    DisposableEffect(Unit) {
+        onDispose {
+            mediaPlayer?.release()
+        }
+    }
+    
+    // Type info
+    val (emoji, typeName) = when (note.type) {
+        NoteType.TRANSCRIPTION -> "🎤" to "Transcription"
+        NoteType.PDF_SUMMARY -> "📄" to "PDF Summary"
+        NoteType.VIDEO_SUMMARY -> "🎬" to "Video Summary"
+        NoteType.WORKFLOW -> "⚙️" to "Workflow"
+        NoteType.MANUAL -> "📝" to "Note"
+    }
+    
+    AlertDialog(
+        onDismissRequest = {
+            mediaPlayer?.release()
+            onDismiss()
+        },
+        modifier = Modifier.fillMaxSize(0.95f)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header with actions only
+                TopAppBar(
+                    title = { Text("Note Details") },
+                    navigationIcon = {
+                        IconButton(onClick = { 
+                            mediaPlayer?.release()
+                            onDismiss() 
+                        }) {
+                            Icon(Icons.Default.Close, "Close")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, "Edit")
+                        }
+                        IconButton(onClick = onCopy) {
+                            Icon(Icons.Default.Share, "Copy")
+                        }
+                        IconButton(onClick = {
+                            mediaPlayer?.release()
+                            onDelete()
+                        }) {
+                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                )
+                
+                // Visible title card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            note.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "$emoji $typeName • ${dateFormat.format(Date(note.updatedAt))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                
+                // Audio player (if available)
+                note.audioPath?.let { audioPath ->
+                    if (File(audioPath).exists()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilledTonalIconButton(
+                                onClick = {
+                                    if (isPlaying) {
+                                        mediaPlayer?.pause()
+                                        isPlaying = false
+                                    } else {
+                                        if (mediaPlayer == null) {
+                                            mediaPlayer = MediaPlayer().apply {
+                                                setDataSource(audioPath)
+                                                prepare()
+                                                setOnCompletionListener { isPlaying = false }
+                                            }
+                                        }
+                                        mediaPlayer?.start()
+                                        isPlaying = true
+                                    }
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    if (isPlaying) Icons.Default.Close else Icons.Default.PlayArrow,
+                                    if (isPlaying) "Stop" else "Play",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "🎵 Audio",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                
+                // Scrollable content
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp)
+                ) {
+                    // Source file info
+                    note.sourceFile?.let {
+                        Text(
+                            "Source: ${it.substringAfterLast("/")}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
+                    // Note content
+                    Text(
+                        note.content,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}
+

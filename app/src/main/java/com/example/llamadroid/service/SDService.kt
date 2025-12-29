@@ -7,6 +7,7 @@ import android.os.Binder
 import android.os.IBinder
 import com.example.llamadroid.data.binary.BinaryRepository
 import com.example.llamadroid.util.DebugLog
+import com.example.llamadroid.util.WakeLockManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,9 @@ class SDService : Service() {
     
     override fun onCreate() {
         super.onCreate()
+        // Acquire WakeLock to keep CPU running during image generation
+        WakeLockManager.acquire(applicationContext, "SDService")
+        DebugLog.log("[SDService] WakeLock acquired")
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,10 +57,19 @@ class SDService : Service() {
     
     /**
      * Generate an image with the given configuration
+     * @param useWorkflowStateHolder If true, uses isolated workflow state holders (doesn't affect main screens)
      */
-    fun generate(config: SDConfig, onComplete: (Result<String>) -> Unit) {
-        // Get the mode-specific state holder
-        val modeStateHolder = SDModeStateHolder.getForMode(config.mode)
+    fun generate(config: SDConfig, useWorkflowStateHolder: Boolean = false, onComplete: (Result<String>) -> Unit) {
+        // Get the mode-specific state holder (use workflow holders if requested)
+        val modeStateHolder = if (useWorkflowStateHolder) {
+            when (config.mode) {
+                SDMode.TXT2IMG -> SDModeStateHolder.workflowTxt2img
+                SDMode.UPSCALE -> SDModeStateHolder.workflowUpscale
+                else -> SDModeStateHolder.getForMode(config.mode)
+            }
+        } else {
+            SDModeStateHolder.getForMode(config.mode)
+        }
         
         // Check if this specific mode is already generating
         if (modeStateHolder.state.value is SDGenerationState.Generating) {
@@ -324,6 +337,9 @@ class SDService : Service() {
         modeJobs.clear()
         serviceScope.cancel()
         notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        // Release WakeLock
+        WakeLockManager.release("SDService")
+        DebugLog.log("[SDService] WakeLock released")
     }
     
     companion object {
@@ -419,11 +435,19 @@ class SDModeStateHolder(val mode: SDMode) {
         }
     }
     
+    fun removeImage(file: File) {
+        _generatedImages.value = _generatedImages.value.filter { it.absolutePath != file.absolutePath }
+    }
+    
     companion object {
-        // Separate instances for each mode
+        // Separate instances for each mode (main screens)
         val txt2img = SDModeStateHolder(SDMode.TXT2IMG)
         val img2img = SDModeStateHolder(SDMode.IMG2IMG)
         val upscale = SDModeStateHolder(SDMode.UPSCALE)
+        
+        // Separate instances for workflow (isolated from main screens)
+        val workflowTxt2img = SDModeStateHolder(SDMode.TXT2IMG)
+        val workflowUpscale = SDModeStateHolder(SDMode.UPSCALE)
         
         fun getForMode(mode: SDMode): SDModeStateHolder = when(mode) {
             SDMode.TXT2IMG -> txt2img

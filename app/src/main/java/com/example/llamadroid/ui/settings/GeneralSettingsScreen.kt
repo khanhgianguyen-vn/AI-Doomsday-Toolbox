@@ -277,6 +277,92 @@ fun GeneralSettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
+                        
+                        // Always show device-specific help
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "⚠️ Some device manufacturers add extra battery restrictions that may still pause AI tasks.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        TextButton(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://dontkillmyapp.com"))
+                                context.startActivity(intent)
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                "📱 Device-specific fix → dontkillmyapp.com",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // All Files Access (for direct SD card model access)
+            item {
+                var hasAllFilesAccess by remember { 
+                    mutableStateOf(com.example.llamadroid.util.StoragePermissionHelper.hasAllFilesAccess()) 
+                }
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (hasAllFilesAccess) 
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        else 
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("📁", style = MaterialTheme.typography.headlineSmall)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "All Files Access",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            if (hasAllFilesAccess) 
+                                "Enabled - Use models directly from SD card/Downloads"
+                            else 
+                                "Disabled - Models will be copied to app storage",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (!hasAllFilesAccess) {
+                            Button(
+                                onClick = {
+                                    com.example.llamadroid.util.StoragePermissionHelper.requestAllFilesAccess(context)
+                                    // Re-check after a delay
+                                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                        hasAllFilesAccess = com.example.llamadroid.util.StoragePermissionHelper.hasAllFilesAccess()
+                                    }, 1000)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Grant All Files Access")
+                            }
+                            Text(
+                                "Required for using large models without copying them",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        } else {
+                            Text(
+                                "✓ Models can be used directly from external storage",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }

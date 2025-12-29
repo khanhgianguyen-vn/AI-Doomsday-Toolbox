@@ -114,10 +114,16 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
                     }
                 },
                 actions = {
-                    // Stop server button
+                    // Stop server and exit button
                     if (isRunning) {
-                        IconButton(onClick = { kiwixService?.stopServer() }) {
-                            Icon(Icons.Default.Close, "Stop Server")
+                        IconButton(onClick = { 
+                            kiwixService?.stopServer()
+                            // Navigate to Dashboard Home
+                            navController.navigate("dashboard") {
+                                popUpTo(navController.graph.startDestinationId) { inclusive = false }
+                            }
+                        }) {
+                            Icon(Icons.Default.Close, "Stop & Exit")
                         }
                     }
                 }
