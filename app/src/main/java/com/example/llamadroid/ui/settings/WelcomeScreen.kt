@@ -1,9 +1,13 @@
 package com.example.llamadroid.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -15,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +48,7 @@ fun WelcomeScreen(
     val settingsRepo = remember { SettingsRepository(context) }
     
     var currentStep by remember { mutableIntStateOf(0) }
-    val totalSteps = 4 // Welcome, Battery, All Files Access, Output Folder
+    val totalSteps = 5 // Welcome, Battery, All Files Access, Output Folder, Phantom Process
     
     // Battery optimization state
     val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
@@ -143,11 +148,18 @@ fun WelcomeScreen(
                             }, 1000)
                         }
                     )
+                    4 -> PhantomProcessStep(
+                        onCopyCommands = { commands ->
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.welcome_phantom_copy_label), commands))
+                            Toast.makeText(context, context.getString(R.string.welcome_toast_commands_copied), Toast.LENGTH_SHORT).show()
+                        }
+                    )
                     3 -> FolderStep(
                         selectedFolder = outputFolderUri?.let { uri ->
                             try {
-                                DocumentFile.fromTreeUri(context, Uri.parse(uri))?.name ?: "Selected"
-                            } catch (e: Exception) { "Selected" }
+                                DocumentFile.fromTreeUri(context, Uri.parse(uri))?.name ?: context.getString(R.string.welcome_status_selected)
+                            } catch (e: Exception) { context.getString(R.string.welcome_status_selected) }
                         },
                         onSelectFolder = { folderPicker.launch(null) }
                     )
@@ -179,7 +191,7 @@ fun WelcomeScreen(
                         Button(onClick = { currentStep++ }) {
                             Text(stringResource(R.string.action_next))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Icon(Icons.Default.ArrowForward, null, Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp))
                         }
                     }
                 } else {
@@ -318,7 +330,7 @@ private fun BatteryStep(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Unrestricted battery usage enabled",
+                        text = stringResource(R.string.welcome_battery_enabled),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
@@ -354,7 +366,7 @@ private fun AllFilesAccessStep(
         Spacer(modifier = Modifier.height(24.dp))
         
         Text(
-            text = "All Files Access",
+            text = stringResource(R.string.welcome_all_files_title),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
@@ -363,7 +375,7 @@ private fun AllFilesAccessStep(
         Spacer(modifier = Modifier.height(16.dp))
         
         Text(
-            text = "Required to use AI models directly from your SD card or Downloads folder without copying them.",
+            text = stringResource(R.string.welcome_all_files_desc),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -391,7 +403,7 @@ private fun AllFilesAccessStep(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "All files access granted",
+                        text = stringResource(R.string.welcome_all_files_granted),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
@@ -407,14 +419,14 @@ private fun AllFilesAccessStep(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Benefits:",
+                        text = stringResource(R.string.welcome_all_files_benefits),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("• Use models directly from SD card", style = MaterialTheme.typography.bodyMedium)
-                    Text("• No need to copy large files", style = MaterialTheme.typography.bodyMedium)
-                    Text("• Save storage space", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.welcome_all_files_benefit_1), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.welcome_all_files_benefit_2), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.welcome_all_files_benefit_3), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             
@@ -427,13 +439,13 @@ private fun AllFilesAccessStep(
             ) {
                 Icon(Icons.Default.Settings, null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Grant All Files Access")
+                Text(stringResource(R.string.welcome_all_files_grant_btn))
             }
             
             Spacer(modifier = Modifier.height(12.dp))
             
             Text(
-                text = "You can skip this and models will be copied instead",
+                text = stringResource(R.string.welcome_all_files_skip_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -501,7 +513,7 @@ private fun FolderStep(
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "Output folder selected",
+                            text = stringResource(R.string.welcome_folder_selected),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -528,11 +540,132 @@ private fun FolderStep(
             Spacer(modifier = Modifier.height(12.dp))
             
             Text(
-                text = "You can skip this and change it later in Settings",
+                text = stringResource(R.string.welcome_folder_skip),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+@Composable
+private fun PhantomProcessStep(
+    onCopyCommands: (String) -> Unit
+) {
+    val adbCommands = """
+adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent"
+adb shell "/system/bin/device_config put activity_manager max_phantom_processes 2147483647"
+adb shell settings put global settings_enable_monitor_phantom_procs false
+    """.trim()
+    
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "⚙️",
+            fontSize = 72.sp
+        )
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Text(
+            text = stringResource(R.string.welcome_phantom_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Text(
+            text = stringResource(R.string.welcome_phantom_desc),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // Android 14+ alternative
+        if (Build.VERSION.SDK_INT >= 34) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.welcome_phantom_a14_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.welcome_phantom_a14_desc),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = stringResource(R.string.welcome_phantom_or_adb),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        
+        // ADB Commands Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = stringResource(R.string.welcome_phantom_adb_pc),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = adbCommands,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Button(
+            onClick = { onCopyCommands(adbCommands) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Default.Info, null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.welcome_phantom_copy_btn))
+        }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Text(
+            text = stringResource(R.string.welcome_phantom_skip_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }

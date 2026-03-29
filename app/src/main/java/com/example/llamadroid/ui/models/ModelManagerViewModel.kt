@@ -63,8 +63,13 @@ class ModelManagerViewModel(
     fun search(query: String, type: ModelType) {
         viewModelScope.launch {
             _isSearching.value = true
-            val filter = if (type == ModelType.EMBEDDING) "bert" else "gguf" 
-            // Pass filter to repo for LLM/GGUF filtering
+            val filter = when {
+                type == ModelType.EMBEDDING -> "bert"
+                type.name.startsWith("SD_") -> "safetensors"
+                type == ModelType.WHISPER -> "gguf" // Whisper CPP uses GGUF-like structure on HF
+                else -> "gguf" // Default for LLM
+            }
+            // Pass filter to repo for LLM/GGUF/SD filtering
             val results = repository.searchModels(query, filter)
             _searchResults.value = results
             _isSearching.value = false
@@ -126,7 +131,7 @@ class ModelManagerViewModel(
         viewModelScope.launch {
             try {
                 DebugLog.log("Starting download: $repoId/$filename")
-                repository.downloadModel(repoId, filename, type)
+                repository.downloadModel(repoId, filename, type, _hasVisionSupport.value)
                 DebugLog.log("Download complete: $filename")
                 
                 // After main model download, check if we should prompt for vision projector

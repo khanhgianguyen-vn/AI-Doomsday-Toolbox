@@ -25,6 +25,8 @@ import androidx.navigation.NavController
 import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.ZimEntity
 import com.example.llamadroid.service.KiwixService
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import kotlinx.coroutines.launch
 
 /**
@@ -110,7 +112,7 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
                         kiwixService?.stopServer()
                         navController.popBackStack() 
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.kiwix_back))
                     }
                 },
                 actions = {
@@ -123,7 +125,7 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
                                 popUpTo(navController.graph.startDestinationId) { inclusive = false }
                             }
                         }) {
-                            Icon(Icons.Default.Close, "Stop & Exit")
+                            Icon(Icons.Default.Close, stringResource(R.string.agent_action_stop))
                         }
                     }
                 }
@@ -134,28 +136,28 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
             if (isRunning && serverUrl != null) {
                 NavigationBar {
                     NavigationBarItem(
-                        icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") },
-                        label = { Text("Back") },
+                        icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.kiwix_back)) },
+                        label = { Text(stringResource(R.string.kiwix_back)) },
                         selected = false,
                         enabled = canGoBack,
                         onClick = { webView?.goBack() }
                     )
                     NavigationBarItem(
-                        icon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward") },
-                        label = { Text("Forward") },
+                        icon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.kiwix_forward)) },
+                        label = { Text(stringResource(R.string.kiwix_forward)) },
                         selected = false,
                         enabled = canGoForward,
                         onClick = { webView?.goForward() }
                     )
                     NavigationBarItem(
-                        icon = { Icon(Icons.Default.Home, "Home") },
-                        label = { Text("Home") },
+                        icon = { Icon(Icons.Default.Home, stringResource(R.string.kiwix_home_btn)) },
+                        label = { Text(stringResource(R.string.kiwix_home_btn)) },
                         selected = false,
                         onClick = { webView?.loadUrl(serverUrl!!) }
                     )
                     NavigationBarItem(
-                        icon = { Icon(Icons.Default.Refresh, "Reload") },
-                        label = { Text("Reload") },
+                        icon = { Icon(Icons.Default.Refresh, stringResource(R.string.kiwix_reload_btn)) },
+                        label = { Text(stringResource(R.string.kiwix_reload_btn)) },
                         selected = false,
                         onClick = { webView?.reload() }
                     )
@@ -183,10 +185,10 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("No ZIM files installed")
+                        Text(stringResource(R.string.kiwix_no_files))
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = { navController.navigate("zim_manager") }) {
-                            Text("Browse Catalog")
+                            Text(stringResource(R.string.kiwix_browse_catalog))
                         }
                     }
                 }
@@ -199,10 +201,10 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
                     ) {
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("Starting Kiwix server...")
+                        Text(stringResource(R.string.kiwix_starting_server))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Loading ${installedZims.size} ZIM file(s)",
+                            stringResource(R.string.kiwix_loading_count, installedZims.size),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -228,7 +230,7 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
     if (showZimPicker) {
         AlertDialog(
             onDismissRequest = { showZimPicker = false },
-            title = { Text("Select ZIM") },
+            title = { Text(stringResource(R.string.kiwix_select_zim)) },
             text = {
                 Column {
                     installedZims.forEach { zim ->
@@ -246,7 +248,7 @@ fun KiwixViewerScreen(navController: NavController, zimPath: String? = null) {
             },
             confirmButton = {
                 TextButton(onClick = { showZimPicker = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.agent_action_cancel))
                 }
             }
         )

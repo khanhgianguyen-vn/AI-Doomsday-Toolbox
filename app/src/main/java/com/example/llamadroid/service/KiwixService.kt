@@ -6,6 +6,7 @@ import android.os.Binder
 import android.os.IBinder
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.data.binary.BinaryRepository
+import com.example.llamadroid.util.AIConstants
 import com.example.llamadroid.util.DebugLog
 import com.example.llamadroid.util.WakeLockManager
 import kotlinx.coroutines.CoroutineScope
@@ -38,7 +39,7 @@ class KiwixService : Service() {
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
     
-    private val _serverPort = MutableStateFlow(8888)
+    private val _serverPort = MutableStateFlow(AIConstants.Ports.KIWIX)
     val serverPort: StateFlow<Int> = _serverPort.asStateFlow()
     
     private val _serverUrl = MutableStateFlow<String?>(null)
@@ -73,7 +74,7 @@ class KiwixService : Service() {
     /**
      * Start kiwix-serve with the given ZIM files
      */
-    fun startServer(zimPaths: List<String>, port: Int = 8888) {
+    fun startServer(zimPaths: List<String>, port: Int = AIConstants.Ports.KIWIX) {
         if (_isRunning.value) {
             DebugLog.log("[KIWIX] Server already running")
             return
@@ -228,6 +229,6 @@ class KiwixService : Service() {
     }
     
     companion object {
-        const val DEFAULT_PORT = 8888
+        const val DEFAULT_PORT = AIConstants.Ports.KIWIX
     }
 }

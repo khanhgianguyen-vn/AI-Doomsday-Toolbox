@@ -35,12 +35,31 @@ class LlamaService : Service() {
                     val modelPath = intent.getStringExtra(EXTRA_MODEL_PATH)
                     val isEmbedding = intent.getBooleanExtra(EXTRA_IS_EMBEDDING, false)
                     val mmprojPath = intent.getStringExtra(EXTRA_MMPROJ_PATH)
+                    val settingsProfile = intent.getStringExtra(EXTRA_SETTINGS_PROFILE) ?: SETTINGS_PROFILE_GENERAL
                     
                     // Get optional settings overrides (used by distributed mode to avoid changing global settings)
                     val threadsOverride = if (intent.hasExtra(EXTRA_THREADS)) intent.getIntExtra(EXTRA_THREADS, -1) else null
+                    val batchSizeOverride = if (intent.hasExtra(EXTRA_BATCH_SIZE)) intent.getIntExtra(EXTRA_BATCH_SIZE, 512) else null
                     val contextSizeOverride = if (intent.hasExtra(EXTRA_CONTEXT_SIZE)) intent.getIntExtra(EXTRA_CONTEXT_SIZE, -1) else null
                     val temperatureOverride = if (intent.hasExtra(EXTRA_TEMPERATURE)) intent.getFloatExtra(EXTRA_TEMPERATURE, -1f) else null
                     val hostOverride = intent.getStringExtra(EXTRA_HOST)
+                    val portOverride = if (intent.hasExtra(EXTRA_PORT)) intent.getIntExtra(EXTRA_PORT, -1) else null
+                    
+                    // Speculative decoding extras
+                    val draftModelPath = intent.getStringExtra(EXTRA_DRAFT_MODEL_PATH)
+                    val draftMax = if (intent.hasExtra(EXTRA_DRAFT_MAX)) intent.getIntExtra(EXTRA_DRAFT_MAX, 16) else null
+                    val draftMin = if (intent.hasExtra(EXTRA_DRAFT_MIN)) intent.getIntExtra(EXTRA_DRAFT_MIN, 0) else null
+                    val draftPMin = if (intent.hasExtra(EXTRA_DRAFT_P_MIN)) intent.getFloatExtra(EXTRA_DRAFT_P_MIN, 0.75f) else null
+                    
+                    val parallelOverride = if (intent.hasExtra(EXTRA_PARALLEL)) intent.getIntExtra(EXTRA_PARALLEL, 1) else null
+                    val cacheRamOverride = if (intent.hasExtra(EXTRA_CACHE_RAM)) intent.getIntExtra(EXTRA_CACHE_RAM, 0) else null
+                    val customFlagsOverride = intent.getStringExtra(EXTRA_CUSTOM_FLAGS)
+                    val flashAttentionOverride = if (intent.hasExtra(EXTRA_FLASH_ATTENTION)) intent.getBooleanExtra(EXTRA_FLASH_ATTENTION, false) else null
+                    val kvCacheEnabledOverride = if (intent.hasExtra(EXTRA_KV_CACHE_ENABLED)) intent.getBooleanExtra(EXTRA_KV_CACHE_ENABLED, false) else null
+                    val kvCacheTypeKOverride = intent.getStringExtra(EXTRA_KV_CACHE_TYPE_K)
+                    val kvCacheTypeVOverride = intent.getStringExtra(EXTRA_KV_CACHE_TYPE_V)
+                    val kvCacheReuseOverride = if (intent.hasExtra(EXTRA_KV_CACHE_REUSE)) intent.getIntExtra(EXTRA_KV_CACHE_REUSE, 0) else null
+                    val commandTemplateOverride = intent.getStringExtra(EXTRA_COMMAND_TEMPLATE)
                     
                     DebugLog.log("LlamaService: MODEL_PATH=$modelPath")
                     if (mmprojPath != null) {
@@ -52,10 +71,109 @@ class LlamaService : Service() {
                         stopSelf()
                     } else {
                         startServer(modelPath, isEmbedding, mmprojPath, 
-                            threadsOverride, contextSizeOverride, temperatureOverride, hostOverride)
+                            threadsOverride, contextSizeOverride, temperatureOverride, hostOverride, portOverride,
+                            draftModelPath = draftModelPath, draftMax = draftMax, draftMin = draftMin, draftPMin = draftPMin,
+                            kvCacheEnabledOverride = kvCacheEnabledOverride,
+                            kvCacheTypeKOverride = kvCacheTypeKOverride,
+                            kvCacheTypeVOverride = kvCacheTypeVOverride,
+                            kvCacheReuseOverride = kvCacheReuseOverride,
+                            customCommandOverride = intent.getStringExtra(EXTRA_CUSTOM_COMMAND),
+                            commandTemplateOverride = commandTemplateOverride,
+                            batchSizeOverride = batchSizeOverride,
+                            parallelOverride = parallelOverride, cacheRamOverride = cacheRamOverride, customFlagsOverride = customFlagsOverride, flashAttentionOverride = flashAttentionOverride,
+                            settingsProfile = settingsProfile)
                     }
                 }
                 ACTION_STOP -> stopServer()
+                ACTION_SWITCH_MODEL -> {
+                    val newModelPath = intent.getStringExtra(EXTRA_MODEL_PATH)
+                    if (newModelPath.isNullOrEmpty()) {
+                        DebugLog.log("LlamaService: SWITCH_MODEL - No model path provided!")
+                    } else {
+                        DebugLog.log("LlamaService: SWITCH_MODEL to $newModelPath")
+                        // Stop current server process without stopping the foreground service
+                        processController.stop()
+                        DistributedService.setInferenceRunning(false)
+                        
+                        serviceScope.launch(Dispatchers.IO) {
+                            // Wait briefly to ensure the port is freed
+                            kotlinx.coroutines.delay(1000)
+                            
+                            val params = DistributedService.lastRunParams.value
+                            startServer(
+                                modelPath = newModelPath,
+                                isEmbedding = params["isEmbedding"] as? Boolean ?: false,
+                                mmprojPath = params["mmprojPath"] as? String,
+                                threadsOverride = params["threads"] as? Int,
+                                contextSizeOverride = params["contextSize"] as? Int,
+                                temperatureOverride = params["temperature"] as? Float,
+                                hostOverride = params["host"] as? String,
+                                portOverride = params["port"] as? Int,
+                                draftModelPath = params["draftModelPath"] as? String,
+                                draftMax = params["draftMax"] as? Int,
+                                draftMin = params["draftMin"] as? Int,
+                                draftPMin = params["draftPMin"] as? Float,
+                                kvCacheEnabledOverride = params["kvCacheEnabled"] as? Boolean,
+                                kvCacheTypeKOverride = params["kvCacheTypeK"] as? String,
+                                kvCacheTypeVOverride = params["kvCacheTypeV"] as? String,
+                                kvCacheReuseOverride = params["kvCacheReuse"] as? Int,
+                                batchSizeOverride = params["batchSize"] as? Int,
+                                parallelOverride = params["parallel"] as? Int,
+                                cacheRamOverride = params["cacheRam"] as? Int,
+                                customFlagsOverride = params["customFlags"] as? String,
+                                flashAttentionOverride = params["flashAttention"] as? Boolean,
+                                commandTemplateOverride = params["commandTemplate"] as? String,
+                                settingsProfile = params["settingsProfile"] as? String ?: SETTINGS_PROFILE_GENERAL
+                            )
+                        }
+                    }
+                }
+                ACTION_PREVIEW_COMMAND -> {
+                     val modelPath = intent.getStringExtra(EXTRA_MODEL_PATH)
+                     val isEmbedding = intent.getBooleanExtra(EXTRA_IS_EMBEDDING, false)
+                     val mmprojPath = intent.getStringExtra(EXTRA_MMPROJ_PATH)
+                     val settingsProfile = intent.getStringExtra(EXTRA_SETTINGS_PROFILE) ?: SETTINGS_PROFILE_GENERAL
+                     
+                     // Get optional settings overrides
+                     val threadsOverride = if (intent.hasExtra(EXTRA_THREADS)) intent.getIntExtra(EXTRA_THREADS, -1) else null
+                     val batchSizeOverride = if (intent.hasExtra(EXTRA_BATCH_SIZE)) intent.getIntExtra(EXTRA_BATCH_SIZE, 512) else null
+                     val contextSizeOverride = if (intent.hasExtra(EXTRA_CONTEXT_SIZE)) intent.getIntExtra(EXTRA_CONTEXT_SIZE, -1) else null
+                     val temperatureOverride = if (intent.hasExtra(EXTRA_TEMPERATURE)) intent.getFloatExtra(EXTRA_TEMPERATURE, -1f) else null
+                     val hostOverride = intent.getStringExtra(EXTRA_HOST)
+                     val portOverride = if (intent.hasExtra(EXTRA_PORT)) intent.getIntExtra(EXTRA_PORT, -1) else null
+                     
+                     // Speculative decoding extras
+                     val draftModelPath = intent.getStringExtra(EXTRA_DRAFT_MODEL_PATH)
+                     val draftMax = if (intent.hasExtra(EXTRA_DRAFT_MAX)) intent.getIntExtra(EXTRA_DRAFT_MAX, 16) else null
+                     val draftMin = if (intent.hasExtra(EXTRA_DRAFT_MIN)) intent.getIntExtra(EXTRA_DRAFT_MIN, 0) else null
+                     val draftPMin = if (intent.hasExtra(EXTRA_DRAFT_P_MIN)) intent.getFloatExtra(EXTRA_DRAFT_P_MIN, 0.75f) else null
+                     
+                     val parallelOverride = if (intent.hasExtra(EXTRA_PARALLEL)) intent.getIntExtra(EXTRA_PARALLEL, 1) else null
+                     val cacheRamOverride = if (intent.hasExtra(EXTRA_CACHE_RAM)) intent.getIntExtra(EXTRA_CACHE_RAM, 0) else null
+                     val customFlagsOverride = intent.getStringExtra(EXTRA_CUSTOM_FLAGS)
+                     val flashAttentionOverride = if (intent.hasExtra(EXTRA_FLASH_ATTENTION)) intent.getBooleanExtra(EXTRA_FLASH_ATTENTION, false) else null
+                     val kvCacheEnabledOverride = if (intent.hasExtra(EXTRA_KV_CACHE_ENABLED)) intent.getBooleanExtra(EXTRA_KV_CACHE_ENABLED, false) else null
+                     val kvCacheTypeKOverride = intent.getStringExtra(EXTRA_KV_CACHE_TYPE_K)
+                     val kvCacheTypeVOverride = intent.getStringExtra(EXTRA_KV_CACHE_TYPE_V)
+                     val kvCacheReuseOverride = if (intent.hasExtra(EXTRA_KV_CACHE_REUSE)) intent.getIntExtra(EXTRA_KV_CACHE_REUSE, 0) else null
+                     val commandTemplateOverride = intent.getStringExtra(EXTRA_COMMAND_TEMPLATE)
+                     
+                     if (!modelPath.isNullOrEmpty()) {
+                         startServer(modelPath, isEmbedding, mmprojPath, 
+                             threadsOverride, contextSizeOverride, temperatureOverride, hostOverride, portOverride, 
+                             previewMode = true,
+                             draftModelPath = draftModelPath, draftMax = draftMax, draftMin = draftMin, draftPMin = draftPMin,
+                             kvCacheEnabledOverride = kvCacheEnabledOverride,
+                             kvCacheTypeKOverride = kvCacheTypeKOverride,
+                             kvCacheTypeVOverride = kvCacheTypeVOverride,
+                             kvCacheReuseOverride = kvCacheReuseOverride,
+                             customCommandOverride = intent.getStringExtra(EXTRA_CUSTOM_COMMAND),
+                             commandTemplateOverride = commandTemplateOverride,
+                             batchSizeOverride = batchSizeOverride,
+                             parallelOverride = parallelOverride, cacheRamOverride = cacheRamOverride, customFlagsOverride = customFlagsOverride, flashAttentionOverride = flashAttentionOverride,
+                             settingsProfile = settingsProfile)
+                     }
+                }
             }
         } catch (e: Exception) {
             DebugLog.log("LlamaService: CRASH in onStartCommand: ${e.message}")
@@ -71,35 +189,75 @@ class LlamaService : Service() {
         threadsOverride: Int? = null,
         contextSizeOverride: Int? = null,
         temperatureOverride: Float? = null,
-        hostOverride: String? = null
+        hostOverride: String? = null,
+        portOverride: Int? = null,
+        previewMode: Boolean = false,
+        draftModelPath: String? = null,
+        draftMax: Int? = null,
+        draftMin: Int? = null,
+        draftPMin: Float? = null,
+        kvCacheEnabledOverride: Boolean? = null,
+        kvCacheTypeKOverride: String? = null,
+        kvCacheTypeVOverride: String? = null,
+        kvCacheReuseOverride: Int? = null,
+        customCommandOverride: String? = null,
+        commandTemplateOverride: String? = null,
+        batchSizeOverride: Int? = null,
+        parallelOverride: Int? = null,
+        cacheRamOverride: Int? = null,
+        customFlagsOverride: String? = null,
+        flashAttentionOverride: Boolean? = null,
+        settingsProfile: String = SETTINGS_PROFILE_GENERAL
     ) {
-        val (taskId, notification) = UnifiedNotificationManager.startTaskForForeground(
-            UnifiedNotificationManager.TaskType.LLAMA_SERVER,
-            "LLM Server"
-        )
-        notificationTaskId = taskId
-        startForeground(taskId, notification)
-        
-        // Acquire WakeLock to keep server running
-        WakeLockManager.acquire(applicationContext, "LlamaService")
-        
-        Companion.updateState(ServerState.Starting)
-        DebugLog.log("LlamaService: Starting server for model: $modelPath")
-        
-        // Read settings from repository, but use overrides if provided (for distributed mode isolation)
+        if (!previewMode) {
+            val (taskId, notification) = UnifiedNotificationManager.startTaskForForeground(
+                UnifiedNotificationManager.TaskType.LLAMA_SERVER,
+                "LLM Server"
+            )
+            notificationTaskId = taskId
+            startForeground(taskId, notification)
+            
+            // Acquire WakeLock to keep server running
+            WakeLockManager.acquire(applicationContext, "LlamaService")
+            
+            Companion.updateState(ServerState.Starting)
+            DebugLog.log("LlamaService: Starting server for model: $modelPath")
+        } else {
+            DebugLog.log("LlamaService: Generating PREVIEW command for model: $modelPath")
+        }
+
+        val isMasterProfile = settingsProfile == SETTINGS_PROFILE_MASTER
+
+        // Read settings from repository, but use overrides if provided.
         val settingsRepo = com.example.llamadroid.data.SettingsRepository(applicationContext)
-        val threads = threadsOverride ?: settingsRepo.threads.value
-        val contextSize = contextSizeOverride ?: settingsRepo.contextSize.value
-        val temperature = temperatureOverride ?: settingsRepo.temperature.value
-        val host = hostOverride ?: if (settingsRepo.remoteAccess.value) "0.0.0.0" else "127.0.0.1"
-        val enableVision = settingsRepo.enableVision.value
-        val selectedMmprojPath = settingsRepo.selectedMmprojPath.value
+        val threads = threadsOverride ?: if (isMasterProfile) DistributedService.masterThreads.value else settingsRepo.threads.value
+        val batchSize = batchSizeOverride ?: if (isMasterProfile) DistributedService.masterBatchSize.value else 512
+        val contextSize = contextSizeOverride ?: if (isMasterProfile) DistributedService.masterContextSize.value else settingsRepo.contextSize.value
+        val temperature = temperatureOverride ?: if (isMasterProfile) DistributedService.masterTemperature.value else settingsRepo.temperature.value
+        val host = hostOverride ?: if (isMasterProfile) "127.0.0.1" else if (settingsRepo.remoteAccess.value) "0.0.0.0" else "127.0.0.1"
+        val enableVision = if (isMasterProfile) mmprojPath != null else settingsRepo.enableVision.value
+        val selectedMmprojPath = if (isMasterProfile) null else settingsRepo.selectedMmprojPath.value
         
         // KV Cache settings for server
-        val kvCacheEnabled = settingsRepo.serverKvCacheEnabled.value
-        val kvCacheTypeK = settingsRepo.serverKvCacheTypeK.value
-        val kvCacheTypeV = settingsRepo.serverKvCacheTypeV.value
-        val kvCacheReuse = settingsRepo.serverKvCacheReuse.value
+        val kvCacheEnabled = kvCacheEnabledOverride ?: if (isMasterProfile) DistributedService.masterKvCacheEnabled.value else settingsRepo.serverKvCacheEnabled.value
+        val kvCacheTypeK = kvCacheTypeKOverride ?: if (isMasterProfile) DistributedService.masterKvCacheTypeK.value else settingsRepo.serverKvCacheTypeK.value
+        val kvCacheTypeV = kvCacheTypeVOverride ?: if (isMasterProfile) DistributedService.masterKvCacheTypeV.value else settingsRepo.serverKvCacheTypeV.value
+        val kvCacheReuse = kvCacheReuseOverride ?: if (isMasterProfile) DistributedService.masterKvCacheReuse.value else settingsRepo.serverKvCacheReuse.value
+        val noMmap = if (isMasterProfile) false else settingsRepo.lowMemoryMode.value
+        val parallel = parallelOverride ?: if (isMasterProfile) DistributedService.masterParallel.value else null
+        val cacheRam = cacheRamOverride ?: if (isMasterProfile) DistributedService.masterCacheRam.value else null
+        val customFlags = customFlagsOverride ?: if (isMasterProfile) DistributedService.masterCustomFlags.value else settingsRepo.customFlags.value
+        val flashAttention = flashAttentionOverride ?: if (isMasterProfile) DistributedService.masterFlashAttention.value else settingsRepo.flashAttentionEnabled.value
+        val commandTemplate = commandTemplateOverride
+            ?.takeIf { it.isNotBlank() }
+            ?: if (isMasterProfile) {
+                DistributedService.masterCommandTemplate.value.takeIf { it.isNotBlank() }
+            } else {
+                settingsRepo.customCommandTemplate.value.takeIf { it.isNotBlank() }
+            }
+
+        // Check for a fully overridden command (used by the master preview editor).
+        val finalCustomCommand = customCommandOverride ?: if (isMasterProfile) DistributedService.customCommand.value else null
         
         // Use mmproj if vision is enabled AND we have a mmproj path (either from intent or settings)
         val effectiveMmprojPath = if (enableVision) {
@@ -108,13 +266,42 @@ class LlamaService : Service() {
         
         DebugLog.log("LlamaService: Settings - threads=$threads, ctx=$contextSize, temp=$temperature, host=$host")
         DebugLog.log("LlamaService: Vision enabled=$enableVision, mmproj=$effectiveMmprojPath")
+        
+        // Save last run params for remote switch support
+        if (!previewMode) {
+            DistributedService.setLastRunParams(mapOf(
+                "modelPath" to modelPath,
+                "isEmbedding" to isEmbedding,
+                "mmprojPath" to effectiveMmprojPath,
+                "threads" to threads,
+                "batchSize" to batchSize,
+                "contextSize" to contextSize,
+                "temperature" to temperature,
+                "host" to host,
+                "port" to (portOverride ?: 8080),
+                "draftModelPath" to draftModelPath,
+                "draftMax" to draftMax,
+                "draftMin" to draftMin,
+                "draftPMin" to draftPMin,
+                "kvCacheEnabled" to kvCacheEnabled,
+                "kvCacheTypeK" to kvCacheTypeK,
+                "kvCacheTypeV" to kvCacheTypeV,
+                "kvCacheReuse" to kvCacheReuse,
+                "parallel" to parallel,
+                "cacheRam" to cacheRam,
+                "customFlags" to customFlags,
+                "flashAttention" to flashAttention,
+                "commandTemplate" to commandTemplate,
+                "settingsProfile" to settingsProfile
+            ))
+        }
         if (kvCacheEnabled) {
             DebugLog.log("LlamaService: KV cache enabled - K=$kvCacheTypeK, V=$kvCacheTypeV, reuse=$kvCacheReuse")
         }
         
         // Get distributed inference workers from DistributedService (if master mode is active)
         val rpcWorkers = if (DistributedService.mode.value == DistributedMode.MASTER) {
-            DistributedService.getWorkerAddresses().also {
+            DistributedService.getConfiguredWorkerAddresses().also {
                 if (it.isNotEmpty()) {
                     DebugLog.log("LlamaService: Distributed mode - workers: ${it.joinToString(",")}")
                 }
@@ -133,13 +320,32 @@ class LlamaService : Service() {
                     throw Exception("Binary not found. Please ensure binaries are extracted.")
                 }
                 val binary = binaryFile.absolutePath
+
+                if (!finalCustomCommand.isNullOrBlank()) {
+                    val args = processController.splitCommandLine(finalCustomCommand)
+                    val commandString = processController.buildCommandString(args)
+                    DistributedService.setLastCommand(commandString)
+
+                    if (previewMode) {
+                        DebugLog.log("LlamaService: Preview Custom Command: $commandString")
+                        return@launch
+                    }
+
+                    DebugLog.log("LlamaService: Using CUSTOM command override")
+                    Companion.updateState(ServerState.Starting)
+                    updateNotification("Starting custom command...")
+                    processController.start(binary, LlamaConfig(modelPath = modelPath), filesDir, customArgs = args)
+                    return@launch
+                }
                 
                 // Calculate layer distribution for RPC workers
                 var nGpuLayers = 0
                 var tensorSplit: String? = null
                 
                 if (rpcWorkers.isNotEmpty()) {
-                    val connectedWorkers = DistributedService.workers.value.filter { it.isConnected }
+                    // CRITICAL FIX: Use ENABLED workers for calculation, not just connected ones.
+                    // This aligns with getConfiguredWorkerAddresses() and fixes the race condition.
+                    val connectedWorkers = DistributedService.workers.value.filter { it.isEnabled }
                     
                     if (connectedWorkers.isNotEmpty()) {
                         // Get master RAM (from settings) and each worker's RAM
@@ -158,32 +364,82 @@ class LlamaService : Service() {
                             // Use proportion-based calculation
                             // Sum of all worker proportions = layers to RPC
                             // E.g., if worker has 80% assigned, give 80% of layers to RPC
-                            val workerProportion = totalWorkerProportion.coerceIn(0.01f, 0.99f)
+                            val workerProportion = totalWorkerProportion.coerceIn(0f, 1f)
                             nGpuLayers = (totalLayers * workerProportion).toInt()
-                                .coerceIn(1, totalLayers - 1) // Leave at least 1 layer on master
+                                .coerceIn(0, totalLayers) // Allow full offload when proportion is 1.0
                             DebugLog.log("LlamaService: Using proportion-based split - workers get ${(workerProportion*100).toInt()}% = $nGpuLayers/$totalLayers layers")
+                            
+                            // Calculate tensor split based on PROPORTIONS
+                            if (connectedWorkers.size > 1) {
+                                val workerProportions = connectedWorkers.map { it.assignedProportion ?: 0f }
+                                // Normalize proportions so they sum to 1.0 (relative to the total worker share)
+                                val totalProp = workerProportions.sum()
+                                val workerFractions = workerProportions.map { prop ->
+                                    if (totalProp > 0) prop / totalProp else 1f / connectedWorkers.size
+                                }
+                                tensorSplit = workerFractions.joinToString(",") { 
+                                    String.format(java.util.Locale.US, "%.2f", it) 
+                                }
+                            }
                         } else {
-                            // Fallback to RAM-based calculation
+                            // RAM-based calculation with bytes-per-layer estimation
+                            // Since rpc-server reports full device RAM (not user-configured limit),
+                            // we must calculate -ngl precisely to fit within user-configured worker RAM
+                            
                             val workerRams = connectedWorkers.map { it.availableRamMB }
                             val totalWorkerRamMB = workerRams.sum()
                             val totalRamMB = masterRamMB + totalWorkerRamMB
                             
-                            val workerProportion = totalWorkerRamMB.toFloat() / totalRamMB.toFloat()
-                            nGpuLayers = (totalLayers * workerProportion).toInt()
-                                .coerceIn(1, totalLayers - 1)
-                            DebugLog.log("LlamaService: Using RAM-based split - workers get ${(workerProportion*100).toInt()}% = $nGpuLayers/$totalLayers layers")
-                        }
-                        
-                        // If multiple workers, calculate tensor split among WORKERS ONLY
-                        if (connectedWorkers.size > 1) {
-                            val workerRams = connectedWorkers.map { it.availableRamMB }
-                            val totalWorkerRamMB = workerRams.sum()
-                            // Each worker's fraction of the total worker RAM
-                            val workerFractions = workerRams.map { ram ->
-                                ram.toFloat() / totalWorkerRamMB.toFloat()
-                            }
-                            tensorSplit = workerFractions.joinToString(",") { 
-                                String.format(java.util.Locale.US, "%.2f", it) 
+                            if (masterRamMB == 0) {
+                                // Master contributes 0MB = offload ALL layers to workers
+                                nGpuLayers = totalLayers
+                                DebugLog.log("LlamaService: Master RAM is 0 - full offload to workers ($totalLayers layers)")
+                                
+                                // Calculate tensor split for worker distribution
+                                if (connectedWorkers.size > 1 && totalWorkerRamMB > 0) {
+                                    val totalWorkerRam = workerRams.sum().toFloat()
+                                    val workerFractions = workerRams.map { ram ->
+                                        if (totalWorkerRam > 0) ram.toFloat() / totalWorkerRam else 1f / connectedWorkers.size
+                                    }
+                                    tensorSplit = workerFractions.joinToString(",") { 
+                                        String.format(java.util.Locale.US, "%.2f", it) 
+                                    }
+                                }
+                            } else if (totalRamMB > 0 && totalWorkerRamMB > 0) {
+                                // Estimate bytes per layer from model file size
+                                // Use 1.5x safety factor: the output layer (offloaded first by llama.cpp)
+                                // is typically 2-3x larger than repeating layers, plus KV cache overhead
+                                val avgMBPerLayer = modelSizeMB.toFloat() / totalLayers.toFloat()
+                                val safeMBPerLayer = avgMBPerLayer * 1.5f
+                                
+                                // Calculate max layers that fit in total worker RAM
+                                val maxLayersForWorkers = (totalWorkerRamMB.toFloat() / safeMBPerLayer).toInt()
+                                
+                                // Also calculate proportion-based layers
+                                val workerProportion = totalWorkerRamMB.toFloat() / totalRamMB.toFloat()
+                                val proportionLayers = (totalLayers * workerProportion).toInt()
+                                
+                                // Use the MINIMUM of proportion-based and capacity-based
+                                nGpuLayers = minOf(proportionLayers, maxLayersForWorkers)
+                                    .coerceIn(0, totalLayers)
+                                
+                                DebugLog.log("LlamaService: RAM-based split - workers: ${totalWorkerRamMB}MB, master: ${masterRamMB}MB")
+                                DebugLog.log("LlamaService: Model ~${avgMBPerLayer.toInt()}MB/layer (safe: ${safeMBPerLayer.toInt()}MB/layer)")
+                                DebugLog.log("LlamaService: Max layers for workers: $maxLayersForWorkers (by capacity), $proportionLayers (by proportion)")
+                                DebugLog.log("LlamaService: Workers get $nGpuLayers/$totalLayers layers")
+                                
+                                // Calculate tensor split based on configured RAM
+                                if (connectedWorkers.size > 1) {
+                                    val totalWorkerRam = workerRams.sum().toFloat()
+                                    val workerFractions = workerRams.map { ram ->
+                                        if (totalWorkerRam > 0) ram.toFloat() / totalWorkerRam else 1f / connectedWorkers.size
+                                    }
+                                    tensorSplit = workerFractions.joinToString(",") { 
+                                        String.format(java.util.Locale.US, "%.2f", it) 
+                                    }
+                                }
+                            } else {
+                                nGpuLayers = 0
                             }
                         }
                         
@@ -209,8 +465,10 @@ class LlamaService : Service() {
                     modelPath = modelPath, 
                     isEmbedding = isEmbedding,
                     threads = threads,
+                    batchSize = batchSize,
                     contextSize = contextSize,
                     temperature = temperature,
+                    port = portOverride ?: 8080,
                     host = host,
                     mmprojPath = effectiveMmprojPath,
                     kvCacheEnabled = kvCacheEnabled,
@@ -219,10 +477,35 @@ class LlamaService : Service() {
                     kvCacheReuse = kvCacheReuse,
                     rpcWorkers = rpcWorkers,
                     nGpuLayers = nGpuLayers,
-                    tensorSplit = tensorSplit
+                    tensorSplit = tensorSplit,
+                    noMmap = noMmap,
+                    draftModelPath = draftModelPath,
+                    draftMax = draftMax ?: 16,
+                    draftMin = draftMin ?: 0,
+                    draftPMin = draftPMin ?: 0.75f,
+                    parallel = parallel,
+                    cacheRam = cacheRam,
+                    customFlags = customFlags,
+                    flashAttention = flashAttention
                 )
                 
+                
                 DebugLog.log("LlamaService: Binary found at $binary")
+
+                val commandArgs = if (commandTemplate.isNullOrBlank()) {
+                    processController.getCommand(binary, config)
+                } else {
+                    DebugLog.log("LlamaService: Rendering command template for ${if (isMasterProfile) "master" else "general"} profile")
+                    processController.renderCommandTemplate(commandTemplate, binary, config)
+                }
+                val commandString = processController.buildCommandString(commandArgs)
+                DistributedService.setLastCommand(commandString)
+
+                if (previewMode) {
+                    DebugLog.log("LlamaService: Preview Command: $commandString")
+                    return@launch
+                }
+                
                 DebugLog.log("LlamaService: Starting on port ${config.port}")
                 
                 // Show loading state while model loads
@@ -230,7 +513,24 @@ class LlamaService : Service() {
                 updateNotification("Loading model...")
                 updateNotification("Llama Server Running on port ${config.port}")
 
-                processController.start(binary, config, filesDir)
+                // Regex for parsing real RAM usage from logs
+                // [22:58:39] Server: load_tensors: RPC0[10.2.0.2:50052] model buffer size = 8439.82 MiB
+                val ramUsageRegex = "load_tensors: RPC\\d+\\[([\\d.]+):\\d+\\] model buffer size = ([\\d.]+) MiB".toRegex()
+                
+                processController.start(binary, config, filesDir, customArgs = commandArgs) { line ->
+                    // Inspect log line for RAM usage
+                    val match = ramUsageRegex.find(line)
+                    if (match != null) {
+                        val (ip, sizeMiB) = match.destructured
+                        try {
+                            val sizeFloat = sizeMiB.toFloat()
+                            DebugLog.log("LlamaService: Parsed real RAM usage for $ip: ${sizeFloat}MB")
+                            DistributedService.updateWorkerRealRam(ip, sizeFloat)
+                        } catch (e: Exception) {
+                            DebugLog.log("LlamaService: Error parsing RAM float: $sizeMiB")
+                        }
+                    }
+                }
                 
                 // If process exits
                 DebugLog.log("LlamaService: Process exited")
@@ -271,14 +571,39 @@ class LlamaService : Service() {
     companion object {
         const val ACTION_START = "START"
         const val ACTION_STOP = "STOP"
+        const val ACTION_SWITCH_MODEL = "SWITCH_MODEL"
+        const val ACTION_PREVIEW_COMMAND = "PREVIEW_COMMAND"
         const val EXTRA_MODEL_PATH = "MODEL_PATH"
         const val EXTRA_IS_EMBEDDING = "IS_EMBEDDING"
         const val EXTRA_MMPROJ_PATH = "MMPROJ_PATH"
         // Optional settings overrides for distributed mode (to avoid modifying global settings)
         const val EXTRA_THREADS = "THREADS"
+        const val EXTRA_BATCH_SIZE = "BATCH_SIZE"
         const val EXTRA_CONTEXT_SIZE = "CONTEXT_SIZE"
         const val EXTRA_TEMPERATURE = "TEMPERATURE"
         const val EXTRA_HOST = "HOST"
+        const val EXTRA_PORT = "PORT"
+        const val EXTRA_SETTINGS_PROFILE = "SETTINGS_PROFILE"
+        // Speculative decoding extras
+        const val EXTRA_DRAFT_MODEL_PATH = "DRAFT_MODEL_PATH"
+        const val EXTRA_DRAFT_MAX = "DRAFT_MAX"
+        const val EXTRA_DRAFT_MIN = "DRAFT_MIN"
+        const val EXTRA_DRAFT_P_MIN = "DRAFT_P_MIN"
+        const val EXTRA_CUSTOM_COMMAND = "CUSTOM_COMMAND"
+        const val EXTRA_COMMAND_TEMPLATE = "COMMAND_TEMPLATE"
+        
+        // Advanced settings
+        const val EXTRA_PARALLEL = "PARALLEL"
+        const val EXTRA_CACHE_RAM = "CACHE_RAM"
+        const val EXTRA_CUSTOM_FLAGS = "CUSTOM_FLAGS"
+        const val EXTRA_FLASH_ATTENTION = "FLASH_ATTENTION"
+        const val EXTRA_KV_CACHE_ENABLED = "KV_CACHE_ENABLED"
+        const val EXTRA_KV_CACHE_TYPE_K = "KV_CACHE_TYPE_K"
+        const val EXTRA_KV_CACHE_TYPE_V = "KV_CACHE_TYPE_V"
+        const val EXTRA_KV_CACHE_REUSE = "KV_CACHE_REUSE"
+
+        const val SETTINGS_PROFILE_GENERAL = "GENERAL"
+        const val SETTINGS_PROFILE_MASTER = "MASTER"
         
         // Global state for simple observation
         private val _state = MutableStateFlow<ServerState>(ServerState.Stopped)
@@ -286,6 +611,20 @@ class LlamaService : Service() {
         
         fun updateState(newState: ServerState) {
             _state.value = newState
+        }
+
+        private const val MAX_SERVER_LOGS = 1000
+        private val _serverLogs = MutableStateFlow<List<com.example.llamadroid.util.LogEntry>>(emptyList())
+        val serverLogs = _serverLogs.asStateFlow()
+
+        fun addServerLog(message: String) {
+            val entry = com.example.llamadroid.util.LogEntry(System.currentTimeMillis(), message)
+            val current = _serverLogs.value
+            _serverLogs.value = (current + entry).takeLast(MAX_SERVER_LOGS)
+        }
+
+        fun clearServerLogs() {
+            _serverLogs.value = emptyList()
         }
     }
 }

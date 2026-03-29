@@ -12,6 +12,8 @@ import android.os.IBinder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.documentfile.provider.DocumentFile
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,13 +41,18 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.ModelType
+import com.example.llamadroid.data.RemoteSummarySettingsSnapshot
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.service.*
+import com.example.llamadroid.ui.components.IntInputField
+import com.example.llamadroid.ui.components.RemoteSummaryBackendEditor
 import com.example.llamadroid.ui.components.SliderWithInput
 import com.example.llamadroid.ui.components.IntSliderWithInput
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
+import com.example.llamadroid.util.AssetPackManagerUtil
+import com.example.llamadroid.util.AssetPackManagerUtil.AssetPack
 import java.util.*
 import kotlin.math.pow
 
@@ -60,7 +68,19 @@ fun WorkflowsScreen(navController: NavController) {
     val settingsRepo = remember { SettingsRepository(context) }
     
     // Selected workflow: 0 = none, 1 = transcribe+summary, 2 = txt2img+upscale
+    val scope = rememberCoroutineScope()
     var selectedWorkflow by remember { mutableIntStateOf(0) }
+    
+    // Asset pack check state
+    var showDownloadDialog by remember { mutableStateOf(false) }
+    
+    if (showDownloadDialog) {
+        com.example.llamadroid.ui.components.AssetDownloadDialog(
+            onDismiss = { showDownloadDialog = false },
+            onDownloadAll = { showDownloadDialog = false },
+            onSkip = { showDownloadDialog = false }
+        )
+    }
     
     // Workflow output directory
     val workflowOutputDir = remember { 
@@ -112,25 +132,46 @@ fun WorkflowsScreen(navController: NavController) {
     
     // ===== Transcribe+Summary workflow state (persisted via SettingsRepository) =====
     val persistedWhisperModel by settingsRepo.workflowWhisperModelPath.collectAsState()
-    val persistedLlmModel by settingsRepo.workflowLlmModelPath.collectAsState()
     val persistedWhisperThreads by settingsRepo.workflowWhisperThreads.collectAsState()
-    val persistedLlmThreads by settingsRepo.workflowLlmThreads.collectAsState()
     val persistedLanguage by settingsRepo.workflowWhisperLanguage.collectAsState()
-    val persistedContext by settingsRepo.workflowContext.collectAsState()
-    val persistedTemperature by settingsRepo.workflowTemperature.collectAsState()
-    val persistedMaxTokens by settingsRepo.workflowMaxTokens.collectAsState()
+    val persistedSummaryBackend by settingsRepo.workflowSummaryBackend.collectAsState()
+    val persistedSummaryOllamaUrl by settingsRepo.workflowSummaryOllamaUrl.collectAsState()
+    val persistedSummaryLlamaUrl by settingsRepo.workflowSummaryLlamaServerUrl.collectAsState()
+    val persistedSummaryOllamaModel by settingsRepo.workflowSummaryOllamaModel.collectAsState()
+    val persistedSummaryTargetLanguage by settingsRepo.workflowSummaryTargetLanguage.collectAsState()
+    val persistedSummaryContext by settingsRepo.workflowContext.collectAsState()
+    val persistedSummaryMaxTokens by settingsRepo.workflowMaxTokens.collectAsState()
+    val persistedSummaryMergeContext by settingsRepo.workflowMergeContext.collectAsState()
+    val persistedSummaryMergeMaxTokens by settingsRepo.workflowMergeMaxTokens.collectAsState()
+    val persistedSummaryTemperature by settingsRepo.workflowTemperature.collectAsState()
+    val persistedSummaryTimeout by settingsRepo.workflowSummaryTimeoutMinutes.collectAsState()
+    val persistedSummaryThinking by settingsRepo.workflowSummaryThinkingEnabled.collectAsState()
+    val persistedWorkflowSummaryPrompt by settingsRepo.workflowSummaryPrompt.collectAsState()
+    val persistedWorkflowLlamaServerModelLabel by settingsRepo.workflowSummaryLlamaServerModelLabel.collectAsState()
+    val persistedWorkflowLlamaServerContextLabel by settingsRepo.workflowSummaryLlamaServerContextLabel.collectAsState()
+    val persistedWorkflowLlamaServerContextTokens by settingsRepo.workflowSummaryLlamaServerContextTokens.collectAsState()
     
     // ===== Transcribe+Summary workflow state (persisted via StateHolder) =====
     var whisperModelPath by remember(persistedWhisperModel) { mutableStateOf(persistedWhisperModel) }
     val audioUri by WorkflowStateHolder.audioUri.collectAsState()
     val audioPath by WorkflowStateHolder.audioPath.collectAsState()
-    var llmModelPath by remember(persistedLlmModel) { mutableStateOf(persistedLlmModel) }
-    var summarySystemPrompt by remember { mutableStateOf("Summarize the following transcription concisely:") }
-    var summaryTemperature by remember(persistedTemperature) { mutableFloatStateOf(persistedTemperature) }
-    var summaryThreads by remember(persistedLlmThreads) { mutableIntStateOf(persistedLlmThreads) }
+    var summaryBackend by remember(persistedSummaryBackend) { mutableStateOf(persistedSummaryBackend) }
+    var summaryOllamaUrl by remember(persistedSummaryOllamaUrl) { mutableStateOf(persistedSummaryOllamaUrl) }
+    var summaryLlamaUrl by remember(persistedSummaryLlamaUrl) { mutableStateOf(persistedSummaryLlamaUrl) }
+    var summaryOllamaModel by remember(persistedSummaryOllamaModel) { mutableStateOf(persistedSummaryOllamaModel) }
+    var summarySystemPrompt by remember(persistedWorkflowSummaryPrompt) {
+        mutableStateOf(persistedWorkflowSummaryPrompt ?: SettingsRepository.DEFAULT_TRANSCRIPT_SUMMARY_PROMPT)
+    }
+    var summaryTemperature by remember(persistedSummaryTemperature) { mutableFloatStateOf(persistedSummaryTemperature) }
     var whisperThreads by remember(persistedWhisperThreads) { mutableIntStateOf(persistedWhisperThreads) }
     var whisperLanguage by remember(persistedLanguage) { mutableStateOf(persistedLanguage) }
-    var summaryContext by remember(persistedContext) { mutableIntStateOf(persistedContext) }
+    var summaryContext by remember(persistedSummaryContext) { mutableIntStateOf(persistedSummaryContext) }
+    var summaryMaxTokens by remember(persistedSummaryMaxTokens) { mutableIntStateOf(persistedSummaryMaxTokens) }
+    var summaryMergeContext by remember(persistedSummaryMergeContext) { mutableIntStateOf(persistedSummaryMergeContext) }
+    var summaryMergeMaxTokens by remember(persistedSummaryMergeMaxTokens) { mutableIntStateOf(persistedSummaryMergeMaxTokens) }
+    var summaryTargetLanguage by remember(persistedSummaryTargetLanguage) { mutableStateOf(persistedSummaryTargetLanguage) }
+    var summaryTimeoutMinutes by remember(persistedSummaryTimeout) { mutableIntStateOf(persistedSummaryTimeout) }
+    var summaryThinkingEnabled by remember(persistedSummaryThinking) { mutableStateOf(persistedSummaryThinking) }
     
     // Key progress state - persisted via StateHolder
     val transcribeIsRunning by WorkflowStateHolder.isRunning.collectAsState()
@@ -138,6 +179,11 @@ fun WorkflowsScreen(navController: NavController) {
     val transcribeProgress by WorkflowStateHolder.progress.collectAsState()
     val transcriptionText by WorkflowStateHolder.transcriptionText.collectAsState()
     val summaryText by WorkflowStateHolder.summaryText.collectAsState()
+    val workflowPartialSummaries by WorkflowStateHolder.partialSummaries.collectAsState()
+    val workflowCurrentChunk by WorkflowStateHolder.currentChunk.collectAsState()
+    val workflowTotalChunks by WorkflowStateHolder.totalChunks.collectAsState()
+    val workflowProjectedChunkCount by WorkflowStateHolder.projectedChunkCount.collectAsState()
+    val workflowCancelled by WorkflowStateHolder.cancelled.collectAsState()
     val transcribeError by WorkflowStateHolder.error.collectAsState()
     
     // ===== Recording state for workflow (persisted via StateHolder) =====
@@ -153,6 +199,12 @@ fun WorkflowsScreen(navController: NavController) {
     val currentAudioPath by rememberUpdatedState(audioPath)
     val currentSavedRecordingPath by rememberUpdatedState(savedRecordingPath)
     val currentWhisperLanguage by rememberUpdatedState(whisperLanguage)
+
+    LaunchedEffect(transcribeIsRunning, audioUri, transcriptionText, summaryText) {
+        if (transcribeIsRunning || audioUri != null || transcriptionText.isNotBlank() || summaryText.isNotBlank()) {
+            selectedWorkflow = 1
+        }
+    }
     
     // Permission launcher for recording
     val recordPermissionLauncher = rememberLauncherForActivityResult(
@@ -162,7 +214,7 @@ fun WorkflowsScreen(navController: NavController) {
         if (granted) {
             WorkflowStateHolder.setShowRecordingDialog(true)
         } else {
-            WorkflowStateHolder.setError("Recording permission denied")
+            WorkflowStateHolder.setError(context.getString(R.string.workflow_error_perm_denied))
         }
     }
     
@@ -179,12 +231,21 @@ fun WorkflowsScreen(navController: NavController) {
     
     // Save settings when they change
     LaunchedEffect(whisperModelPath) { settingsRepo.setWorkflowWhisperModelPath(whisperModelPath) }
-    LaunchedEffect(llmModelPath) { settingsRepo.setWorkflowLlmModelPath(llmModelPath) }
     LaunchedEffect(whisperThreads) { settingsRepo.setWorkflowWhisperThreads(whisperThreads) }
-    LaunchedEffect(summaryThreads) { settingsRepo.setWorkflowLlmThreads(summaryThreads) }
     LaunchedEffect(whisperLanguage) { settingsRepo.setWorkflowWhisperLanguage(whisperLanguage) }
+    LaunchedEffect(summaryBackend) { settingsRepo.setWorkflowSummaryBackend(summaryBackend) }
+    LaunchedEffect(summaryOllamaUrl) { settingsRepo.setWorkflowSummaryOllamaUrl(summaryOllamaUrl) }
+    LaunchedEffect(summaryLlamaUrl) { settingsRepo.setWorkflowSummaryLlamaServerUrl(summaryLlamaUrl) }
+    LaunchedEffect(summaryOllamaModel) { settingsRepo.setWorkflowSummaryOllamaModel(summaryOllamaModel) }
     LaunchedEffect(summaryContext) { settingsRepo.setWorkflowContext(summaryContext) }
+    LaunchedEffect(summaryMaxTokens) { settingsRepo.setWorkflowMaxTokens(summaryMaxTokens) }
+    LaunchedEffect(summaryMergeContext) { settingsRepo.setWorkflowMergeContext(summaryMergeContext) }
+    LaunchedEffect(summaryMergeMaxTokens) { settingsRepo.setWorkflowMergeMaxTokens(summaryMergeMaxTokens) }
     LaunchedEffect(summaryTemperature) { settingsRepo.setWorkflowTemperature(summaryTemperature) }
+    LaunchedEffect(summaryTargetLanguage) { settingsRepo.setWorkflowSummaryTargetLanguage(summaryTargetLanguage) }
+    LaunchedEffect(summaryTimeoutMinutes) { settingsRepo.setWorkflowSummaryTimeoutMinutes(summaryTimeoutMinutes) }
+    LaunchedEffect(summaryThinkingEnabled) { settingsRepo.setWorkflowSummaryThinkingEnabled(summaryThinkingEnabled) }
+    LaunchedEffect(summarySystemPrompt) { settingsRepo.setWorkflowSummaryPrompt(summarySystemPrompt) }
     
     // ===== Consume shared audio/video files =====
     LaunchedEffect(Unit) {
@@ -217,15 +278,15 @@ fun WorkflowsScreen(navController: NavController) {
     LaunchedEffect(videoSumupState) {
         when (videoSumupState) {
             is VideoSumupState.ExtractingAudio -> {
-                WorkflowStateHolder.setStep("Step 1/3: Extracting audio...")
+                WorkflowStateHolder.setStep(context.getString(R.string.workflow_step_extracting))
                 WorkflowStateHolder.setProgress(0.1f)
             }
             is VideoSumupState.Transcribing -> {
-                WorkflowStateHolder.setStep("Step 2/3: Transcribing...")
+                WorkflowStateHolder.setStep(context.getString(R.string.workflow_step_transcribing))
                 WorkflowStateHolder.setProgress(0.4f)
             }
             is VideoSumupState.Summarizing -> {
-                WorkflowStateHolder.setStep("Step 3/3: Summarizing...")
+                WorkflowStateHolder.setStep(context.getString(R.string.workflow_step_summarizing))
                 WorkflowStateHolder.setProgress(0.7f)
             }
             is VideoSumupState.Idle -> {
@@ -282,13 +343,13 @@ fun WorkflowsScreen(navController: NavController) {
                 if (selectedWorkflow == 0) navController.popBackStack()
                 else selectedWorkflow = 0
             }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
             }
             Text(
                 when (selectedWorkflow) {
-                    1 -> "🎙️→📝 Transcribe + Summary"
-                    2 -> "🎨→⬆️ txt2img + Upscale"
-                    else -> "⚙️ AI Workflows"
+                    1 -> stringResource(R.string.workflow_transcribe_summary)
+                    2 -> stringResource(R.string.workflow_txt2img_upscale)
+                    else -> stringResource(R.string.workflow_title)
                 },
                 style = MaterialTheme.typography.headlineSmall.copy(
                     fontWeight = FontWeight.Bold
@@ -328,8 +389,8 @@ fun WorkflowsScreen(navController: NavController) {
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                if (transcribeIsRunning) "🎙️ Transcribe + Summary running..." 
-                                else "🎨 txt2img + Upscale running...",
+                                if (transcribeIsRunning) stringResource(R.string.workflow_running_transcribe) 
+                                else stringResource(R.string.workflow_running_txt2img),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -351,7 +412,7 @@ fun WorkflowsScreen(navController: NavController) {
             when (selectedWorkflow) {
                 0 -> {
                     Text(
-                        "Chain multiple AI operations together",
+                        stringResource(R.string.workflow_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -366,7 +427,10 @@ fun WorkflowsScreen(navController: NavController) {
                             Color(0xFF00BCD4).copy(alpha = 0.15f),
                             Color(0xFF4CAF50).copy(alpha = 0.3f)
                         ),
-                        onClick = { selectedWorkflow = 1 }
+                        onClick = { 
+                            // Binaries are now in base, no need to download
+                            selectedWorkflow = 1 
+                        }
                     )
                     
                     Spacer(modifier = Modifier.height(12.dp))
@@ -379,7 +443,13 @@ fun WorkflowsScreen(navController: NavController) {
                             Color(0xFF2196F3).copy(alpha = 0.15f),
                             Color(0xFF9C27B0).copy(alpha = 0.3f)
                         ),
-                        onClick = { selectedWorkflow = 2 }
+                        onClick = { 
+                            if (AssetPackManagerUtil.isReady(context, AssetPack.UPSCALER)) {
+                                selectedWorkflow = 2 
+                            } else {
+                                showDownloadDialog = true
+                            }
+                        }
                     )
                 }
                 
@@ -393,42 +463,71 @@ fun WorkflowsScreen(navController: NavController) {
                         onAudioUriChange = { WorkflowStateHolder.setAudioUri(it) },
                         audioPath = audioPath,
                         onAudioPathChange = { WorkflowStateHolder.setAudioPath(it) },
-                        llmModelPath = llmModelPath,
-                        onLlmModelChange = { llmModelPath = it },
+                        summaryBackend = summaryBackend,
+                        onSummaryBackendChange = { summaryBackend = it },
+                        summaryOllamaUrl = summaryOllamaUrl,
+                        onSummaryOllamaUrlChange = { summaryOllamaUrl = it },
+                        summaryLlamaUrl = summaryLlamaUrl,
+                        onSummaryLlamaUrlChange = { summaryLlamaUrl = it },
+                        summaryOllamaModel = summaryOllamaModel,
+                        onSummaryOllamaModelChange = { summaryOllamaModel = it },
+                        summaryLlamaServerModelLabel = persistedWorkflowLlamaServerModelLabel,
+                        summaryLlamaServerContextLabel = persistedWorkflowLlamaServerContextLabel,
+                        summaryLlamaServerContextTokens = persistedWorkflowLlamaServerContextTokens,
+                        summaryTargetLanguage = summaryTargetLanguage,
+                        onSummaryTargetLanguageChange = { summaryTargetLanguage = it },
                         systemPrompt = summarySystemPrompt,
                         onSystemPromptChange = { summarySystemPrompt = it },
                         temperature = summaryTemperature,
                         onTemperatureChange = { summaryTemperature = it },
-                        llmThreads = summaryThreads,
-                        onLlmThreadsChange = { summaryThreads = it },
                         whisperThreads = whisperThreads,
                         onWhisperThreadsChange = { whisperThreads = it },
                         whisperLanguage = whisperLanguage,
                         onWhisperLanguageChange = { whisperLanguage = it },
                         contextSize = summaryContext,
                         onContextChange = { summaryContext = it },
+                        maxTokens = summaryMaxTokens,
+                        onMaxTokensChange = { summaryMaxTokens = it },
+                        mergeContext = summaryMergeContext,
+                        onMergeContextChange = { summaryMergeContext = it },
+                        mergeMaxTokens = summaryMergeMaxTokens,
+                        onMergeMaxTokensChange = { summaryMergeMaxTokens = it },
+                        timeoutMinutes = summaryTimeoutMinutes,
+                        onTimeoutMinutesChange = { summaryTimeoutMinutes = it },
+                        thinkingEnabled = summaryThinkingEnabled,
+                        onThinkingEnabledChange = { summaryThinkingEnabled = it },
                         isRunning = transcribeIsRunning,
                         currentStep = transcribeStep,
                         progress = transcribeProgress,
                         transcriptionText = transcriptionText,
                         summaryText = summaryText,
+                        partialSummaries = workflowPartialSummaries,
+                        currentChunk = workflowCurrentChunk,
+                        totalChunks = workflowTotalChunks,
+                        projectedChunkCount = workflowProjectedChunkCount,
+                        cancelled = workflowCancelled,
                         errorMessage = transcribeError,
                         onRun = {
-                            if (audioPath != null && whisperModelPath != null && llmModelPath != null) {
+                            val backendReady = if (summaryBackend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                                summaryLlamaUrl.isNotBlank()
+                            } else {
+                                summaryOllamaUrl.isNotBlank() && !summaryOllamaModel.isNullOrBlank()
+                            }
+                            if (audioPath != null && whisperModelPath != null && backendReady) {
                                 WorkflowStateHolder.setIsRunning(true)
                                 WorkflowStateHolder.setError(null)
-                                WorkflowStateHolder.setStep("Starting...")
+                                WorkflowStateHolder.setStep(context.getString(R.string.workflow_step_starting))
                                 WorkflowStateHolder.setProgress(0f)
                                 VideoSumupService.startSummarization(
                                     context = context,
                                     videoPath = audioPath!!,
-                                    videoFileName = audioUri?.lastPathSegment ?: "audio",
+                                    videoFileName = audioUri?.lastPathSegment ?: context.getString(R.string.workflow_audio_video_placeholder),
                                     whisperModelPath = whisperModelPath!!,
-                                    llmModelPath = llmModelPath!!,
+                                    llmModelPath = "",
                                     language = whisperLanguage,
                                     threads = whisperThreads,
                                     contextSize = summaryContext,
-                                    maxTokens = 1024,
+                                    maxTokens = summaryMaxTokens,
                                     temperature = summaryTemperature,
                                     saveToNotes = true,  // Service handles note saving now
                                     noteType = com.example.llamadroid.data.db.NoteType.WORKFLOW,
@@ -438,44 +537,6 @@ fun WorkflowsScreen(navController: NavController) {
                         },
                         onComplete = { transcript, summary ->
                             WorkflowStateHolder.onWorkflowComplete(transcript, summary)
-                            
-                            // Save as WORKFLOW note with summary above transcript
-                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                val fileName = audioUri?.lastPathSegment ?: "Recording"
-                                val noteContent = buildString {
-                                    appendLine("## Summary")
-                                    appendLine(summary)
-                                    appendLine()
-                                    appendLine("## Transcript")
-                                    appendLine(transcript)
-                                }
-                                
-                                // CRITICAL: Save audio to permanent Recordings folder
-                                var permanentAudioPath: String? = savedRecordingPath
-                                if (permanentAudioPath == null && audioPath != null) {
-                                    // Audio was picked (not recorded), copy to permanent location
-                                    try {
-                                        val recordingsDir = File(context.filesDir, "sd_output/Recordings").apply { mkdirs() }
-                                        val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-                                        val extension = audioPath!!.substringAfterLast(".", "m4a")
-                                        val savedFile = File(recordingsDir, "audio_${timestamp}.$extension")
-                                        File(audioPath!!).copyTo(savedFile, overwrite = true)
-                                        permanentAudioPath = savedFile.absolutePath
-                                    } catch (e: Exception) {
-                                        android.util.Log.e("WorkflowsScreen", "Failed to save audio: ${e.message}")
-                                    }
-                                }
-                                
-                                val note = com.example.llamadroid.data.db.NoteEntity(
-                                    title = "Transcription: $fileName",
-                                    content = noteContent,
-                                    type = com.example.llamadroid.data.db.NoteType.WORKFLOW,
-                                    sourceFile = audioPath,
-                                    language = whisperLanguage,
-                                    audioPath = permanentAudioPath
-                                )
-                                db.noteDao().insert(note)
-                            }
                         },
                         onError = { error ->
                             WorkflowStateHolder.setIsRunning(false)
@@ -569,7 +630,7 @@ fun WorkflowsScreen(navController: NavController) {
                 }
                 WorkflowStateHolder.setShowRecordingDialog(false)
             },
-            title = { Text("Record Audio", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.workflow_recording_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -585,11 +646,11 @@ fun WorkflowsScreen(navController: NavController) {
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     if (isRecording) {
-                        Text("Recording...", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.workflow_recording_status), color = MaterialTheme.colorScheme.error)
                     } else if (recordingSeconds > 0) {
-                        Text("Recording saved", color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.workflow_recording_saved), color = MaterialTheme.colorScheme.primary)
                     } else {
-                        Text("Tap Start to begin recording")
+                        Text(stringResource(R.string.workflow_recording_hint))
                     }
                 }
             },
@@ -614,7 +675,7 @@ fun WorkflowsScreen(navController: NavController) {
                         } catch (e: Exception) {
                             WorkflowStateHolder.setError("Failed to save recording: ${e.message}")
                         }
-                    }) { Text("Use Recording") }
+                    }) { Text(stringResource(R.string.workflow_use_recording)) }
                 } else if (!isRecording) {
                     TextButton(onClick = {
                         try {
@@ -635,12 +696,12 @@ fun WorkflowsScreen(navController: NavController) {
                             WorkflowStateHolder.setError("Failed to start recording: ${e.message}")
                             WorkflowStateHolder.setShowRecordingDialog(false)
                         }
-                    }) { Text("Start") }
+                    }) { Text(stringResource(R.string.action_start)) }
                 } else {
                     TextButton(onClick = {
                         try { mediaRecorder?.stop(); mediaRecorder?.release(); mediaRecorder = null; WorkflowStateHolder.setIsRecording(false) } 
                         catch (e: Exception) { WorkflowStateHolder.setError("Failed to stop recording: ${e.message}") }
-                    }) { Text("Stop") }
+                    }) { Text(stringResource(R.string.action_stop)) }
                 }
             },
             dismissButton = {
@@ -652,7 +713,7 @@ fun WorkflowsScreen(navController: NavController) {
                     }
                     WorkflowStateHolder.setRecordingSeconds(0)
                     WorkflowStateHolder.setShowRecordingDialog(false)
-                }) { Text("Cancel") }
+                }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -751,18 +812,18 @@ private fun Txt2ImgUpscaleWorkflowContent(
     val allGenerationModels = sdCheckpoints + fluxDiffusionModels
     
     // Service connection
-    var sdService by remember { mutableStateOf<SDService?>(null) }
+    var sdService by remember { mutableStateOf<StableDiffusionService?>(null) }
     val serviceConnection = remember {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                sdService = (service as? SDService.LocalBinder)?.getService()
+                sdService = (service as? StableDiffusionService.LocalBinder)?.getService()
             }
             override fun onServiceDisconnected(name: ComponentName?) { sdService = null }
         }
     }
     
     DisposableEffect(Unit) {
-        val intent = Intent(context, SDService::class.java)
+        val intent = Intent(context, StableDiffusionService::class.java)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         onDispose { context.unbindService(serviceConnection) }
     }
@@ -776,7 +837,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
         if (modelPath != null && upscalerPath != null && prompt.isNotBlank()) {
             onRunningChange(true)
             onErrorChange(null)
-            onStepChange("Step 1/2: Generating image...")
+            onStepChange(context.getString(R.string.workflow_step_generating))
             onProgressChange(0f)
             
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -798,12 +859,12 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 threads = threads
             )
             
-            context.startForegroundService(Intent(context, SDService::class.java))
+            context.startForegroundService(Intent(context, StableDiffusionService::class.java))
             
             sdService?.generate(txt2imgConfig, useWorkflowStateHolder = true) { result ->
                 result.fold(
                     onSuccess = {
-                        onStepChange("Step 2/2: Upscaling...")
+                        onStepChange(context.getString(R.string.workflow_step_upscaling))
                         onProgressChange(0.5f)
                         
                         val upscaleConfig = SDConfig(
@@ -842,19 +903,19 @@ private fun Txt2ImgUpscaleWorkflowContent(
                                     }
                                     onRunningChange(false)
                                     onProgressChange(1f)
-                                    onStepChange("Complete!")
+                                    onStepChange(context.getString(R.string.video_sumup_complete))
                                     onResultChange(upscaledFile.absolutePath)
                                 },
                                 onFailure = { e ->
                                     onRunningChange(false)
-                                    onErrorChange("Upscale failed: ${e.message}")
+                                    onErrorChange(context.getString(R.string.workflow_error_upscale_failed, e.message ?: ""))
                                 }
                             )
                         }
                     },
                     onFailure = { e ->
                         onRunningChange(false)
-                        onErrorChange("Generation failed: ${e.message}")
+                        onErrorChange(context.getString(R.string.sd_models_export_failed, e.message ?: ""))
                     }
                 )
             }
@@ -881,11 +942,11 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 OutlinedButton(onClick = { showTemplateMenu = true }) {
                     Icon(Icons.Default.Settings, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Templates (${templates.size})")
+                    Text(stringResource(R.string.workflow_templates_btn, templates.size))
                 }
                 DropdownMenu(expanded = showTemplateMenu, onDismissRequest = { showTemplateMenu = false }) {
                     if (templates.isEmpty()) {
-                        DropdownMenuItem(text = { Text("No saved templates", color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = {})
+                        DropdownMenuItem(text = { Text(stringResource(R.string.workflow_no_templates), color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = {})
                     } else {
                         templates.forEach { template ->
                             DropdownMenuItem(
@@ -938,7 +999,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     }
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Save current as template...", fontWeight = FontWeight.Bold) },
+                        text = { Text(stringResource(R.string.workflow_save_current_template), fontWeight = FontWeight.Bold) },
                         onClick = { showTemplateMenu = false; templateName = ""; showSaveDialog = true },
                         leadingIcon = { Icon(Icons.Default.Add, null) }
                     )
@@ -955,12 +1016,12 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 
                 AlertDialog(
                     onDismissRequest = { showEditDialog = false; editingTemplate = null },
-                    title = { Text("Edit Template") },
+                    title = { Text(stringResource(R.string.workflow_edit_template)) },
                     text = {
                         OutlinedTextField(
                             value = editName,
                             onValueChange = { editName = it },
-                            label = { Text("Template Name") },
+                            label = { Text(stringResource(R.string.workflow_template_name)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -972,9 +1033,9 @@ private fun Txt2ImgUpscaleWorkflowContent(
                                 showEditDialog = false
                                 editingTemplate = null
                             }
-                        }) { Text("Save") }
+                        }) { Text(stringResource(R.string.action_save)) }
                     },
-                    dismissButton = { TextButton(onClick = { showEditDialog = false; editingTemplate = null }) { Text("Cancel") } }
+                    dismissButton = { TextButton(onClick = { showEditDialog = false; editingTemplate = null }) { Text(stringResource(R.string.action_cancel)) } }
                 )
             } else {
                 showEditDialog = false
@@ -988,7 +1049,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
             
             AlertDialog(
                 onDismissRequest = { showSaveDialog = false },
-                title = { Text("Save Template") },
+                title = { Text(stringResource(R.string.workflow_save_template)) },
                 text = {
                     OutlinedTextField(
                         value = saveName,
@@ -1038,17 +1099,17 @@ private fun Txt2ImgUpscaleWorkflowContent(
         // Step 1: txt2img Settings
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Step 1: Generate Image", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.workflow_step_gen_img), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 // Model selector
                 var modelExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = modelExpanded, onExpandedChange = { modelExpanded = it }) {
                     OutlinedTextField(
-                        value = modelPath?.substringAfterLast("/") ?: "Select model",
+                        value = modelPath?.substringAfterLast("/") ?: stringResource(R.string.workflow_select_model),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("SD Model") },
+                        label = { Text(stringResource(R.string.workflow_sd_model_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modelExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
@@ -1068,7 +1129,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 OutlinedTextField(
                     value = prompt,
                     onValueChange = onPromptChange,
-                    label = { Text("Prompt") },
+                    label = { Text(stringResource(R.string.workflow_prompt_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2
                 )
@@ -1079,7 +1140,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 OutlinedTextField(
                     value = negativePrompt,
                     onValueChange = onNegativePromptChange,
-                    label = { Text("Negative Prompt") },
+                    label = { Text(stringResource(R.string.workflow_negative_prompt_label)) },
                     modifier = Modifier.fillMaxWidth()
                 )
                 
@@ -1090,13 +1151,13 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     OutlinedTextField(
                         value = width.toString(),
                         onValueChange = { it.toIntOrNull()?.let(onWidthChange) },
-                        label = { Text("Width") },
+                        label = { Text(stringResource(R.string.workflow_width_label)) },
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = height.toString(),
                         onValueChange = { it.toIntOrNull()?.let(onHeightChange) },
-                        label = { Text("Height") },
+                        label = { Text(stringResource(R.string.workflow_height_label)) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1108,7 +1169,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     value = steps,
                     onValueChange = onStepsChange,
                     valueRange = 1..50,
-                    label = "Steps"
+                    label = stringResource(R.string.workflow_steps_label)
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1118,7 +1179,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     value = cfgScale,
                     onValueChange = onCfgScaleChange,
                     valueRange = 1f..20f,
-                    label = "CFG Scale",
+                    label = stringResource(R.string.workflow_cfg_label),
                     decimalPlaces = 1
                 )
                 
@@ -1129,7 +1190,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     value = threads,
                     onValueChange = onThreadsChange,
                     valueRange = 1..16,
-                    label = "Threads"
+                    label = stringResource(R.string.workflow_threads_label)
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1141,7 +1202,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                         value = sampler.cliName,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Sampler") },
+                        label = { Text(stringResource(R.string.workflow_sampler_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(samplerExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
@@ -1160,7 +1221,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                         value = if (seed == -1L) "" else seed.toString(),
                         onValueChange = { onSeedChange(it.toLongOrNull() ?: -1L) },
                         modifier = Modifier.weight(1f),
-                        label = { Text("Seed (-1 = random)") }
+                        label = { Text(stringResource(R.string.workflow_seed_label)) }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = { onSeedChange((0..Int.MAX_VALUE).random().toLong()) }) {
@@ -1175,17 +1236,17 @@ private fun Txt2ImgUpscaleWorkflowContent(
         // Step 2: Upscale Settings
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Step 2: Upscale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.workflow_step_upscale), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 // Upscaler selector
                 var upscalerExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = upscalerExpanded, onExpandedChange = { upscalerExpanded = it }) {
                     OutlinedTextField(
-                        value = upscalerPath?.substringAfterLast("/") ?: "Select upscaler",
+                        value = upscalerPath?.substringAfterLast("/") ?: stringResource(R.string.workflow_select_upscaler),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Upscaler Model") },
+                        label = { Text(stringResource(R.string.workflow_upscaler_model_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(upscalerExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
@@ -1210,7 +1271,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     value = upscaleRepeats,
                     onValueChange = onUpscaleRepeatsChange,
                     valueRange = 1..4,
-                    label = "Upscale Repeats",
+                    label = stringResource(R.string.workflow_repeats_label),
                     steps = 2
                 )
                 
@@ -1221,7 +1282,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     value = upscaleThreads,
                     onValueChange = onUpscaleThreadsChange,
                     valueRange = 1..16,
-                    label = "Upscale Threads"
+                    label = stringResource(R.string.workflow_upscale_threads_label)
                 )
                 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1229,7 +1290,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 // Final resolution preview
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))) {
                     Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Final Resolution:", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.workflow_final_res_label), fontWeight = FontWeight.Bold)
                         Text("${finalWidth} × ${finalHeight}", color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -1262,8 +1323,8 @@ private fun Txt2ImgUpscaleWorkflowContent(
                         Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("Workflow Complete!", fontWeight = FontWeight.Bold)
-                            Text("Saved: ${path.substringAfterLast("/")}", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.workflow_complete), fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.workflow_saved_to, path.substringAfterLast("/")), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1283,7 +1344,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.primary
                             ) {
-                                Text("⚙️ Workflow", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), 
+                                Text(stringResource(R.string.workflow_badge), modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), 
                                      color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
                             }
                         }
@@ -1306,7 +1367,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                Text(if (isRunning) "Running..." else "🚀 Run Workflow")
+                Text(if (isRunning) stringResource(R.string.workflow_running_btn) else stringResource(R.string.workflow_run_btn))
             }
             
             if (isRunning) {
@@ -1317,7 +1378,7 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 ) {
                     Icon(Icons.Default.Close, null)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         }
@@ -1338,25 +1399,49 @@ private fun TranscribeSummaryWorkflowContent(
     onAudioUriChange: (Uri?) -> Unit,
     audioPath: String?,
     onAudioPathChange: (String?) -> Unit,
-    llmModelPath: String?,
-    onLlmModelChange: (String?) -> Unit,
+    summaryBackend: String,
+    onSummaryBackendChange: (String) -> Unit,
+    summaryOllamaUrl: String,
+    onSummaryOllamaUrlChange: (String) -> Unit,
+    summaryLlamaUrl: String,
+    onSummaryLlamaUrlChange: (String) -> Unit,
+    summaryOllamaModel: String?,
+    onSummaryOllamaModelChange: (String?) -> Unit,
+    summaryLlamaServerModelLabel: String?,
+    summaryLlamaServerContextLabel: String?,
+    summaryLlamaServerContextTokens: Int,
+    summaryTargetLanguage: String,
+    onSummaryTargetLanguageChange: (String) -> Unit,
     systemPrompt: String,
     onSystemPromptChange: (String) -> Unit,
     temperature: Float,
     onTemperatureChange: (Float) -> Unit,
-    llmThreads: Int,
-    onLlmThreadsChange: (Int) -> Unit,
     whisperThreads: Int,
     onWhisperThreadsChange: (Int) -> Unit,
     whisperLanguage: String,
     onWhisperLanguageChange: (String) -> Unit,
     contextSize: Int,
     onContextChange: (Int) -> Unit,
+    maxTokens: Int,
+    onMaxTokensChange: (Int) -> Unit,
+    mergeContext: Int,
+    onMergeContextChange: (Int) -> Unit,
+    mergeMaxTokens: Int,
+    onMergeMaxTokensChange: (Int) -> Unit,
+    timeoutMinutes: Int,
+    onTimeoutMinutesChange: (Int) -> Unit,
+    thinkingEnabled: Boolean,
+    onThinkingEnabledChange: (Boolean) -> Unit,
     isRunning: Boolean,
     currentStep: String,
     progress: Float,
     transcriptionText: String,
     summaryText: String,
+    partialSummaries: List<String>,
+    currentChunk: Int,
+    totalChunks: Int,
+    projectedChunkCount: Int,
+    cancelled: Boolean,
     errorMessage: String?,
     onRun: () -> Unit,
     onComplete: (String, String) -> Unit,
@@ -1368,8 +1453,6 @@ private fun TranscribeSummaryWorkflowContent(
     val scope = rememberCoroutineScope()
     
     val whisperModels by db.modelDao().getModelsByType(ModelType.WHISPER).collectAsState(initial = emptyList())
-    val llmModels by db.modelDao().getModelsByType(ModelType.LLM).collectAsState(initial = emptyList())
-    
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { 
             onAudioUriChange(it)
@@ -1392,7 +1475,7 @@ private fun TranscribeSummaryWorkflowContent(
                 onAudioPathChange(tempFile.absolutePath)
                 android.util.Log.d("WorkflowsScreen", "File picked: ${uri.lastPathSegment}, saved to: ${tempFile.absolutePath}")
             } catch (e: Exception) {
-                onError("Failed to load audio: ${e.message}")
+                onError(context.getString(R.string.workflow_error_load_audio, e.message ?: context.getString(R.string.error_generic)))
             }
         }
     }
@@ -1416,18 +1499,18 @@ private fun TranscribeSummaryWorkflowContent(
                 OutlinedButton(onClick = { showTemplateMenu = true }) {
                     Icon(Icons.Default.Settings, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Templates (${templates.size})")
+                    Text(stringResource(R.string.workflow_templates_btn, templates.size))
                 }
                 DropdownMenu(expanded = showTemplateMenu, onDismissRequest = { showTemplateMenu = false }) {
                     if (templates.isEmpty()) {
-                        DropdownMenuItem(text = { Text("No saved templates", color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = {})
+                        DropdownMenuItem(text = { Text(stringResource(R.string.workflow_no_templates), color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = {})
                     } else {
                         templates.forEach { template ->
                             DropdownMenuItem(
                                 text = { 
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = if (template.name.isNotBlank()) template.name else "Template #${template.id}",
+                                            text = if (template.name.isNotBlank()) template.name else stringResource(R.string.workflow_template_fallback, template.id),
                                             modifier = Modifier.weight(1f)
                                         )
                                     }
@@ -1437,12 +1520,20 @@ private fun TranscribeSummaryWorkflowContent(
                                     try {
                                         val config = org.json.JSONObject(template.configJson)
                                         onWhisperModelChange(config.optString("whisperModel").takeIf { it.isNotEmpty() })
-                                        onLlmModelChange(config.optString("llmModel").takeIf { it.isNotEmpty() })
                                         onWhisperLanguageChange(config.optString("language", "auto"))
                                         onWhisperThreadsChange(config.optInt("whisperThreads", 4))
-                                        onLlmThreadsChange(config.optInt("llmThreads", 4))
+                                        onSummaryBackendChange(config.optString("summaryBackend", SettingsRepository.PDF_BACKEND_OLLAMA))
+                                        onSummaryOllamaUrlChange(config.optString("summaryOllamaUrl", summaryOllamaUrl))
+                                        onSummaryLlamaUrlChange(config.optString("summaryLlamaUrl", summaryLlamaUrl))
+                                        onSummaryOllamaModelChange(config.optString("summaryOllamaModel").takeIf { it.isNotEmpty() })
+                                        onSummaryTargetLanguageChange(config.optString("summaryTargetLanguage", summaryTargetLanguage))
                                         onTemperatureChange(config.optDouble("temperature", 0.7).toFloat())
                                         onContextChange(config.optInt("contextSize", 2048))
+                                        onMaxTokensChange(config.optInt("maxTokens", maxTokens))
+                                        onMergeContextChange(config.optInt("mergeContext", mergeContext))
+                                        onMergeMaxTokensChange(config.optInt("mergeMaxTokens", mergeMaxTokens))
+                                        onTimeoutMinutesChange(config.optInt("timeoutMinutes", timeoutMinutes))
+                                        onThinkingEnabledChange(config.optBoolean("thinkingEnabled", thinkingEnabled))
                                     } catch (e: Exception) {}
                                     showTemplateMenu = false
                                 },
@@ -1468,7 +1559,7 @@ private fun TranscribeSummaryWorkflowContent(
                     }
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Save current as template...", fontWeight = FontWeight.Bold) },
+                        text = { Text(stringResource(R.string.workflow_save_current_template), fontWeight = FontWeight.Bold) },
                         onClick = { showTemplateMenu = false; templateName = ""; showSaveDialog = true },
                         leadingIcon = { Icon(Icons.Default.Add, null) }
                     )
@@ -1484,12 +1575,12 @@ private fun TranscribeSummaryWorkflowContent(
                 
                 AlertDialog(
                     onDismissRequest = { showEditDialog = false; editingTemplate = null },
-                    title = { Text("Edit Template") },
+                    title = { Text(stringResource(R.string.workflow_edit_template)) },
                     text = {
                         OutlinedTextField(
                             value = editName,
                             onValueChange = { editName = it },
-                            label = { Text("Template Name") },
+                            label = { Text(stringResource(R.string.workflow_template_name)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1505,9 +1596,9 @@ private fun TranscribeSummaryWorkflowContent(
                                 showEditDialog = false
                                 editingTemplate = null
                             }
-                        }) { Text("Save") }
+                        }) { Text(stringResource(R.string.action_save)) }
                     },
-                    dismissButton = { TextButton(onClick = { showEditDialog = false; editingTemplate = null }) { Text("Cancel") } }
+                    dismissButton = { TextButton(onClick = { showEditDialog = false; editingTemplate = null }) { Text(stringResource(R.string.action_cancel)) } }
                 )
             } else {
                 showEditDialog = false
@@ -1520,12 +1611,12 @@ private fun TranscribeSummaryWorkflowContent(
             
             AlertDialog(
                 onDismissRequest = { showSaveDialog = false },
-                title = { Text("Save Template") },
+                title = { Text(stringResource(R.string.workflow_save_template)) },
                 text = {
                     OutlinedTextField(
                         value = saveName,
                         onValueChange = { saveName = it },
-                        label = { Text("Template Name") },
+                        label = { Text(stringResource(R.string.workflow_template_name)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1537,12 +1628,20 @@ private fun TranscribeSummaryWorkflowContent(
                             scope.launch {
                                 val configJson = org.json.JSONObject().apply {
                                     put("whisperModel", whisperModelPath ?: "")
-                                    put("llmModel", llmModelPath ?: "")
                                     put("language", whisperLanguage)
                                     put("whisperThreads", whisperThreads)
-                                    put("llmThreads", llmThreads)
+                                    put("summaryBackend", summaryBackend)
+                                    put("summaryOllamaUrl", summaryOllamaUrl)
+                                    put("summaryLlamaUrl", summaryLlamaUrl)
+                                    put("summaryOllamaModel", summaryOllamaModel ?: "")
+                                    put("summaryTargetLanguage", summaryTargetLanguage)
                                     put("temperature", temperature.toDouble())
                                     put("contextSize", contextSize)
+                                    put("maxTokens", maxTokens)
+                                    put("mergeContext", mergeContext)
+                                    put("mergeMaxTokens", mergeMaxTokens)
+                                    put("timeoutMinutes", timeoutMinutes)
+                                    put("thinkingEnabled", thinkingEnabled)
                                 }.toString()
                                 
                                 db.workflowTemplateDao().insert(
@@ -1555,26 +1654,26 @@ private fun TranscribeSummaryWorkflowContent(
                             }
                             showSaveDialog = false
                         }
-                    }) { Text("Save") }
+                    }) { Text(stringResource(R.string.action_save)) }
                 },
-                dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } }
+                dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text(stringResource(R.string.action_cancel)) } }
             )
         }
         
         // Step 1: Transcription Settings
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Step 1: Transcribe", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.workflow_step_transcribe), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 // Whisper model
                 var whisperExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = whisperExpanded, onExpandedChange = { whisperExpanded = it }) {
                     OutlinedTextField(
-                        value = whisperModelPath?.substringAfterLast("/") ?: "Select Whisper model",
+                        value = whisperModelPath?.substringAfterLast("/") ?: stringResource(R.string.workflow_select_whisper),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Whisper Model") },
+                        label = { Text(stringResource(R.string.workflow_whisper_model_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(whisperExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
@@ -1591,10 +1690,10 @@ private fun TranscribeSummaryWorkflowContent(
                 var languageExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = languageExpanded, onExpandedChange = { languageExpanded = it }) {
                     OutlinedTextField(
-                        value = WhisperLanguages.languages.find { it.first == whisperLanguage }?.second ?: "Auto-detect",
+                        value = WhisperLanguages.languages.find { it.first == whisperLanguage }?.second ?: stringResource(R.string.whisper_auto_detect),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Language") },
+                        label = { Text(stringResource(R.string.workflow_language_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(languageExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
@@ -1612,7 +1711,7 @@ private fun TranscribeSummaryWorkflowContent(
                     value = whisperThreads,
                     onValueChange = onWhisperThreadsChange,
                     valueRange = 1..16,
-                    label = "Whisper Threads"
+                    label = stringResource(R.string.label_threads)
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1621,19 +1720,21 @@ private fun TranscribeSummaryWorkflowContent(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { filePicker.launch("audio/*") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = !isRunning
                     ) {
-                        Icon(Icons.Default.List, null)
+                        Icon(Icons.AutoMirrored.Filled.List, null)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(audioUri?.lastPathSegment?.take(12) ?: "Audio/Video")
+                        Text(audioUri?.lastPathSegment?.take(12) ?: stringResource(R.string.workflow_audio_video_placeholder))
                     }
                     OutlinedButton(
                         onClick = onRecord,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = !isRunning
                     ) {
                         Icon(Icons.Default.Add, null)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Record")
+                        Text(stringResource(R.string.workflow_record_btn))
                     }
                 }
             }
@@ -1644,34 +1745,67 @@ private fun TranscribeSummaryWorkflowContent(
         // Step 2: Summary Settings
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Step 2: Summarize", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.workflow_step_summarize), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
-                
-                // LLM model
-                var llmExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(expanded = llmExpanded, onExpandedChange = { llmExpanded = it }) {
-                    OutlinedTextField(
-                        value = llmModelPath?.substringAfterLast("/") ?: "Select LLM model",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("LLM Model") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(llmExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(expanded = llmExpanded, onDismissRequest = { llmExpanded = false }) {
-                        llmModels.forEach { model ->
-                            DropdownMenuItem(text = { Text(model.filename) }, onClick = { onLlmModelChange(model.path); llmExpanded = false })
-                        }
+                RemoteSummaryBackendEditor(
+                    title = stringResource(R.string.video_summary_remote_settings_title),
+                    backend = summaryBackend,
+                    onBackendChange = onSummaryBackendChange,
+                    ollamaUrl = summaryOllamaUrl,
+                    onOllamaUrlChange = onSummaryOllamaUrlChange,
+                    llamaServerUrl = summaryLlamaUrl,
+                    onLlamaServerUrlChange = onSummaryLlamaUrlChange,
+                    ollamaModel = summaryOllamaModel,
+                    onOllamaModelSelected = { onSummaryOllamaModelChange(it) },
+                    llamaServerModelLabel = summaryLlamaServerModelLabel,
+                    llamaServerContextLabel = summaryLlamaServerContextLabel,
+                    llamaServerContextTokens = summaryLlamaServerContextTokens,
+                    requestedContextForWarning = mergeContext,
+                    fetchMetadata = {
+                        RemoteSummaryClientFactory.fromSnapshot(
+                            RemoteSummarySettingsSnapshot(
+                                backend = summaryBackend,
+                                ollamaUrl = summaryOllamaUrl,
+                                llamaServerUrl = summaryLlamaUrl,
+                                ollamaModel = summaryOllamaModel,
+                                thinkingEnabled = thinkingEnabled,
+                                llamaServerModelLabel = summaryLlamaServerModelLabel,
+                                llamaServerContextTokens = summaryLlamaServerContextTokens,
+                                llamaServerContextLabel = summaryLlamaServerContextLabel,
+                                chunkContext = contextSize,
+                                chunkMaxTokens = maxTokens,
+                                mergeContext = mergeContext,
+                                mergeMaxTokens = mergeMaxTokens,
+                                temperature = temperature,
+                                timeoutMinutes = timeoutMinutes,
+                                targetLanguage = summaryTargetLanguage,
+                                summaryPrompt = systemPrompt,
+                                mergePrompt = null
+                            )
+                        ).fetchMetadata()
+                    },
+                    onMetadataLoaded = { metadata ->
+                        settingsRepo.setWorkflowSummaryLlamaServerModelLabel(metadata.serverModelLabel)
+                        settingsRepo.setWorkflowSummaryLlamaServerContextTokens(metadata.serverContextTokens)
+                        settingsRepo.setWorkflowSummaryLlamaServerContextLabel(metadata.serverContextLabel)
                     }
-                }
-                
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
-                // System prompt
+
+                OutlinedTextField(
+                    value = summaryTargetLanguage,
+                    onValueChange = onSummaryTargetLanguageChange,
+                    label = { Text(stringResource(R.string.pdf_target_language_label)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedTextField(
                     value = systemPrompt,
                     onValueChange = onSystemPromptChange,
-                    label = { Text("System Prompt") },
+                    label = { Text(stringResource(R.string.workflow_system_prompt_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2
                 )
@@ -1683,29 +1817,66 @@ private fun TranscribeSummaryWorkflowContent(
                     value = temperature,
                     onValueChange = onTemperatureChange,
                     valueRange = 0f..2f,
-                    label = "Temperature",
+                    label = stringResource(R.string.label_temperature),
                     decimalPlaces = 2
                 )
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // LLM Threads
-                IntSliderWithInput(
-                    value = llmThreads,
-                    onValueChange = onLlmThreadsChange,
-                    valueRange = 1..16,
-                    label = "LLM Threads"
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
                 // Context size
-                IntSliderWithInput(
+                IntInputField(
                     value = contextSize,
                     onValueChange = onContextChange,
-                    valueRange = 512..32768,
-                    label = "Context Size"
+                    label = stringResource(R.string.label_context_size)
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                IntInputField(
+                    value = maxTokens,
+                    onValueChange = onMaxTokensChange,
+                    label = stringResource(R.string.pdf_max_tokens_label)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                IntInputField(
+                    value = mergeContext,
+                    onValueChange = onMergeContextChange,
+                    label = stringResource(R.string.pdf_merge_context_label)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                IntInputField(
+                    value = mergeMaxTokens,
+                    onValueChange = onMergeMaxTokensChange,
+                    label = stringResource(R.string.pdf_merge_max_tokens_label)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                IntSliderWithInput(
+                    value = timeoutMinutes,
+                    onValueChange = onTimeoutMinutesChange,
+                    valueRange = SettingsRepository.PDF_TIMEOUT_MINUTES_RANGE,
+                    label = stringResource(R.string.pdf_timeout_label),
+                    suffix = stringResource(R.string.pdf_minutes_suffix)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.pdf_thinking_toggle_title))
+                    Switch(
+                        checked = thinkingEnabled,
+                        onCheckedChange = onThinkingEnabledChange
+                    )
+                }
             }
         }
         
@@ -1718,6 +1889,14 @@ private fun TranscribeSummaryWorkflowContent(
                     Text(currentStep, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    if (totalChunks > 0) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.summary_progress_chunk, currentChunk.coerceAtLeast(1), totalChunks),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -1728,22 +1907,60 @@ private fun TranscribeSummaryWorkflowContent(
             }
         }
         
+        if (projectedChunkCount > 0) {
+            Text(
+                stringResource(R.string.video_summary_chunk_count, projectedChunkCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (cancelled && !isRunning && errorMessage == null) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f))) {
+                Text(
+                    stringResource(R.string.summary_cancelled_message),
+                    modifier = Modifier.padding(12.dp),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+
+        if (partialSummaries.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            com.example.llamadroid.ui.components.SummaryMarkdownCard(
+                title = stringResource(R.string.pdf_partial_results_title),
+                markdown = partialSummaries.mapIndexed { index, part ->
+                    "### ${context.getString(R.string.summary_partial_item_label, index + 1)}\n$part"
+                }.joinToString("\n\n")
+            )
+        }
+
         // Summary result
         if (summaryText.isNotBlank()) {
             Spacer(modifier = Modifier.height(12.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("📝 Summary", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(summaryText)
-                }
-            }
+            com.example.llamadroid.ui.components.SummaryMarkdownCard(
+                title = stringResource(R.string.workflow_summary_label),
+                markdown = summaryText
+            )
+        }
+
+        if (transcriptionText.isNotBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            com.example.llamadroid.ui.components.SummaryMarkdownCard(
+                title = stringResource(R.string.transcript_section_title),
+                markdown = transcriptionText
+            )
         }
         
         Spacer(modifier = Modifier.height(16.dp))
         
         // Run/Cancel buttons
-        val canRun = whisperModelPath != null && llmModelPath != null && audioUri != null && !isRunning
+        val backendReady = if (summaryBackend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+            summaryLlamaUrl.isNotBlank()
+        } else {
+            summaryOllamaUrl.isNotBlank() && !summaryOllamaModel.isNullOrBlank()
+        }
+        val canRun = whisperModelPath != null && audioUri != null && backendReady && !isRunning
         
         if (isRunning) {
             // Cancel button when running
@@ -1754,7 +1971,7 @@ private fun TranscribeSummaryWorkflowContent(
             ) {
                 Icon(Icons.Default.Close, null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         } else {
             // Run button when not running
@@ -1763,7 +1980,7 @@ private fun TranscribeSummaryWorkflowContent(
                 enabled = canRun,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("🚀 Run Workflow")
+                Text(stringResource(R.string.workflow_run_btn))
             }
         }
     }

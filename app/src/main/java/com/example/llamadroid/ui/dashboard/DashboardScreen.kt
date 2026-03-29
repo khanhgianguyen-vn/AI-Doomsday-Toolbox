@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.example.llamadroid.util.AIConstants
+import com.example.llamadroid.util.DebugLog
 import com.example.llamadroid.util.SystemMonitor
 import com.example.llamadroid.service.ServerState
 import androidx.compose.ui.platform.LocalContext
@@ -147,18 +149,18 @@ fun DashboardScreen(
                 
                 if (isRunning) {
                     val remoteAccess by settingsRepo.remoteAccess.collectAsState()
-                    val ips = remember { getDeviceIPs() }
+                    val ips = remember { getDeviceIPs(context) }
                     val port = (serverState as ServerState.Running).port
                     
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            "Running on port $port",
+                            stringResource(R.string.dashboard_running_port, port),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
                         if (remoteAccess && ips.isNotEmpty()) {
                             Text(
-                                "Connect from:",
+                                stringResource(R.string.dashboard_connect_from),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
                             )
@@ -171,7 +173,7 @@ fun DashboardScreen(
                             }
                         } else if (!remoteAccess) {
                             Text(
-                                "Local only (enable remote access in Settings)",
+                                stringResource(R.string.dashboard_local_only),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f)
                             )
@@ -258,7 +260,7 @@ fun DashboardScreen(
                                     // Model weights + 20% overhead + context buffer
                                     val estimatedRam = modelSizeGb * 1.2 + (contextSize / 1024.0) * 0.1
                                     Text(
-                                        "~${String.format("%.1f", estimatedRam)} GB RAM needed",
+                                        stringResource(R.string.dashboard_ram_needed, String.format("%.1f", estimatedRam)),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (estimatedRam > stats.freeRamGb) 
                                             MaterialTheme.colorScheme.error 
@@ -325,7 +327,7 @@ fun DashboardScreen(
         // QR Code Section (when server is running with LAN access enabled)
         val remoteAccess by settingsRepo.remoteAccess.collectAsState()
         if (isRunning && remoteAccess) {
-            val interfaces = remember { getDeviceIPs() }
+            val interfaces = remember { getDeviceIPs(context) }
             if (interfaces.isNotEmpty()) {
                 val port = (serverState as ServerState.Running).port
                 var expanded by remember { mutableStateOf(true) }  // Show QR codes by default
@@ -357,12 +359,12 @@ fun DashboardScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.primary)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("📲 Connect via QR", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(stringResource(R.string.dashboard_qr_connect), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             }
                             IconButton(onClick = { expanded = !expanded }) {
                                 Icon(
                                     if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = if (expanded) "Collapse" else "Expand"
+                                    contentDescription = if (expanded) stringResource(R.string.dashboard_qr_collapse) else stringResource(R.string.dashboard_qr_expand)
                                 )
                             }
                         }
@@ -387,7 +389,7 @@ fun DashboardScreen(
                                             qrBitmaps[ip]?.let { bitmap ->
                                                 Image(
                                                     bitmap = bitmap.asImageBitmap(),
-                                                    contentDescription = "QR for $ip",
+                                                    contentDescription = stringResource(R.string.dashboard_qr_for, ip),
                                                     modifier = Modifier.size(120.dp).padding(8.dp)
                                                 )
                                             } ?: Box(
@@ -490,7 +492,7 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("📂 File Server", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.dashboard_file_server), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (fileServerRunning) {
                         Box(
                             modifier = Modifier
@@ -508,9 +510,9 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Shared Folder", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.dashboard_shared_folder), style = MaterialTheme.typography.labelMedium)
                         Text(
-                            fileServerFolderUri?.lastPathSegment ?: "Not selected",
+                            fileServerFolderUri?.lastPathSegment ?: stringResource(R.string.file_server_not_selected),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
@@ -520,7 +522,7 @@ fun DashboardScreen(
                         onClick = { folderPicker.launch(null) },
                         enabled = !fileServerRunning
                     ) {
-                        Text("Browse")
+                        Text(stringResource(R.string.file_server_browse))
                     }
                 }
                 
@@ -548,7 +550,7 @@ fun DashboardScreen(
                         contentDescription = null
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (fileServerRunning) "Stop Server" else "Start Server (Port 9111)")
+                    Text(if (fileServerRunning) stringResource(R.string.dashboard_stop_server_btn) else stringResource(R.string.dashboard_start_server_port, AIConstants.Ports.FILE_SERVER))
                 }
                 
                 // QR codes when running
@@ -561,7 +563,7 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("📲 Scan to access files", fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.dashboard_scan_access_files), fontWeight = FontWeight.Medium)
                             Text(
                                 fileServerUrls.firstOrNull()?.second ?: "",
                                 style = MaterialTheme.typography.bodySmall,
@@ -597,7 +599,7 @@ fun DashboardScreen(
                                         fileServerQrBitmaps[ip]?.let { bitmap ->
                                             Image(
                                                 bitmap = bitmap.asImageBitmap(),
-                                                contentDescription = "QR for $ip",
+                                                contentDescription = stringResource(R.string.dashboard_qr_for, ip),
                                                 modifier = Modifier.size(120.dp).padding(8.dp)
                                             )
                                         } ?: Box(
@@ -644,13 +646,13 @@ fun DashboardScreen(
         val installedZims by db.zimDao().getAllZims().collectAsState(initial = emptyList())
         var kiwixQrExpanded by remember { mutableStateOf(false) }
         var kiwixQrBitmaps by remember { mutableStateOf<Map<String, Bitmap?>>(emptyMap()) }
-        val kiwixInterfaces = remember { getDeviceIPs() }
+        val kiwixInterfaces = remember { getDeviceIPs(context) }
         
         LaunchedEffect(kiwixRunning) {
             if (kiwixRunning) {
                 withContext(Dispatchers.Default) {
                     val bitmaps = kiwixInterfaces.associate { (ifName, ip) ->
-                        val url = "http://$ip:8888"
+                        val url = "http://$ip:${AIConstants.Ports.KIWIX}"
                         ip to generateQrCode(url, 200)
                     }
                     kiwixQrBitmaps = bitmaps
@@ -679,7 +681,7 @@ fun DashboardScreen(
                         tint = MaterialTheme.colorScheme.tertiary
                     )
                     Text(
-                        "📚 Kiwix Server",
+                        stringResource(R.string.kiwix_server),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                     Spacer(modifier = Modifier.weight(1f))
@@ -694,7 +696,7 @@ fun DashboardScreen(
                 }
                 
                 Text(
-                    "${installedZims.size} ZIM file(s) installed",
+                    stringResource(R.string.dashboard_zim_installed, installedZims.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -725,7 +727,7 @@ fun DashboardScreen(
                         contentDescription = null
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (kiwixRunning) "Stop Kiwix" else "Start Kiwix (Port 8888)")
+                    Text(if (kiwixRunning) stringResource(R.string.kiwix_stop) else stringResource(R.string.kiwix_start))
                 }
                 
                 // QR codes when running (always show - LAN always enabled)
@@ -737,11 +739,11 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("📲 Connect via QR", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.dashboard_connect_qr), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                         IconButton(onClick = { kiwixQrExpanded = !kiwixQrExpanded }) {
                             Icon(
                                 if (kiwixQrExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (kiwixQrExpanded) "Collapse" else "Expand"
+                                contentDescription = if (kiwixQrExpanded) stringResource(R.string.dashboard_qr_collapse) else stringResource(R.string.dashboard_qr_expand)
                             )
                         }
                     }
@@ -766,7 +768,7 @@ fun DashboardScreen(
                                         kiwixQrBitmaps[ip]?.let { bitmap ->
                                             Image(
                                                 bitmap = bitmap.asImageBitmap(),
-                                                contentDescription = "QR for $ip",
+                                                contentDescription = stringResource(R.string.dashboard_qr_for, ip),
                                                 modifier = Modifier.size(120.dp).padding(8.dp)
                                             )
                                         } ?: Box(
@@ -778,7 +780,7 @@ fun DashboardScreen(
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(ifName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
-                                    Text("$ip:8888", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("$ip:${AIConstants.Ports.KIWIX}", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
@@ -804,13 +806,13 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        "🌐 Distributed Inference",
+                        stringResource(R.string.dashboard_distributed_title),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                 }
                 
                 Text(
-                    "Connect multiple phones to run large models together",
+                    stringResource(R.string.dashboard_setup_distributed_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -822,7 +824,7 @@ fun DashboardScreen(
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Setup Distributed")
+                    Text(stringResource(R.string.dashboard_setup_distributed))
                 }
             }
         }
@@ -873,35 +875,35 @@ fun DashboardScreen(
                 ) {
                     Column {
                         Text(
-                            "${String.format("%.1f", stats.totalRamGb - stats.freeRamGb)} GB",
+                            stringResource(R.string.dashboard_ram_unit, String.format("%.1f", stats.totalRamGb - stats.freeRamGb)),
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.error
                         )
                         Text(
-                            "Used",
+                            stringResource(R.string.dashboard_ram_used),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            "${String.format("%.1f", stats.freeRamGb)} GB",
+                            stringResource(R.string.dashboard_ram_unit, String.format("%.1f", stats.freeRamGb)),
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            "Free",
+                            stringResource(R.string.dashboard_ram_free),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            "${String.format("%.1f", stats.totalRamGb)} GB",
+                            stringResource(R.string.dashboard_ram_unit, String.format("%.1f", stats.totalRamGb)),
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            "Total",
+                            stringResource(R.string.dashboard_ram_total),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -942,12 +944,12 @@ fun DashboardScreen(
                 // Content
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Kiwix Library",
+                        stringResource(R.string.dashboard_kiwix_library),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                     Text(
-                        if (installedZims.isEmpty()) "Offline Wikipedia & more"
-                        else "${installedZims.size} ZIM files installed",
+                        if (installedZims.isEmpty()) stringResource(R.string.dashboard_offline_wikipedia)
+                        else stringResource(R.string.dashboard_zim_installed, installedZims.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
                     )
@@ -1017,7 +1019,7 @@ fun DashboardScreen(
  * Get all IPv4 addresses from all network interfaces.
  * Returns list of (friendlyName, ipAddress) pairs.
  */
-private fun getDeviceIPs(): List<Pair<String, String>> {
+private fun getDeviceIPs(context: android.content.Context): List<Pair<String, String>> {
     val ips = mutableListOf<Pair<String, String>>()
     try {
         val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
@@ -1033,10 +1035,10 @@ private fun getDeviceIPs(): List<Pair<String, String>> {
                         // Skip link-local addresses (169.254.x.x)
                         if (!ip.startsWith("169.254")) {
                             val friendlyName = when {
-                                iface.name.startsWith("wlan") -> "WiFi"
-                                iface.name.startsWith("eth") -> "Ethernet"
-                                iface.name.startsWith("tun") -> "VPN"
-                                iface.name.startsWith("rmnet") -> "Mobile"
+                                iface.name.startsWith("wlan") -> context.getString(R.string.net_type_wifi)
+                                iface.name.startsWith("eth") -> context.getString(R.string.net_type_ethernet)
+                                iface.name.startsWith("tun") -> context.getString(R.string.net_type_vpn)
+                                iface.name.startsWith("rmnet") -> context.getString(R.string.net_type_mobile)
                                 else -> iface.name
                             }
                             ips.add(Pair(friendlyName, ip))

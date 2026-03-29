@@ -22,6 +22,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import androidx.navigation.NavController
+import com.example.llamadroid.ui.ai.applyKeyboardAwareInsetsFix
+import com.example.llamadroid.ui.ai.injectKeyboardViewportFix
 
 // Singleton WebView holder to persist across navigation
 object ChatWebViewHolder {
@@ -73,6 +75,7 @@ fun ChatScreen(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            applyKeyboardAwareInsetsFix()
 
             settings.apply {
                 javaScriptEnabled = true
@@ -105,6 +108,7 @@ fun ChatScreen(
             }
             
             override fun onPageFinished(view: WebView?, url: String?) {
+                view?.injectKeyboardViewportFix()
                 isLoading = false
                 ChatWebViewHolder.isLoaded = true
             }
@@ -244,7 +248,7 @@ fun ChatScreen(
             ) {
                 Icon(
                     if (showDropdown) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Options",
+                    contentDescription = stringResource(R.string.action_more),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.size(20.dp)
                 )

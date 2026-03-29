@@ -33,7 +33,7 @@ object WakeLockManager {
             
             refCount++
             if (refCount == 1) {
-                wakeLock?.acquire()  // No timeout - hold indefinitely for long AI tasks
+                wakeLock?.acquire()  // Infinite - long AI tasks need indefinite locks
                 DebugLog.log("[WakeLock] Acquired by $tag (refCount=$refCount)")
             } else {
                 DebugLog.log("[WakeLock] Ref increased by $tag (refCount=$refCount)")
@@ -79,4 +79,65 @@ object WakeLockManager {
      * Check if wake lock is currently held
      */
     fun isHeld(): Boolean = wakeLock?.isHeld == true
+    
+    // ============================================================================================
+    // WifiLock Management
+    // ============================================================================================
+    
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+    private var wifiRefCount = 0
+    private val wifiLockSync = Any()
+    
+    /**
+     * Acquire a high-performance WifiLock to prevent radio from sleeping.
+     * Essential for distributed inference where low latency is required.
+     */
+    fun acquireWifiLock(context: Context, tag: String = "Unknown") {
+        synchronized(wifiLockSync) {
+            if (wifiLock == null) {
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                
+                // Use WIFI_MODE_FULL_HIGH_PERF on Android 10+ (API 29+), deprecated but still best for this use case
+                // On newer APIs, this might need adjustment if battery optimizations are aggressive
+                wifiLock = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    wifiManager.createWifiLock(
+                        android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                        "LlamaDroid:AppWifiLock"
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    wifiManager.createWifiLock(
+                        android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                        "LlamaDroid:AppWifiLock"
+                    )
+                }
+                wifiLock?.setReferenceCounted(false)
+            }
+            
+            wifiRefCount++
+            if (wifiRefCount == 1) {
+                wifiLock?.acquire()
+                DebugLog.log("[WifiLock] Acquired by $tag")
+            } else {
+                DebugLog.log("[WifiLock] Ref increased by $tag (refCount=$wifiRefCount)")
+            }
+        }
+    }
+    
+    /**
+     * Release the WifiLock.
+     */
+    fun releaseWifiLock(tag: String = "Unknown") {
+        synchronized(wifiLockSync) {
+            if (wifiRefCount > 0) {
+                wifiRefCount--
+                DebugLog.log("[WifiLock] Released by $tag (refCount=$wifiRefCount)")
+                
+                if (wifiRefCount == 0 && wifiLock?.isHeld == true) {
+                    wifiLock?.release()
+                    DebugLog.log("[WifiLock] Actually released, no more refs")
+                }
+            }
+        }
+    }
 }

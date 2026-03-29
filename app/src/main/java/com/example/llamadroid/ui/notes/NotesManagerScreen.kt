@@ -29,6 +29,8 @@ import com.example.llamadroid.data.db.NoteEntity
 import com.example.llamadroid.data.db.NoteType
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
+import com.example.llamadroid.ui.ai.llama.MarkdownText
+import com.example.llamadroid.ui.components.markdownToPreview
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -95,12 +97,12 @@ fun NotesManagerScreen(navController: NavController) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                label = { Text("Search notes...") },
+                label = { Text(stringResource(R.string.notes_search_hint)) },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, "Clear")
+                            Icon(Icons.Default.Clear, stringResource(R.string.notes_clear_search))
                         }
                     }
                 },
@@ -118,7 +120,7 @@ fun NotesManagerScreen(navController: NavController) {
                 FilterChip(
                     selected = selectedFilter == null,
                     onClick = { selectedFilter = null },
-                    label = { Text("All") }
+                    label = { Text(stringResource(R.string.notes_all)) }
                 )
                 FilterChip(
                     selected = selectedFilter == NoteType.TRANSCRIPTION,
@@ -164,12 +166,12 @@ fun NotesManagerScreen(navController: NavController) {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "No notes yet",
+                            stringResource(R.string.notes_no_notes),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                         Text(
-                            "Create a note or transcribe audio to get started",
+                            stringResource(R.string.notes_empty_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
@@ -239,8 +241,8 @@ fun NotesManagerScreen(navController: NavController) {
                 showDeleteDialog = false
                 noteToDelete = null
             },
-            title = { Text("Delete Note?") },
-            text = { Text("Are you sure you want to delete \"${noteToDelete?.title}\"?") },
+            title = { Text(stringResource(R.string.notes_delete_title)) },
+            text = { Text(stringResource(R.string.notes_delete_confirm, noteToDelete?.title ?: "")) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -251,7 +253,7 @@ fun NotesManagerScreen(navController: NavController) {
                         }
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -259,7 +261,7 @@ fun NotesManagerScreen(navController: NavController) {
                     showDeleteDialog = false
                     noteToDelete = null
                 }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -328,20 +330,20 @@ private fun NoteCard(
                     // Audio indicator
                     if (note.audioPath != null) {
                         Spacer(modifier = Modifier.width(4.dp))
-                        Icon(Icons.Default.PlayArrow, "Has audio", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.PlayArrow, stringResource(R.string.notes_has_audio), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                 }
                 
                 // Actions
                 Row {
                     IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Edit, stringResource(R.string.action_edit), modifier = Modifier.size(18.dp))
                     }
                     IconButton(onClick = onCopy, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Share, "Copy", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Share, stringResource(R.string.action_copy), modifier = Modifier.size(18.dp))
                     }
                     IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Default.Delete, stringResource(R.string.action_delete), modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -359,7 +361,7 @@ private fun NoteCard(
             Spacer(modifier = Modifier.height(4.dp))
             
             Text(
-                note.content,
+                markdownToPreview(note.content),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
@@ -374,7 +376,7 @@ private fun NoteCard(
             ) {
                 note.sourceFile?.let {
                     Text(
-                        "Source: ${it.substringAfterLast("/")}",
+                        stringResource(R.string.notes_source_prefix, it.substringAfterLast("/")),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
@@ -402,7 +404,7 @@ private fun NoteEditDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxSize(0.95f),
-        title = { Text(if (note == null) "New Note" else "Edit Note") },
+        title = { Text(if (note == null) stringResource(R.string.notes_new_title) else stringResource(R.string.notes_edit_title)) },
         text = {
             Column(
                 modifier = Modifier
@@ -412,7 +414,7 @@ private fun NoteEditDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Title") },
+                    label = { Text(stringResource(R.string.notes_field_title)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -420,7 +422,7 @@ private fun NoteEditDialog(
                 OutlinedTextField(
                     value = content,
                     onValueChange = { content = it },
-                    label = { Text("Content") },
+                    label = { Text(stringResource(R.string.notes_field_content)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 300.dp),
@@ -433,12 +435,12 @@ private fun NoteEditDialog(
                 onClick = { onSave(title, content) },
                 enabled = title.isNotBlank()
             ) {
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )
@@ -456,7 +458,6 @@ private fun NoteFullScreenDialog(
     onCopy: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val context = LocalContext.current
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
     
     // Audio playback state
@@ -472,11 +473,11 @@ private fun NoteFullScreenDialog(
     
     // Type info
     val (emoji, typeName) = when (note.type) {
-        NoteType.TRANSCRIPTION -> "🎤" to "Transcription"
-        NoteType.PDF_SUMMARY -> "📄" to "PDF Summary"
-        NoteType.VIDEO_SUMMARY -> "🎬" to "Video Summary"
-        NoteType.WORKFLOW -> "⚙️" to "Workflow"
-        NoteType.MANUAL -> "📝" to "Note"
+        NoteType.TRANSCRIPTION -> "🎤" to stringResource(R.string.notes_type_transcription)
+        NoteType.PDF_SUMMARY -> "📄" to stringResource(R.string.notes_type_pdf_summary)
+        NoteType.VIDEO_SUMMARY -> "🎬" to stringResource(R.string.notes_type_video_summary)
+        NoteType.WORKFLOW -> "⚙️" to stringResource(R.string.notes_type_workflow)
+        NoteType.MANUAL -> "📝" to stringResource(R.string.notes_type_note)
     }
     
     AlertDialog(
@@ -495,27 +496,27 @@ private fun NoteFullScreenDialog(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header with actions only
                 TopAppBar(
-                    title = { Text("Note Details") },
+                    title = { Text(stringResource(R.string.notes_details_title)) },
                     navigationIcon = {
                         IconButton(onClick = { 
                             mediaPlayer?.release()
                             onDismiss() 
                         }) {
-                            Icon(Icons.Default.Close, "Close")
+                            Icon(Icons.Default.Close, stringResource(R.string.notes_details_close))
                         }
                     },
                     actions = {
                         IconButton(onClick = onEdit) {
-                            Icon(Icons.Default.Edit, "Edit")
+                            Icon(Icons.Default.Edit, stringResource(R.string.action_edit))
                         }
                         IconButton(onClick = onCopy) {
-                            Icon(Icons.Default.Share, "Copy")
+                            Icon(Icons.Default.Share, stringResource(R.string.action_copy))
                         }
                         IconButton(onClick = {
                             mediaPlayer?.release()
                             onDelete()
                         }) {
-                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Delete, stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 )
@@ -572,13 +573,13 @@ private fun NoteFullScreenDialog(
                             ) {
                                 Icon(
                                     if (isPlaying) Icons.Default.Close else Icons.Default.PlayArrow,
-                                    if (isPlaying) "Stop" else "Play",
+                                    if (isPlaying) stringResource(R.string.notes_audio_stop) else stringResource(R.string.notes_audio_play),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "🎵 Audio",
+                                "🎵 " + stringResource(R.string.notes_audio_label),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -596,7 +597,7 @@ private fun NoteFullScreenDialog(
                     // Source file info
                     note.sourceFile?.let {
                         Text(
-                            "Source: ${it.substringAfterLast("/")}",
+                            stringResource(R.string.notes_source_prefix, it.substringAfterLast("/")),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -604,13 +605,12 @@ private fun NoteFullScreenDialog(
                     }
                     
                     // Note content
-                    Text(
-                        note.content,
-                        style = MaterialTheme.typography.bodyMedium
+                    MarkdownText(
+                        text = note.content,
+                        textColor = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
         }
     }
 }
-

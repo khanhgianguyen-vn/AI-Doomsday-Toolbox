@@ -44,7 +44,11 @@ fun ModelManagerScreen(navController: NavController) {
     val viewModel = remember { ModelManagerViewModel(repo) }
     
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Installed", "Downloading", "Discover")
+    val tabs = listOf(
+        stringResource(R.string.models_tab_installed),
+        stringResource(R.string.models_tab_downloading),
+        stringResource(R.string.models_tab_discover)
+    )
     
     val progressMap by viewModel.downloadProgress.collectAsState()
     val activeDownloads = progressMap.filter { it.value < 1f }.size
@@ -64,14 +68,14 @@ fun ModelManagerScreen(navController: NavController) {
         // Header
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
-                "Models",
+                stringResource(R.string.nav_models),
                 style = MaterialTheme.typography.headlineLarge.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 32.sp
                 )
             )
             Text(
-                "Manage your AI models",
+                stringResource(R.string.ai_hub_subtitle), // "Manage your AI models" or similar
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -154,7 +158,7 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                         val sourceFile = File(model.path)
                         if (!sourceFile.exists()) {
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(context, "Source file not found", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.models_export_error_not_found), android.widget.Toast.LENGTH_SHORT).show()
                             }
                             return@launch
                         }
@@ -169,12 +173,12 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                                 }
                             }
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(context, "Exported: ${model.filename}", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.models_export_success, model.filename), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     } catch (e: Exception) {
                         kotlinx.coroutines.withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.models_export_failed, e.message), android.widget.Toast.LENGTH_SHORT).show()
                         }
                     } finally {
                         pendingExportModel = null
@@ -222,20 +226,20 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                 showImportDialog = false
                 pendingUri = null
             },
-            title = { Text("Import Model") },
+            title = { Text(stringResource(R.string.models_import)) },
             text = {
                 Column {
-                    Text("File: $pendingFilename", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.models_import_file_label, pendingFilename), style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     // Model type selection
-                    Text("Model Type:", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.models_import_type_label), style = MaterialTheme.typography.labelMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     val modelTypes = listOf(
-                        ModelType.LLM to "LLM (Language Model)",
-                        ModelType.EMBEDDING to "Embedding Model",
-                        ModelType.VISION_PROJECTOR to "Vision Projector (mmproj)"
+                        ModelType.LLM to stringResource(R.string.models_type_llm),
+                        ModelType.EMBEDDING to stringResource(R.string.models_type_embedding),
+                        ModelType.VISION_PROJECTOR to stringResource(R.string.models_type_vision_projector)
                     )
                     
                     modelTypes.forEach { (type, label) ->
@@ -261,7 +265,7 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                     // LLM capabilities (only shown for LLM type)
                     if (selectedModelType == ModelType.LLM) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("Capabilities:", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.models_import_caps_label), style = MaterialTheme.typography.labelMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -270,7 +274,7 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                                 onCheckedChange = { hasVisionSupport = it }
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Vision Support (VLM)")
+                            Text(stringResource(R.string.models_cap_vision))
                         }
                         
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -279,7 +283,7 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                                 onCheckedChange = { hasEmbeddingSupport = it }
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Embedding Model")
+                            Text(stringResource(R.string.models_cap_embedding))
                         }
                     }
                 }
@@ -322,7 +326,7 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                     hasVisionSupport = false
                     hasEmbeddingSupport = false
                 }) {
-                    Text("Import")
+                    Text(stringResource(R.string.models_import))
                 }
             },
             dismissButton = {
@@ -331,7 +335,7 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                     pendingUri = null
                     pendingFilename = ""
                 }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -391,12 +395,12 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "No models installed",
+                        stringResource(R.string.models_no_models),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "Go to Discover to download or tap + to import",
+                        stringResource(R.string.models_empty_installed_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -431,20 +435,20 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
             val db = remember { com.example.llamadroid.data.db.AppDatabase.getDatabase(context) }
             AlertDialog(
                 onDismissRequest = { showRenameDialog = false },
-                title = { Text("Rename Model") },
+                title = { Text(stringResource(R.string.models_rename_title)) },
                 text = {
                     Column {
                         OutlinedTextField(
                             value = newModelName,
                             onValueChange = { newModelName = it },
-                            label = { Text("New name") },
+                            label = { Text(stringResource(R.string.models_rename_label)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                         val extension = modelToRename!!.filename.substringAfterLast(".", "")
                         if (extension.isNotEmpty()) {
                             Text(
-                                "Extension: .$extension (will be kept)",
+                                stringResource(R.string.models_rename_extension_info, extension),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -473,23 +477,23 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                                                     newFilename = fullNewName,
                                                     newPath = newFile.absolutePath
                                                 )
-                                                android.widget.Toast.makeText(context, "Renamed to $fullNewName", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, context.getString(R.string.models_rename_success, fullNewName), android.widget.Toast.LENGTH_SHORT).show()
                                             } else {
-                                                android.widget.Toast.makeText(context, "Failed to rename file", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, context.getString(R.string.models_rename_failed), android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     } catch (e: Exception) {
-                                        android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, context.getString(R.string.models_error_toast, e.message ?: ""), android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             }
                             showRenameDialog = false
                             modelToRename = null
                         }
-                    ) { Text("Rename") }
+                    ) { Text(stringResource(R.string.models_rename_title)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
+                    TextButton(onClick = { showRenameDialog = false }) { Text(stringResource(R.string.action_cancel)) }
                 }
             )
         }
@@ -502,7 +506,7 @@ fun InstalledTab(viewModel: ModelManagerViewModel) {
                 .padding(16.dp),
             containerColor = MaterialTheme.colorScheme.primary
         ) {
-            Icon(Icons.Default.Add, contentDescription = "Import model")
+            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.models_import))
         }
     }
 }
@@ -630,7 +634,7 @@ private suspend fun importModelWithProgress(
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     android.widget.Toast.makeText(
                         context, 
-                        "Tip: Grant 'All files access' in Settings to use models without copying", 
+                        context.getString(R.string.models_tip_all_files), 
                         android.widget.Toast.LENGTH_LONG
                     ).show()
                 }
@@ -728,7 +732,7 @@ private suspend fun importModelWithProgress(
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 android.widget.Toast.makeText(
                     context, 
-                    "Model linked from external storage (no copy needed)", 
+                    context.getString(R.string.models_linked_success), 
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
             }
@@ -762,12 +766,12 @@ fun DownloadingTab(viewModel: ModelManagerViewModel) {
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "No active downloads",
+                    stringResource(R.string.models_no_downloads),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "Models will appear here while downloading",
+                    stringResource(R.string.models_downloading_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -821,7 +825,7 @@ fun DownloadingTab(viewModel: ModelManagerViewModel) {
                             ) {
                                 Icon(
                                     Icons.Default.Close,
-                                    contentDescription = "Cancel",
+                                    contentDescription = stringResource(R.string.action_cancel),
                                     tint = MaterialTheme.colorScheme.error
                                 )
                             }
@@ -875,19 +879,19 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
             },
             title = { 
                 Text(
-                    "Vision Model Detected",
+                    stringResource(R.string.models_vision_detected),
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Column {
                     Text(
-                        "This model supports vision capabilities (image input).",
+                        stringResource(R.string.models_vision_desc),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Would you like to download the vision projector file to enable this feature?",
+                        stringResource(R.string.models_vision_download_ask),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -926,12 +930,12 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                 Button(onClick = { viewModel.downloadVisionProjector() }) {
                     Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Download")
+                    Text(stringResource(R.string.action_download))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissVisionPrompt() }) {
-                    Text("Skip")
+                    Text(stringResource(R.string.action_skip))
                 }
             },
             shape = RoundedCornerShape(20.dp)
@@ -953,7 +957,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
             title = { 
                 Column {
                     Text(
-                        "Select Quantization",
+                        stringResource(R.string.models_select_quantization),
                         fontWeight = FontWeight.Bold
                     )
                     // Show vision support badge and mmproj checkbox
@@ -974,7 +978,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                "Vision Support",
+                                stringResource(R.string.models_vision_badge),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 fontWeight = FontWeight.Medium
@@ -992,7 +996,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "Download vision projector",
+                                    stringResource(R.string.models_download_vision),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 Text(
@@ -1050,7 +1054,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.clearSelection() }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
             shape = RoundedCornerShape(20.dp)
@@ -1077,7 +1081,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Search HuggingFace...") },
+                    placeholder = { Text(stringResource(R.string.models_search_hint)) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Transparent,
@@ -1088,7 +1092,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                     onClick = { viewModel.search(query, ModelType.LLM) },
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search")
+                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.models_search_hint))
                 }
             }
         }
@@ -1137,7 +1141,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                                 FilledTonalIconButton(
                                     onClick = { viewModel.selectRepoForDownload(hfModel.id) }
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = "Download")
+                                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.desc_download))
                                 }
                             }
                         }
@@ -1192,7 +1196,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                                     )
                                     Spacer(modifier = Modifier.width(2.dp))
                                     Text(
-                                        if (cachedVision == true) "Vision" else "Vision?",
+                                        if (cachedVision == true) stringResource(R.string.models_vision_badge) else "${stringResource(R.string.models_vision_badge)}?",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
@@ -1210,7 +1214,7 @@ fun DiscoverTab(viewModel: ModelManagerViewModel) {
                                     .clip(RoundedCornerShape(3.dp))
                             )
                             Text(
-                                "Downloading ${(progress!! * 100).toInt()}%",
+                                stringResource(R.string.whisper_downloading_progress, (progress!! * 100).toInt()),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -1272,12 +1276,12 @@ fun ModelCard(
             Row {
                 onRename?.let {
                     IconButton(onClick = it) {
-                        Icon(Icons.Default.Edit, "Rename", tint = MaterialTheme.colorScheme.secondary)
+                        Icon(Icons.Default.Edit, stringResource(R.string.models_rename_title), tint = MaterialTheme.colorScheme.secondary)
                     }
                 }
                 onExport?.let {
                     IconButton(onClick = it) {
-                        Icon(Icons.Default.Share, "Export", tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.Share, stringResource(R.string.action_share), tint = MaterialTheme.colorScheme.primary)
                     }
                 }
                 IconButton(onClick = onAction) {

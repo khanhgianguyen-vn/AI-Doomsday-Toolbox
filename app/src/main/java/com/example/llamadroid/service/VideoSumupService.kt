@@ -12,9 +12,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
+import com.example.llamadroid.R
 
 /**
  * Service to summarize video content using:
@@ -37,9 +36,70 @@ object VideoSumupService {
     
     private var currentJob: Job? = null
     private var currentProcess: Process? = null
+    private var currentRemoteClient: RemoteSummaryClient? = null
     private var isCancelled = false
     private var wakeLock: PowerManager.WakeLock? = null
     private var notificationTaskId: Int? = null
+
+    private fun stageProgressFraction(stage: VideoSumupState): Float {
+        return when (stage) {
+            VideoSumupState.Idle -> 0f
+            VideoSumupState.ExtractingAudio -> 0.15f
+            VideoSumupState.Transcribing -> 0.55f
+            VideoSumupState.Summarizing -> 0.85f
+            is VideoSumupState.Error -> 0f
+        }
+    }
+
+    private fun summaryProgressFraction(progress: RemoteSummaryProgress): Float {
+        return when (progress.phase) {
+            RemoteSummaryPhase.SINGLE_SUMMARY -> 0.95f
+            RemoteSummaryPhase.CHUNK_SUMMARY -> {
+                if (progress.totalChunks <= 0) 0.9f
+                else 0.85f + (progress.currentChunk.coerceAtLeast(1).toFloat() / progress.totalChunks.toFloat()) * 0.1f
+            }
+            RemoteSummaryPhase.MERGE_SUMMARY -> {
+                if (progress.mergeBatchCount <= 0) 0.97f
+                else 0.95f + (progress.mergeBatch.coerceAtLeast(1).toFloat() / progress.mergeBatchCount.toFloat()) * 0.04f
+            }
+        }.coerceIn(0f, 1f)
+    }
+
+    private fun updateToolPhase(
+        noteType: NoteType,
+        label: String,
+        progressFraction: Float
+    ) {
+        if (noteType == NoteType.WORKFLOW) {
+            WorkflowStateHolder.setStep(label)
+            WorkflowStateHolder.setProgress(progressFraction.coerceIn(0f, 1f))
+        } else {
+            VideoSummaryStateHolder.setProgress(label)
+            VideoSummaryStateHolder.setProgressFraction(progressFraction)
+        }
+    }
+
+    private fun summaryProgressLabel(context: Context, progress: RemoteSummaryProgress): String {
+        return when (progress.phase) {
+            RemoteSummaryPhase.SINGLE_SUMMARY -> context.getString(R.string.summary_progress_single)
+            RemoteSummaryPhase.CHUNK_SUMMARY -> context.getString(
+                R.string.summary_progress_chunk,
+                progress.currentChunk,
+                progress.totalChunks
+            )
+            RemoteSummaryPhase.MERGE_SUMMARY -> {
+                if (progress.mergeBatch > 0 && progress.mergeBatchCount > 0) {
+                    context.getString(
+                        R.string.summary_progress_merge_batch,
+                        progress.mergeBatch,
+                        progress.mergeBatchCount
+                    )
+                } else {
+                    context.getString(R.string.summary_progress_merge)
+                }
+            }
+        }
+    }
     
     fun startSummarization(
         context: Context,
@@ -59,11 +119,41 @@ object VideoSumupService {
         currentJob?.cancel()
         _result.value = null
         isCancelled = false
+        if (noteType == NoteType.WORKFLOW) {
+            WorkflowStateHolder.setCancelled(false)
+            WorkflowStateHolder.setError(null)
+            WorkflowStateHolder.setSummaryText("")
+            WorkflowStateHolder.setPartialSummaries(emptyList())
+            WorkflowStateHolder.setCurrentChunk(0)
+            WorkflowStateHolder.setTotalChunks(0)
+            WorkflowStateHolder.setProjectedChunkCount(0)
+            WorkflowStateHolder.setStep(context.getString(R.string.workflow_step_starting))
+            WorkflowStateHolder.setProgress(0.05f)
+            WorkflowStateHolder.setIsRunning(true)
+        } else {
+            VideoSummaryStateHolder.setCancelled(false)
+            VideoSummaryStateHolder.setError(null)
+            VideoSummaryStateHolder.setSummary("")
+            VideoSummaryStateHolder.setTranscript("")
+            VideoSummaryStateHolder.setPartialSummaries(emptyList())
+            VideoSummaryStateHolder.setCurrentChunk(0)
+            VideoSummaryStateHolder.setTotalChunks(0)
+            VideoSummaryStateHolder.setSelectedSourceName(videoFileName)
+            VideoSummaryStateHolder.setProgress(context.getString(R.string.workflow_step_starting))
+            VideoSummaryStateHolder.setProgressFraction(0.05f)
+            VideoSummaryStateHolder.setProjectedChunkCount(0)
+            VideoSummaryStateHolder.setIsRunning(true)
+        }
         
         // Start notification for workflow
         notificationTaskId = UnifiedNotificationManager.startTask(
             UnifiedNotificationManager.TaskType.TRANSCRIPTION,
-            "Transcribe+Summary: $videoFileName"
+            context.getString(R.string.video_sumup_notification_title, videoFileName)
+        )
+        RemoteSummaryProtection.acquire(
+            context,
+            context.getString(R.string.video_sumup_notification_title, videoFileName),
+            notificationTaskId
         )
         
         // Acquire wake lock
@@ -85,21 +175,23 @@ object VideoSumupService {
                 result.fold(
                     onSuccess = {
                         notificationTaskId?.let { id ->
-                            UnifiedNotificationManager.completeTask(id, "Summary ready!")
+                            UnifiedNotificationManager.completeTask(id, context.getString(R.string.video_sumup_notification_complete))
                         }
                     },
                     onFailure = { e ->
                         notificationTaskId?.let { id ->
-                            UnifiedNotificationManager.failTask(id, e.message ?: "Failed")
+                            UnifiedNotificationManager.failTask(id, e.message ?: context.getString(R.string.error_generic))
                         }
                     }
                 )
             } catch (e: Exception) {
                 notificationTaskId?.let { id ->
-                    UnifiedNotificationManager.failTask(id, e.message ?: "Error")
+                    UnifiedNotificationManager.failTask(id, e.message ?: context.getString(R.string.error_generic))
                 }
             } finally {
+                currentRemoteClient = null
                 releaseWakeLock()
+                RemoteSummaryProtection.release(context)
                 notificationTaskId = null
             }
         }
@@ -123,8 +215,13 @@ object VideoSumupService {
         try {
             // Step 1: Extract audio
             _state.value = VideoSumupState.ExtractingAudio
-            _progress.value = "Extracting audio..."
-            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.1f, "Extracting audio...") }
+            _progress.value = context.getString(R.string.video_sumup_extracting_audio)
+            updateToolPhase(
+                noteType = noteType,
+                label = context.getString(R.string.video_sumup_extracting_audio),
+                progressFraction = stageProgressFraction(VideoSumupState.ExtractingAudio)
+            )
+            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.1f, context.getString(R.string.video_sumup_extracting_audio)) }
             DebugLog.log("[VIDEO-SUMUP] Step 1: Extracting audio")
             
             val audioFile = File(context.cacheDir, "video_audio.wav")
@@ -137,8 +234,13 @@ object VideoSumupService {
             
             // Step 2: Transcribe
             _state.value = VideoSumupState.Transcribing
-            _progress.value = "Transcribing with Whisper..."
-            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.5f, "Transcribing...") }
+            _progress.value = context.getString(R.string.video_sumup_transcribing_whisper)
+            updateToolPhase(
+                noteType = noteType,
+                label = context.getString(R.string.video_sumup_transcribing_whisper),
+                progressFraction = stageProgressFraction(VideoSumupState.Transcribing)
+            )
+            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.5f, context.getString(R.string.video_sumup_transcribing)) }
             DebugLog.log("[VIDEO-SUMUP] Step 2: Transcribing")
             
             val transcriptResult = transcribe(context, audioFile.absolutePath, whisperModelPath, language, threads)
@@ -147,21 +249,45 @@ object VideoSumupService {
                 return@withContext Result.failure(transcriptResult.exceptionOrNull()!!)
             }
             val transcript = transcriptResult.getOrThrow()
+            if (noteType == NoteType.WORKFLOW) {
+                WorkflowStateHolder.setTranscriptionText(transcript)
+            } else {
+                VideoSummaryStateHolder.setTranscript(transcript)
+            }
             if (isCancelled) return@withContext Result.failure(Exception("Cancelled"))
             
             // Step 3: Summarize
             _state.value = VideoSumupState.Summarizing
-            _progress.value = "Summarizing with AI..."
-            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.9f, "Summarizing...") }
+            _progress.value = context.getString(R.string.video_sumup_summarizing_ai)
+            updateToolPhase(
+                noteType = noteType,
+                label = context.getString(R.string.video_sumup_summarizing_ai),
+                progressFraction = stageProgressFraction(VideoSumupState.Summarizing)
+            )
+            notificationTaskId?.let { id -> UnifiedNotificationManager.updateProgress(id, 0.9f, context.getString(R.string.video_sumup_summarizing)) }
             DebugLog.log("[VIDEO-SUMUP] Step 3: Summarizing (${transcript.length} chars)")
             
-            val summaryResult = summarize(context, llmModelPath, transcript, 
-                contextSize, threads, temperature, maxTokens)
+            val summaryResult = summarizeRemotely(
+                context = context,
+                transcript = transcript,
+                noteType = noteType
+            )
             if (summaryResult.isFailure) {
                 _state.value = VideoSumupState.Error(summaryResult.exceptionOrNull()?.message ?: "Summary failed")
                 return@withContext Result.failure(summaryResult.exceptionOrNull()!!)
             }
             val summary = summaryResult.getOrThrow()
+            if (noteType == NoteType.WORKFLOW) {
+                WorkflowStateHolder.setSummaryText(summary)
+                WorkflowStateHolder.setIsRunning(false)
+                WorkflowStateHolder.setProgress(1f)
+                WorkflowStateHolder.setStep(context.getString(R.string.video_sumup_complete))
+            } else {
+                VideoSummaryStateHolder.setSummary(summary)
+                VideoSummaryStateHolder.setIsRunning(false)
+                VideoSummaryStateHolder.setProgress(context.getString(R.string.video_sumup_complete))
+                VideoSummaryStateHolder.setProgressFraction(1f)
+            }
             
             // Cleanup and save
             audioFile.delete()
@@ -226,8 +352,18 @@ object VideoSumupService {
                     }
                     
                     db.noteDao().insert(NoteEntity(
-                        title = if (noteType == NoteType.WORKFLOW) "Transcription: $videoFileName" else "Video: $videoFileName",
-                        content = "## Summary\n\n$summary\n\n## Transcript\n\n$transcript",
+                        title = if (noteType == NoteType.WORKFLOW) {
+                            context.getString(R.string.workflow_note_title, videoFileName)
+                        } else {
+                            context.getString(R.string.video_sumup_note_title, videoFileName)
+                        },
+                        content = context.getString(
+                            R.string.summary_note_content,
+                            context.getString(R.string.summary_section_title),
+                            summary,
+                            context.getString(R.string.transcript_section_title),
+                            transcript
+                        ),
                         type = noteType,
                         sourceFile = videoFileName,
                         language = language,
@@ -235,7 +371,7 @@ object VideoSumupService {
                     ))
                     DebugLog.log("[VIDEO-SUMUP] Saved to Notes with audio: $permanentAudioPath")
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Summary saved!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.video_sumup_summary_saved), Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
                     DebugLog.log("[VIDEO-SUMUP] Save failed: ${e.message}")
@@ -243,11 +379,20 @@ object VideoSumupService {
             }
             
             _state.value = VideoSumupState.Idle
-            _progress.value = "Complete!"
+            _progress.value = context.getString(R.string.video_sumup_complete)
             Result.success(VideoSumupResult(transcript, summary))
         } catch (e: Exception) {
             DebugLog.log("[VIDEO-SUMUP] Error: ${e.message}")
             _state.value = VideoSumupState.Error(e.message ?: "Error")
+            if (noteType == NoteType.WORKFLOW) {
+                WorkflowStateHolder.setIsRunning(false)
+                WorkflowStateHolder.setError(e.message)
+                WorkflowStateHolder.setProgress(0f)
+            } else {
+                VideoSummaryStateHolder.setIsRunning(false)
+                VideoSummaryStateHolder.setError(e.message)
+                VideoSummaryStateHolder.setProgressFraction(0f)
+            }
             Result.failure(e)
         }
     }
@@ -310,342 +455,78 @@ object VideoSumupService {
         } catch (e: Exception) { Result.failure(e) }
     }
     
-    private fun summarize(context: Context, modelPath: String, transcript: String, 
-                          contextSize: Int, threads: Int, temperature: Float, maxTokens: Int): Result<String> {
-        return try {
-            val binaryRepo = com.example.llamadroid.data.binary.BinaryRepository(context)
-            val llama = binaryRepo.getLlamaCliBinary()
-            if (llama == null || !llama.exists()) return Result.failure(Exception("LLM not found"))
-            
-            // Limit transcript to avoid memory issues
-            val maxLen = 8000
-            val text = if (transcript.length > maxLen) transcript.take(maxLen) else transcript
-            
-            val prompt = "Summarize this:\n\n$text\n\nSummary:"
-            val outputFile = File(context.cacheDir, "video_sumup_output.txt")
-            outputFile.delete()
-            
-            // Flags to prevent interactive mode:
-            // -no-cnv: disable conversation mode
-            // --simple-io: disable colorful/interactive prompt output (prevents "> " spam)
-            // --log-disable: reduce log noise
-            val args = mutableListOf(
-                llama.absolutePath, 
-                "-m", modelPath,
-                "-p", prompt,
-                "-n", maxTokens.toString(),
-                "-c", contextSize.toString(),
-                "-t", threads.toString(),
-                "--temp", temperature.toString(),
-                "-no-cnv",
-                "--simple-io",
-                "--log-disable"
-            )
-            
-            // Add KV cache quantization flags if enabled
-            val settingsRepo = com.example.llamadroid.data.SettingsRepository(context)
-            if (settingsRepo.videoKvCacheEnabled.value) {
-                args.add("--cache-type-k")
-                args.add(settingsRepo.videoKvCacheTypeK.value)
-                args.add("--cache-type-v")
-                args.add(settingsRepo.videoKvCacheTypeV.value)
-                DebugLog.log("[VIDEO-SUMUP] KV cache enabled: K=${settingsRepo.videoKvCacheTypeK.value}, V=${settingsRepo.videoKvCacheTypeV.value}")
-            }
-            
-            // LOG THE FULL COMMAND
-            val fullCommand = args.mapIndexed { i, arg ->
-                if (i == 4 && arg.length > 100) "\"${arg.take(100)}...[${arg.length} chars]\"" else "\"$arg\""
-            }.joinToString(" ")
-            DebugLog.log("[VIDEO-SUMUP] FULL COMMAND: $fullCommand")
-            DebugLog.log("[VIDEO-SUMUP] Model exists: ${File(modelPath).exists()}, size: ${File(modelPath).length()} bytes")
-            
-            val pb = ProcessBuilder(args)
-            pb.directory(context.cacheDir)
-            pb.environment()["LD_LIBRARY_PATH"] = binaryRepo.getLibraryDir()
-            pb.environment()["HOME"] = context.cacheDir.absolutePath
-            pb.redirectOutput(outputFile)
-            pb.redirectErrorStream(true)
-            
-            DebugLog.log("[VIDEO-SUMUP] LLM: Starting...")
-            
-            val process = pb.start()
-            currentProcess = process
-            process.outputStream.close()
-            
-            // Wait with periodic monitoring for interactive mode spam
-            val startTime = System.currentTimeMillis()
-            var lastGoodSize = 0L
-            var spamDetected = false
-            var extractedGoodContent: String? = null  // Store good content when spam detected
-            
-            while (process.isAlive) {
-                val waitResult = process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
-                
-                if (waitResult) break
-                
-                val elapsed = (System.currentTimeMillis() - startTime) / 1000
-                
-                // Check for interactive mode spam (use try-catch to prevent crashes)
-                try {
-                    if (outputFile.exists()) {
-                        val currentSize = outputFile.length()
-                        
-                        if (currentSize - lastGoodSize > 1_000_000) {
-                            // Read only the LAST 1KB to check for spam (avoid OOM)
-                            val last1KB = java.io.RandomAccessFile(outputFile, "r").use { raf ->
-                                val readStart = maxOf(0L, currentSize - 1024)
-                                raf.seek(readStart)
-                                val buffer = ByteArray(minOf(1024, currentSize.toInt()))
-                                raf.read(buffer)
-                                String(buffer)
-                            }
-                            
-                            val promptCount = last1KB.windowed(2).count { it == "> " }
-                            
-                            if (promptCount > 50) {
-                                DebugLog.log("[VIDEO-SUMUP] LLM: Detected interactive mode spam! Stopping...")
-                                spamDetected = true
-                                
-                                // Read only the good portion BEFORE destroying process
-                                extractedGoodContent = java.io.RandomAccessFile(outputFile, "r").use { raf ->
-                                    val readSize = minOf(lastGoodSize.toInt(), 100_000)
-                                    val buffer = ByteArray(readSize)
-                                    raf.read(buffer)
-                                    String(buffer)
-                                }
-                                
-                                DebugLog.log("[VIDEO-SUMUP] LLM: Extracted ${extractedGoodContent.length} chars before spam")
-                                
-                                // Delete file immediately to prevent further corruption
-                                outputFile.delete()
-                                
-                                // Now kill the process
-                                process.destroyForcibly()
-                                break
-                            }
-                        }
-                        
-                        if (!spamDetected && currentSize < lastGoodSize + 500_000) {
-                            lastGoodSize = currentSize
-                        }
-                    }
-                } catch (e: Exception) {
-                    DebugLog.log("[VIDEO-SUMUP] LLM: Error checking for spam: ${e.message}")
-                }
-                
-                if (elapsed > 600) {
-                    DebugLog.log("[VIDEO-SUMUP] LLM: Timeout")
-                    process.destroyForcibly()
-                    return Result.failure(Exception("LLM timeout"))
-                }
-            }
-            
-            // Wait for process to fully terminate if we killed it
-            if (spamDetected) {
-                try {
-                    process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-                } catch (_: Exception) {}
-            }
-            
-            val totalTime = (System.currentTimeMillis() - startTime) / 1000
-            DebugLog.log("[VIDEO-SUMUP] LLM: Completed after ${totalTime}s (spam=$spamDetected)")
-            
-            // Use extracted content if spam was detected, otherwise read from file
-            val output = if (spamDetected && extractedGoodContent != null) {
-                DebugLog.log("[VIDEO-SUMUP] LLM: Using extracted content: ${extractedGoodContent.length} chars")
-                extractedGoodContent
+    private suspend fun summarizeRemotely(
+        context: Context,
+        transcript: String,
+        noteType: NoteType
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val settingsRepo = SettingsRepository(context)
+            val snapshot = if (noteType == NoteType.WORKFLOW) {
+                settingsRepo.workflowSummarySettings.snapshot()
             } else {
-                val fileContent = if (outputFile.exists()) outputFile.readText() else ""
-                outputFile.delete()
-                DebugLog.log("[VIDEO-SUMUP] LLM: Read from file: ${fileContent.length} chars")
-                fileContent
+                settingsRepo.videoSummarySettings.snapshot()
             }
-            
-            if (output.length < 500) {
-                DebugLog.log("[VIDEO-SUMUP] LLM: Full=$output")
+            val client = RemoteSummaryClientFactory.fromSnapshot(snapshot)
+            currentRemoteClient = client
+            val orchestrator = RemoteSummaryOrchestrator(client)
+
+            if (snapshot.backend == SettingsRepository.PDF_BACKEND_OLLAMA && snapshot.ollamaModel.isNullOrBlank()) {
+                throw IllegalStateException(context.getString(R.string.pdf_error_missing_ollama_model))
             }
-            
-            if (!spamDetected && output.isBlank()) {
-                return Result.failure(Exception("LLM failed - empty output"))
-            }
-            
-            val cleaned = cleanLlamaOutput(output)
-            if (cleaned.isBlank()) {
-                return Result.failure(Exception("No summary after cleaning"))
-            }
-            
-            Result.success(cleaned)
-        } catch (e: Exception) { 
-            DebugLog.log("[VIDEO-SUMUP] LLM error: ${e.message}")
-            Result.failure(e) 
-        }
-    }
-    
-    private fun cleanLlamaOutput(output: String): String {
-        // The output contains:
-        // 1. llama-cli warnings/errors
-        // 2. ASCII art banner
-        // 3. Model info (build, model, modalities)
-        // 4. Available commands
-        // 5. Echoed prompt (lines starting with "> ") - may end with "(truncated)"
-        // 6. ACTUAL RESPONSE (what we want)
-        // 7. Performance stats
-        
-        // Strategy 0: If output contains "(truncated)", the response starts right after it
-        val truncatedIndex = output.indexOf("(truncated)")
-        if (truncatedIndex >= 0) {
-            val afterTruncated = output.substring(truncatedIndex + "(truncated)".length).trimStart()
-            
-            val endMarkers = listOf(
-                "common_perf_print:", "llama_perf_", "llama_memory_breakdown",
-                "sampling time =", "ms per token", "tokens per second",
-                "Exiting...", "\n> \n"
+
+            val summaryPrompt = snapshot.summaryPrompt ?: SettingsRepository.DEFAULT_TRANSCRIPT_SUMMARY_PROMPT
+            val mergePrompt = snapshot.mergePrompt ?: SettingsRepository.DEFAULT_TRANSCRIPT_MERGE_PROMPT
+
+            val estimate = orchestrator.estimateChunkPlan(
+                summaryPrompt = summaryPrompt,
+                text = transcript,
+                chunkContext = snapshot.chunkContext,
+                chunkMaxTokens = snapshot.chunkMaxTokens,
+                targetLanguage = snapshot.targetLanguage
             )
-            var responseEnd = afterTruncated.length
-            for (marker in endMarkers) {
-                val markerIdx = afterTruncated.indexOf(marker)
-                if (markerIdx > 0) {
-                    responseEnd = minOf(responseEnd, markerIdx)
+            if (noteType == NoteType.WORKFLOW) {
+                WorkflowStateHolder.setProjectedChunkCount(estimate.chunkCount)
+            } else {
+                VideoSummaryStateHolder.setProjectedChunkCount(estimate.chunkCount)
+            }
+
+            val execution = orchestrator.summarize(
+                sourceText = transcript,
+                summaryPrompt = summaryPrompt,
+                mergePrompt = mergePrompt,
+                chunkContext = snapshot.chunkContext,
+                chunkMaxTokens = snapshot.chunkMaxTokens,
+                mergeContext = snapshot.mergeContext,
+                mergeMaxTokens = snapshot.mergeMaxTokens,
+                temperature = snapshot.temperature,
+                thinkingEnabled = snapshot.thinkingEnabled,
+                targetLanguage = snapshot.targetLanguage,
+                isCancelled = { isCancelled },
+                onProgress = { progress ->
+                    val label = summaryProgressLabel(context, progress)
+                _progress.value = label
+                if (noteType == NoteType.WORKFLOW) {
+                    WorkflowStateHolder.setStep(label)
+                    WorkflowStateHolder.setProgress(summaryProgressFraction(progress))
+                    WorkflowStateHolder.setCurrentChunk(progress.currentChunk)
+                    WorkflowStateHolder.setTotalChunks(progress.totalChunks)
+                    WorkflowStateHolder.setPartialSummaries(progress.partialSummaries)
+                } else {
+                    VideoSummaryStateHolder.setProgress(label)
+                    VideoSummaryStateHolder.setProgressFraction(summaryProgressFraction(progress))
+                    VideoSummaryStateHolder.setCurrentChunk(progress.currentChunk)
+                    VideoSummaryStateHolder.setTotalChunks(progress.totalChunks)
+                    VideoSummaryStateHolder.setPartialSummaries(progress.partialSummaries)
                 }
             }
-            
-            val result = afterTruncated.substring(0, responseEnd).trim()
-            DebugLog.log("[VIDEO-SUMUP] Extracted after (truncated): ${result.length} chars")
-            if (result.isNotBlank()) {
-                return result
-            }
-        }
-        
-        val lines = output.lines()
-        var responseStartIndex = -1
-        var responseEndIndex = lines.size
-        
-        // Strategy 1: Find where the echoed prompt ends
-        var lastPromptEchoLine = -1
-        for ((index, line) in lines.withIndex()) {
-            if (line.trimStart().startsWith("> ") || line.trimStart().startsWith(">")) {
-                lastPromptEchoLine = index
-            }
-        }
-        
-        if (lastPromptEchoLine >= 0) {
-            responseStartIndex = lastPromptEchoLine + 1
-        }
-        
-        // Strategy 2: Look for common response starters
-        if (responseStartIndex < 0) {
-            val responseStarters = listOf(
-                "Here's", "Here is", "Summary", "**Summary", "## Summary",
-                "This", "The ", "Based on", "I've", "I have"
             )
-            for ((index, line) in lines.withIndex()) {
-                val trimmed = line.trim()
-                if (responseStarters.any { trimmed.startsWith(it) }) {
-                    responseStartIndex = index
-                    break
-                }
+
+            if (execution.cancelled) {
+                throw CancellationException("Cancelled")
             }
+            execution.summary ?: throw IllegalStateException(execution.errorMessage ?: "Summary failed")
         }
-        
-        // Strategy 3: Skip known metadata
-        if (responseStartIndex < 0) {
-            val metadataMarkers = listOf(
-                "--no-conversation", "please use", "Loading model",
-                "▄", "▀", "██", "build", "model", "modalities",
-                "available commands", "/exit", "/regen", "/clear", "/read"
-            )
-            for ((index, line) in lines.withIndex()) {
-                val isMetadata = metadataMarkers.any { line.contains(it) } || 
-                                 line.isBlank() ||
-                                 line.trim().length < 3
-                if (!isMetadata) {
-                    responseStartIndex = index
-                    break
-                }
-            }
-        }
-        
-        // Find the end
-        val endMarkers = listOf(
-            "common_perf_print:", "llama_perf_", "llama_memory_breakdown",
-            "sampling time =", "ms per token", "tokens per second",
-            "Exiting...", "> \n"
-        )
-        
-        for ((index, line) in lines.withIndex()) {
-            if (index > responseStartIndex) {
-                for (marker in endMarkers) {
-                    if (line.contains(marker)) {
-                        responseEndIndex = minOf(responseEndIndex, index)
-                        break
-                    }
-                }
-            }
-        }
-        
-        // Trim trailing empty lines
-        while (responseEndIndex > responseStartIndex && 
-               (lines.getOrNull(responseEndIndex - 1)?.isBlank() == true ||
-                lines.getOrNull(responseEndIndex - 1)?.trim() == ">")) {
-            responseEndIndex--
-        }
-        
-        if (responseStartIndex >= 0 && responseStartIndex < responseEndIndex) {
-            val responseLines = lines.subList(responseStartIndex, responseEndIndex)
-            
-            val cleanedLines = responseLines.filter { line ->
-                val trimmed = line.trim()
-                !trimmed.startsWith("llama_") &&
-                !trimmed.startsWith("ggml_") &&
-                !trimmed.startsWith("common_") &&
-                !trimmed.startsWith("main:") &&
-                !trimmed.startsWith("build:") &&
-                !trimmed.startsWith("model:") &&
-                !trimmed.startsWith("modalities:") &&
-                !trimmed.startsWith("> ") &&
-                !trimmed.startsWith("available commands") &&
-                !trimmed.startsWith("/exit") &&
-                !trimmed.startsWith("/regen") &&
-                !trimmed.contains("tokens per second") &&
-                !trimmed.contains("ms per token") &&
-                !trimmed.all { it == '▄' || it == '▀' || it == '█' || it == ' ' }
-            }
-            
-            val result = cleanedLines.joinToString("\n").trim()
-            DebugLog.log("[VIDEO-SUMUP] Cleaned output: startIdx=$responseStartIndex, endIdx=$responseEndIndex, resultChars=${result.length}")
-            return result
-        }
-        
-        return fallbackClean(output)
-    }
-    
-    private fun fallbackClean(output: String): String {
-        val patterns = listOf(
-            Regex("--no-conversation[^\\n]*\\n"),
-            Regex("please use[^\\n]*\\n"),
-            Regex("Loading model[^\\n]*\\n"),
-            Regex("[▄▀█\\s]+\\n"),
-            Regex("build\\s*:[^\\n]*\\n"),
-            Regex("model\\s*:[^\\n]*\\n"),
-            Regex("modalities\\s*:[^\\n]*\\n"),
-            Regex("available commands:[^\\n]*\\n"),
-            Regex("/exit[^\\n]*\\n"),
-            Regex("/regen[^\\n]*\\n"),
-            Regex("/clear[^\\n]*\\n"),
-            Regex("/read[^\\n]*\\n"),
-            Regex("> [^\\n]*\\n"),
-            Regex("llama_[^\\n]*\\n"),
-            Regex("ggml_[^\\n]*\\n"),
-            Regex("common_[^\\n]*\\n"),
-            Regex("Exiting[^\\n]*\\n")
-        )
-        
-        var result = output
-        for (pattern in patterns) {
-            result = result.replace(pattern, "")
-        }
-        
-        return result.trim()
     }
     
     private fun releaseWakeLock() {
@@ -658,11 +539,19 @@ object VideoSumupService {
     
     fun cancel() {
         isCancelled = true
+        currentRemoteClient?.cancelActiveCall()
         currentProcess?.destroyForcibly()
         currentJob?.cancel()
         _state.value = VideoSumupState.Idle
         _progress.value = ""
+        VideoSummaryStateHolder.setIsRunning(false)
+        VideoSummaryStateHolder.setProgressFraction(0f)
+        VideoSummaryStateHolder.setCancelled(true)
+        WorkflowStateHolder.setIsRunning(false)
+        WorkflowStateHolder.setProgress(0f)
+        WorkflowStateHolder.setCancelled(true)
         releaseWakeLock()
+        RemoteSummaryProtection.release(com.example.llamadroid.LlamaApplication.instance)
     }
     
     fun clearResult() { _result.value = null }

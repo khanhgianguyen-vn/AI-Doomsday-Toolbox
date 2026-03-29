@@ -1,6 +1,7 @@
 package com.example.llamadroid.ui.settings
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,8 @@ import androidx.navigation.NavController
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
+import com.example.llamadroid.data.db.DatabaseBackupManager
+import kotlinx.coroutines.launch
 
 /**
  * General Settings - Output folder, Theme, Language
@@ -73,31 +76,31 @@ fun GeneralSettingsScreen(navController: NavController) {
                             Text("📂", style = MaterialTheme.typography.headlineSmall)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Output Folder",
+                                stringResource(R.string.general_output_folder),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            outputFolderUri ?: "Default (app internal storage)",
+                            outputFolderUri ?: stringResource(R.string.general_output_default),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { folderPicker.launch(null) }) {
-                                Text("Change")
+                                Text(stringResource(R.string.action_change))
                             }
                             if (outputFolderUri != null) {
                                 TextButton(onClick = { settingsRepo.setOutputFolderUri(null) }) {
-                                    Text("Reset")
+                                    Text(stringResource(R.string.action_reset))
                                 }
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Used for images, transcriptions, and upscaled videos",
+                            stringResource(R.string.general_output_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
@@ -119,19 +122,19 @@ fun GeneralSettingsScreen(navController: NavController) {
                             Text("🎨", style = MaterialTheme.typography.headlineSmall)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Theme",
+                                stringResource(R.string.general_theme),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "System default (follows device theme)",
+                            stringResource(R.string.general_theme_system),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "Theme customization coming soon",
+                            stringResource(R.string.general_theme_soon),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
@@ -145,11 +148,11 @@ fun GeneralSettingsScreen(navController: NavController) {
                 var expanded by remember { mutableStateOf(false) }
                 
                 val languages = listOf(
-                    "system" to "System Default",
-                    "en" to "English",
-                    "es" to "Español"
+                    "system" to stringResource(R.string.general_language_system),
+                    "en" to stringResource(R.string.general_language_en),
+                    "es" to stringResource(R.string.general_language_es)
                 )
-                val currentLanguageName = languages.find { it.first == selectedLanguage }?.second ?: "System Default"
+                val currentLanguageName = languages.find { it.first == selectedLanguage }?.second ?: stringResource(R.string.general_language_system)
                 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -160,7 +163,7 @@ fun GeneralSettingsScreen(navController: NavController) {
                             Text("🌐", style = MaterialTheme.typography.headlineSmall)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Language",
+                                stringResource(R.string.general_language),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -203,7 +206,7 @@ fun GeneralSettingsScreen(navController: NavController) {
                         
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "App will restart to apply language change",
+                            stringResource(R.string.general_language_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
@@ -234,7 +237,7 @@ fun GeneralSettingsScreen(navController: NavController) {
                             Text("🔋", style = MaterialTheme.typography.headlineSmall)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Battery Optimization",
+                                stringResource(R.string.general_battery),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -242,9 +245,9 @@ fun GeneralSettingsScreen(navController: NavController) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             if (isIgnoringBatteryOptimizations) 
-                                "Unrestricted - AI tasks continue when screen is off"
+                                stringResource(R.string.general_battery_unrestricted)
                             else 
-                                "Restricted - AI tasks may pause when screen is off",
+                                stringResource(R.string.general_battery_restricted),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -263,16 +266,16 @@ fun GeneralSettingsScreen(navController: NavController) {
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Allow Unrestricted Battery")
+                                Text(stringResource(R.string.general_battery_allow))
                             }
                             Text(
-                                "Required for image/video AI processing to continue in background",
+                                stringResource(R.string.general_battery_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         } else {
                             Text(
-                                "✓ App can run AI tasks without interruption",
+                                stringResource(R.string.general_battery_ok),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -281,7 +284,7 @@ fun GeneralSettingsScreen(navController: NavController) {
                         // Always show device-specific help
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "⚠️ Some device manufacturers add extra battery restrictions that may still pause AI tasks.",
+                            stringResource(R.string.general_battery_warning),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         )
@@ -294,10 +297,163 @@ fun GeneralSettingsScreen(navController: NavController) {
                             contentPadding = PaddingValues(0.dp)
                         ) {
                             Text(
-                                "📱 Device-specific fix → dontkillmyapp.com",
+                                stringResource(R.string.general_battery_fix_link),
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
+                    }
+                }
+            }
+
+            // Database Backup / Restore
+            item {
+                val scope = rememberCoroutineScope()
+                var isBackingUp by remember { mutableStateOf(false) }
+                var isRestoring by remember { mutableStateOf(false) }
+                var showRestoreConfirm by remember { mutableStateOf(false) }
+                var pendingRestoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+                // SAF file creator for backup
+                val backupFilePicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/zip")
+                ) { uri ->
+                    uri?.let {
+                        isBackingUp = true
+                        scope.launch {
+                            val result = DatabaseBackupManager.createBackup(context, it)
+                            isBackingUp = false
+                            result.onSuccess {
+                                Toast.makeText(context, context.getString(R.string.backup_success), Toast.LENGTH_LONG).show()
+                            }.onFailure { e ->
+                                Toast.makeText(context, context.getString(R.string.backup_error, e.message), Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
+
+                // SAF file picker for restore
+                val restoreFilePicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument()
+                ) { uri ->
+                    uri?.let {
+                        pendingRestoreUri = it
+                        showRestoreConfirm = true
+                    }
+                }
+
+                // Restore confirmation dialog
+                if (showRestoreConfirm && pendingRestoreUri != null) {
+                    AlertDialog(
+                        onDismissRequest = { showRestoreConfirm = false; pendingRestoreUri = null },
+                        title = { Text(stringResource(R.string.backup_restore_confirm_title)) },
+                        text = { Text(stringResource(R.string.backup_restore_confirm_msg)) },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showRestoreConfirm = false
+                                    val uri = pendingRestoreUri ?: return@Button
+                                    pendingRestoreUri = null
+                                    isRestoring = true
+                                    scope.launch {
+                                        val result = DatabaseBackupManager.restoreBackup(context, uri)
+                                        isRestoring = false
+                                        result.onSuccess {
+                                            Toast.makeText(context, context.getString(R.string.backup_restore_success), Toast.LENGTH_LONG).show()
+                                            // Restart the app so Room picks up the new DB files
+                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                val pm = context.packageManager
+                                                val intent = pm.getLaunchIntentForPackage(context.packageName)
+                                                intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                context.startActivity(intent)
+                                                Runtime.getRuntime().exit(0)
+                                            }, 1500)
+                                        }.onFailure { e ->
+                                            Toast.makeText(context, context.getString(R.string.backup_restore_error, e.message), Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text(stringResource(R.string.backup_restore_confirm_btn))
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showRestoreConfirm = false; pendingRestoreUri = null }) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        }
+                    )
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("💾", style = MaterialTheme.typography.headlineSmall)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    stringResource(R.string.backup_section_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    stringResource(R.string.backup_section_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    backupFilePicker.launch(DatabaseBackupManager.generateBackupFilename())
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = !isBackingUp && !isRestoring
+                            ) {
+                                if (isBackingUp) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(if (isBackingUp) stringResource(R.string.backup_creating) else stringResource(R.string.backup_create_btn))
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    restoreFilePicker.launch(arrayOf("application/zip"))
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = !isBackingUp && !isRestoring
+                            ) {
+                                if (isRestoring) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(if (isRestoring) stringResource(R.string.backup_restoring) else stringResource(R.string.backup_restore_btn))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.backup_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
                     }
                 }
             }
@@ -323,7 +479,7 @@ fun GeneralSettingsScreen(navController: NavController) {
                             Text("📁", style = MaterialTheme.typography.headlineSmall)
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "All Files Access",
+                                stringResource(R.string.general_all_files_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -331,9 +487,9 @@ fun GeneralSettingsScreen(navController: NavController) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             if (hasAllFilesAccess) 
-                                "Enabled - Use models directly from SD card/Downloads"
+                                stringResource(R.string.general_all_files_enabled)
                             else 
-                                "Disabled - Models will be copied to app storage",
+                                stringResource(R.string.general_all_files_disabled),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -349,16 +505,16 @@ fun GeneralSettingsScreen(navController: NavController) {
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Grant All Files Access")
+                                Text(stringResource(R.string.general_all_files_grant_btn))
                             }
                             Text(
-                                "Required for using large models without copying them",
+                                stringResource(R.string.general_all_files_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         } else {
                             Text(
-                                "✓ Models can be used directly from external storage",
+                                stringResource(R.string.general_all_files_ok),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )

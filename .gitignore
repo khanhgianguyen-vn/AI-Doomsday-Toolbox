@@ -70,5 +70,20 @@ icon/*.psd
 icon/*.ai
 
 # Sync files
-.sync_*
-.nextcloudsync.log
+.sync*
+.nextcloudsync*
+
+# Build logs
+build_log*.txt
+
+# R history
+.Rhistory*
+
+# Local tooling/workspace files
+.codex
+.codex/
+.vscode/
+.gradle-home/
+
+# Local docs not intended for GitHub
+docs/

@@ -24,6 +24,8 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 
 /**
  * Main entry point for distributed inference feature.
@@ -37,10 +39,10 @@ fun DistributedScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Distributed Inference") },
+                title = { Text(stringResource(R.string.dist_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.kiwix_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -67,13 +69,13 @@ fun DistributedScreen(navController: NavController) {
             )
             
             Text(
-                text = "🌐 Distributed Inference",
+                text = stringResource(R.string.dist_header_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
             
             Text(
-                text = "Connect multiple phones to run large AI models together!\n\nEach device contributes RAM to load different layers of the model.",
+                text = stringResource(R.string.dist_header_desc),
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -84,18 +86,18 @@ fun DistributedScreen(navController: NavController) {
             // Master Mode Card
             RoleCard(
                 emoji = "👑",
-                title = "Be the MASTER",
-                description = "Host the model file and coordinate inference across connected workers.",
-                buttonText = "Configure Master",
+                title = stringResource(R.string.dist_role_master_title),
+                description = stringResource(R.string.dist_role_master_desc),
+                buttonText = stringResource(R.string.dist_role_master_btn),
                 onClick = { navController.navigate(Screen.MasterMode.route) }
             )
             
             // Worker Mode Card
             RoleCard(
                 emoji = "🔗",
-                title = "Be a WORKER",
-                description = "Help process model layers for a master device. Choose how much RAM to share.",
-                buttonText = "Start Worker",
+                title = stringResource(R.string.dist_role_worker_title),
+                description = stringResource(R.string.dist_role_worker_desc),
+                buttonText = stringResource(R.string.dist_role_worker_btn),
                 onClick = { navController.navigate(Screen.WorkerMode.route) }
             )
             
@@ -118,7 +120,7 @@ fun DistributedScreen(navController: NavController) {
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "All devices must be on the same WiFi network. Performance depends on network speed.",
+                        text = stringResource(R.string.dist_wifi_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
@@ -142,7 +144,7 @@ fun DistributedScreen(navController: NavController) {
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "RPC is unencrypted. Only use on trusted local networks.",
+                        text = stringResource(R.string.dist_rpc_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )

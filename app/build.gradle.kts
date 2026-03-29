@@ -2,18 +2,23 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.jetbrains.kotlin.serialization)
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 android {
     namespace = "com.example.llamadroid"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.llamadroid"
+        applicationId = "com.manuxd32.aidoomsdaytoolbox"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "0.513"
+        targetSdk = 35
+        versionCode = 932
+        versionName = "0.932"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -30,13 +35,24 @@ android {
         getByName("debug") {
             // Uses default debug keystore
         }
+        create("release") {
+            // Keystore path - set via environment or use default location
+            storeFile = file(System.getenv("KEYSTORE_PATH") ?: System.getProperty("user.home") + "/.android/aidoomsdaytoolbox-release.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: "release"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+            isV1SigningEnabled = true
+            isV2SigningEnabled = true
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug") // Use debug key for beta releases
+            // Use release signing for Play Store
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -56,6 +72,9 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // Exclude version files that conflict between dynamic feature modules
+            excludes += "META-INF/*.version"
+            excludes += "META-INF/versions/**"
         }
         jniLibs {
             useLegacyPackaging = true
@@ -71,6 +90,19 @@ android {
             version = "3.22.1"
         }
     }
+    
+    // Asset Packs for on-demand native binary delivery
+    assetPacks += setOf(
+        ":asset_upscaler"
+    )
+    
+    // Dynamic Features for native binaries execution (Install-Time/On-Demand)
+    dynamicFeatures += setOf(
+        ":feature_llm_baseline", ":feature_llm_dotprod", ":feature_llm_armv9",
+        ":feature_kiwix_baseline", ":feature_kiwix_dotprod", ":feature_kiwix_armv9",
+        ":feature_media_baseline", ":feature_media_dotprod", ":feature_media_armv9",
+        ":feature_upscaler"
+    )
 }
 
 dependencies {
@@ -83,11 +115,16 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.fragment)
     
     // Document file support for SAF
     implementation("androidx.documentfile:documentfile:1.0.1")
+    
+    // Play Asset Delivery for on-demand native binaries
+    implementation("com.google.android.play:asset-delivery:2.2.2")
+    implementation("com.google.android.play:asset-delivery-ktx:2.2.2")
     
     // Networking
     implementation(libs.retrofit)
@@ -108,6 +145,7 @@ dependencies {
     
     // Apache Commons Compress for tar extraction (handles hardlinks)
     implementation(libs.commons.compress)
+    implementation(libs.xz)
     
     // PDF
     implementation(libs.pdfbox)
@@ -120,6 +158,13 @@ dependencies {
     
     // QR Code generation
     implementation("com.google.zxing:core:3.5.2")
+    
+    // SSH client (Termux integration)
+    implementation("com.jcraft:jsch:0.1.55")
+    
+    // Play Feature Delivery for dynamic modules
+    implementation("com.google.android.play:feature-delivery:2.1.0")
+    implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -128,4 +173,7 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+    
+    // Retrofit with kotlinx.serialization
+    implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 }

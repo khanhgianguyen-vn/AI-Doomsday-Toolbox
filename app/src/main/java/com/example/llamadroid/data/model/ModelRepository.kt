@@ -20,7 +20,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import java.io.File
 
 class ModelRepository(
@@ -29,9 +31,15 @@ class ModelRepository(
 ) {
     private val settingsRepo = SettingsRepository(context)
     
+    // Use kotlinx.serialization for API responses to avoid reflection issues with R8
+    private val json = Json { 
+        ignoreUnknownKeys = true 
+        isLenient = true
+    }
+    
     private val retrofit = Retrofit.Builder()
         .baseUrl("https://huggingface.co/api/")
-        .addConverterFactory(GsonConverterFactory.create())
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
         
     private val hfService = retrofit.create(HuggingFaceService::class.java)
@@ -47,9 +55,16 @@ class ModelRepository(
     
     suspend fun searchModels(query: String, filter: String? = null): List<HfModelDto> = withContext(Dispatchers.IO) {
         try {
-            // Pass filter to HuggingFace API ("gguf" for LLM, null for SD)
-            hfService.searchModels(query, filter = filter, limit = 40)
+            // Enhance query with filter keyword for better search results
+            val enhancedQuery = if (filter != null && !query.contains(filter, ignoreCase = true)) {
+                "$query $filter"
+            } else {
+                query
+            }
+            hfService.searchModels(enhancedQuery, filter = filter, limit = 40)
         } catch (e: Exception) {
+            DebugLog.log("[HF-SEARCH] Error: ${e.message}")
+            e.printStackTrace()
             emptyList()
         }
     }
@@ -155,7 +170,7 @@ class ModelRepository(
     
     // We will assume a standard URL structure for GGUF files for the sake of the MVP
     // User would select a specific quantization
-    suspend fun downloadModel(repoId: String, filename: String, type: ModelType) {
+    suspend fun downloadModel(repoId: String, filename: String, type: ModelType, isVision: Boolean = false) {
         val modelUrl = "https://huggingface.co/$repoId/resolve/main/$filename"
         val modelDir = getModelDir(type)
         val destFile = File(modelDir, filename)
@@ -219,7 +234,7 @@ class ModelRepository(
      * Use this for SD models where the dialog closes immediately.
      * The download service will handle saving to DB via DownloadCompletionReceiver.
      */
-    fun startDownloadAsync(repoId: String, filename: String, type: ModelType) {
+    fun startDownloadAsync(repoId: String, filename: String, type: ModelType, isVision: Boolean = false) {
         val modelUrl = "https://huggingface.co/$repoId/resolve/main/$filename"
         val modelDir = getModelDir(type)
         val destFile = File(modelDir, filename)
@@ -231,7 +246,7 @@ class ModelRepository(
         DownloadProgressHolder.updateProgress(progressKey, filename, 0f)
         
         // Store pending download info so DownloadService can save to DB on completion
-        PendingDownloadHolder.addPending(filename, repoId, type, destFile.absolutePath)
+        PendingDownloadHolder.addPending(filename, repoId, type, destFile.absolutePath, isVision)
         
         // Start foreground service (this is called from main thread via onClick)
         com.example.llamadroid.service.DownloadService.startDownload(
@@ -330,14 +345,15 @@ data class PendingDownload(
     val filename: String,
     val repoId: String,
     val type: com.example.llamadroid.data.db.ModelType,
-    val destPath: String
+    val destPath: String,
+    val isVision: Boolean = false
 )
 
 object PendingDownloadHolder {
     private val pendingDownloads = mutableMapOf<String, PendingDownload>()
     
-    fun addPending(filename: String, repoId: String, type: com.example.llamadroid.data.db.ModelType, destPath: String) {
-        pendingDownloads[filename] = PendingDownload(filename, repoId, type, destPath)
+    fun addPending(filename: String, repoId: String, type: com.example.llamadroid.data.db.ModelType, destPath: String, isVision: Boolean = false) {
+        pendingDownloads[filename] = PendingDownload(filename, repoId, type, destPath, isVision)
     }
     
     fun getPending(filename: String): PendingDownload? = pendingDownloads[filename]

@@ -44,6 +44,7 @@ import com.example.llamadroid.ui.navigation.Screen
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import kotlinx.coroutines.launch
+import com.example.llamadroid.util.AssetPackManagerUtil
 import com.example.llamadroid.ui.components.SliderWithInput
 import com.example.llamadroid.ui.components.IntSliderWithInput
 import java.io.File
@@ -59,6 +60,8 @@ import java.util.*
 fun ImageGenScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    
+    
     val db = remember { AppDatabase.getDatabase(context) }
     val settingsRepo = remember { SettingsRepository(context) }
     
@@ -288,11 +291,11 @@ fun ImageGenScreen(navController: NavController) {
     }
     
     // Service connection
-    var sdService by remember { mutableStateOf<SDService?>(null) }
+    var sdService by remember { mutableStateOf<StableDiffusionService?>(null) }
     val serviceConnection = remember {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                sdService = (service as? SDService.LocalBinder)?.getService()
+                sdService = (service as? StableDiffusionService.LocalBinder)?.getService()
             }
             override fun onServiceDisconnected(name: ComponentName?) {
                 sdService = null
@@ -302,7 +305,7 @@ fun ImageGenScreen(navController: NavController) {
     
     // Bind to service
     DisposableEffect(Unit) {
-        val intent = Intent(context, SDService::class.java)
+        val intent = Intent(context, StableDiffusionService::class.java)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         onDispose {
             context.unbindService(serviceConnection)
@@ -391,7 +394,7 @@ fun ImageGenScreen(navController: NavController) {
             )
             
             // Start service
-            context.startForegroundService(Intent(context, SDService::class.java))
+            context.startForegroundService(Intent(context, StableDiffusionService::class.java))
             
             sdService?.generate(config) { result ->
                 result.fold(
@@ -548,7 +551,7 @@ fun ImageGenScreen(navController: NavController) {
         }
         
         // Main Tab Selector: Generate vs Gallery
-        val mainTabs = listOf("🎨 Generate", "📂 Gallery")
+        val mainTabs = listOf("🎨 " + stringResource(R.string.imagegen_tab_generate), "📂 " + stringResource(R.string.imagegen_tab_gallery))
         TabRow(
             selectedTabIndex = mainTab,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -574,7 +577,11 @@ fun ImageGenScreen(navController: NavController) {
                     .verticalScroll(rememberScrollState())
         ) {
             // Mode Tabs
-            val modes = listOf("txt2img", "img2img", "upscale")
+            val modes = listOf(
+                stringResource(R.string.imagegen_mode_txt2img),
+                stringResource(R.string.imagegen_mode_img2img),
+                stringResource(R.string.imagegen_mode_upscale)
+            )
             SingleChoiceSegmentedButtonRow(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -662,11 +669,11 @@ fun ImageGenScreen(navController: NavController) {
                                 value = strength,
                                 onValueChange = { strength = it },
                                 valueRange = 0.1f..1.0f,
-                                label = "Strength",
+                                label = stringResource(R.string.imagegen_strength_label),
                                 decimalPlaces = 2
                             )
                             Text(
-                                "Lower = more like original, Higher = more creative",
+                                stringResource(R.string.imagegen_strength_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -684,7 +691,7 @@ fun ImageGenScreen(navController: NavController) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Model Factor", style = MaterialTheme.typography.bodyMedium)
+                                    Text(stringResource(R.string.imagegen_upscale_factor_label), style = MaterialTheme.typography.bodyMedium)
                                     Text(
                                         "${upscaleFactor}x",
                                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -692,7 +699,7 @@ fun ImageGenScreen(navController: NavController) {
                                     )
                                 }
                                 Text(
-                                    "Auto-detected from model filename",
+                                    stringResource(R.string.imagegen_upscale_factor_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -704,7 +711,7 @@ fun ImageGenScreen(navController: NavController) {
                                     value = upscaleRepeats,
                                     onValueChange = { upscaleRepeats = it },
                                     valueRange = 1..4,
-                                    label = "Upscale Repeats",
+                                    label = stringResource(R.string.imagegen_upscale_repeats),
                                     steps = 2
                                 )
                                 
@@ -742,7 +749,7 @@ fun ImageGenScreen(navController: NavController) {
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text("Final Factor:", style = MaterialTheme.typography.bodyMedium)
+                                            Text(stringResource(R.string.imagegen_final_factor), style = MaterialTheme.typography.bodyMedium)
                                             Text(
                                                 "${finalFactor}x",
                                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -753,7 +760,7 @@ fun ImageGenScreen(navController: NavController) {
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Text("Output Resolution:", style = MaterialTheme.typography.bodyMedium)
+                                            Text(stringResource(R.string.imagegen_output_res), style = MaterialTheme.typography.bodyMedium)
                                             Text(
                                                 "${outputW} × ${outputH}",
                                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
@@ -762,7 +769,7 @@ fun ImageGenScreen(navController: NavController) {
                                         if (imageResolution != null) {
                                             val (origW, origH) = imageResolution!!
                                             Text(
-                                                "Original: ${origW}×${origH} → Base: ${fittedW}×${fittedH}",
+                                                stringResource(R.string.imagegen_original_base, origW, origH, fittedW, fittedH),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -792,7 +799,7 @@ fun ImageGenScreen(navController: NavController) {
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
-                                                "Multiple repeats = longer processing time",
+                                                stringResource(R.string.imagegen_upscale_repeats_warn),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                                             )
@@ -802,7 +809,7 @@ fun ImageGenScreen(navController: NavController) {
                             } else {
                                 // No model selected yet
                                 Text(
-                                    "Select an upscaler model to see scaling options",
+                                    stringResource(R.string.imagegen_upscale_model_info),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -830,7 +837,7 @@ fun ImageGenScreen(navController: NavController) {
                     
                     if (modelsToShow.isEmpty()) {
                         Text(
-                            if (selectedMode == 2) "No upscaler models installed." else "No SD/FLUX models installed.",
+                            if (selectedMode == 2) stringResource(R.string.imagegen_no_upscalers_installed) else stringResource(R.string.imagegen_no_models_installed),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -840,7 +847,7 @@ fun ImageGenScreen(navController: NavController) {
                         ) {
                             Icon(Icons.Default.Add, null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (selectedMode == 2) "Get Upscaler Models" else "Get SD Models")
+                            Text(if (selectedMode == 2) stringResource(R.string.imagegen_get_upscaler_models) else stringResource(R.string.imagegen_get_sd_models))
                         }
                     } else {
                         var expanded by remember { mutableStateOf(false) }
@@ -849,7 +856,7 @@ fun ImageGenScreen(navController: NavController) {
                             onExpandedChange = { expanded = !expanded }
                         ) {
                             OutlinedTextField(
-                                value = selectedModelPath?.substringAfterLast("/") ?: "Select model",
+                                value = selectedModelPath?.substringAfterLast("/") ?: stringResource(R.string.imagegen_select_model),
                                 onValueChange = {},
                                 readOnly = true,
                                 modifier = Modifier
@@ -909,7 +916,7 @@ fun ImageGenScreen(navController: NavController) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "VAE (Optional)",
+                                stringResource(R.string.imagegen_vae_optional),
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                             )
                             if (isFluxModel && selectedVaePath == null) {
@@ -925,13 +932,13 @@ fun ImageGenScreen(navController: NavController) {
                         
                         if (isFluxModel && selectedVaePath == null) {
                             Text(
-                                "Flux models strictly require a VAE if not baked into the GGUF.",
+                                stringResource(R.string.imagegen_flux_vae_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
                         } else {
                             Text(
-                                "Required only if the model doesn't have a built-in VAE.",
+                                stringResource(R.string.imagegen_checkpoint_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -941,7 +948,7 @@ fun ImageGenScreen(navController: NavController) {
                         
                         if (vaeModels.isEmpty()) {
                             Text(
-                                "No VAE models installed",
+                                stringResource(R.string.imagegen_no_vae_installed),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -952,7 +959,7 @@ fun ImageGenScreen(navController: NavController) {
                                 onExpandedChange = { vaeExpanded = !vaeExpanded }
                             ) {
                                 OutlinedTextField(
-                                    value = selectedVaePath?.substringAfterLast("/") ?: "Select VAE (or system default)",
+                                    value = selectedVaePath?.substringAfterLast("/") ?: stringResource(R.string.imagegen_select_vae),
                                     onValueChange = {},
                                     readOnly = true,
                                     modifier = Modifier.fillMaxWidth().menuAnchor(),
@@ -964,7 +971,7 @@ fun ImageGenScreen(navController: NavController) {
                                     onDismissRequest = { vaeExpanded = false }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("None (Use Built-in)") },
+                                        text = { Text(stringResource(R.string.imagegen_none_builtin)) },
                                         onClick = {
                                             selectedVaePath = null
                                             vaeExpanded = false
@@ -998,11 +1005,11 @@ fun ImageGenScreen(navController: NavController) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            "⚡ FLUX Encoders",
+                            "⚡ " + stringResource(R.string.imagegen_flux_encoders),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                         )
                         Text(
-                            "FLUX models require text encoders (CLIP-L & T5) to understand prompts.",
+                            stringResource(R.string.imagegen_flux_encoders_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1010,11 +1017,11 @@ fun ImageGenScreen(navController: NavController) {
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         // CLIP-L Picker
-                        Text("CLIP-L Text Encoder", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.imagegen_clip_l_label), style = MaterialTheme.typography.labelMedium)
                         Spacer(modifier = Modifier.height(4.dp))
                         if (clipLModels.isEmpty()) {
                             Text(
-                                "No CLIP-L models installed",
+                                stringResource(R.string.imagegen_no_clip_l),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -1025,7 +1032,7 @@ fun ImageGenScreen(navController: NavController) {
                                 onExpandedChange = { clipExpanded = !clipExpanded }
                             ) {
                                 OutlinedTextField(
-                                    value = selectedClipLPath?.substringAfterLast("/") ?: "Select CLIP-L",
+                                    value = selectedClipLPath?.substringAfterLast("/") ?: stringResource(R.string.imagegen_select_clip_l),
                                     onValueChange = {},
                                     readOnly = true,
                                     modifier = Modifier.fillMaxWidth().menuAnchor(),
@@ -1051,11 +1058,11 @@ fun ImageGenScreen(navController: NavController) {
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         // T5-XXL Picker
-                        Text("T5-XXL Text Encoder", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.imagegen_t5xxl_label), style = MaterialTheme.typography.labelMedium)
                         Spacer(modifier = Modifier.height(4.dp))
                         if (t5xxlModels.isEmpty()) {
                             Text(
-                                "No T5-XXL models installed",
+                                stringResource(R.string.imagegen_no_t5xxl),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -1066,7 +1073,7 @@ fun ImageGenScreen(navController: NavController) {
                                 onExpandedChange = { t5Expanded = !t5Expanded }
                             ) {
                                 OutlinedTextField(
-                                    value = selectedT5xxlPath?.substringAfterLast("/") ?: "Select T5-XXL",
+                                    value = selectedT5xxlPath?.substringAfterLast("/") ?: stringResource(R.string.imagegen_select_t5xxl),
                                     onValueChange = {},
                                     readOnly = true,
                                     modifier = Modifier.fillMaxWidth().menuAnchor(),
@@ -1097,7 +1104,7 @@ fun ImageGenScreen(navController: NavController) {
                             ) {
                                 Icon(Icons.Default.Add, null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Get FLUX Components")
+                                Text(stringResource(R.string.imagegen_get_flux_components))
                             }
                         }
                     }
@@ -1114,7 +1121,7 @@ fun ImageGenScreen(navController: NavController) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            "Model Quantization (--type)",
+                            stringResource(R.string.imagegen_quantization_title),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
@@ -1134,7 +1141,7 @@ fun ImageGenScreen(navController: NavController) {
                         
                         if (selectedQuantType.isNotBlank()) {
                             Text(
-                                "Will load model using $selectedQuantType quantization.",
+                                stringResource(R.string.imagegen_quant_desc, selectedQuantType),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -1153,7 +1160,7 @@ fun ImageGenScreen(navController: NavController) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Prompt",
+                        stringResource(R.string.imagegen_prompt_label),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1166,7 +1173,7 @@ fun ImageGenScreen(navController: NavController) {
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                "⚠️ Warning: Flux might fail if VAE or Encoders are missing.",
+                                "⚠️ " + stringResource(R.string.imagegen_flux_warning),
                                 modifier = Modifier.padding(8.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
@@ -1181,7 +1188,7 @@ fun ImageGenScreen(navController: NavController) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(100.dp),
-                        placeholder = { Text("Describe the image you want to generate...") },
+                        placeholder = { Text(stringResource(R.string.imagegen_prompt_placeholder)) },
                         shape = RoundedCornerShape(12.dp)
                     )
                     
@@ -1195,7 +1202,7 @@ fun ImageGenScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "Advanced Options",
+                            stringResource(R.string.imagegen_advanced_options),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -1210,13 +1217,13 @@ fun ImageGenScreen(navController: NavController) {
                     if (showAdvanced) {
                         Spacer(modifier = Modifier.height(12.dp))
                         
-                        Text("Negative Prompt", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.imagegen_negative_prompt_label), style = MaterialTheme.typography.bodyMedium)
                         Spacer(modifier = Modifier.height(4.dp))
                         OutlinedTextField(
                             value = negativePrompt,
                             onValueChange = { negativePrompt = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Things to avoid in the image...") },
+                            placeholder = { Text(stringResource(R.string.imagegen_negative_prompt_placeholder)) },
                             shape = RoundedCornerShape(12.dp)
                         )
                         
@@ -1229,7 +1236,7 @@ fun ImageGenScreen(navController: NavController) {
                                     value = width,
                                     onValueChange = { width = it },
                                     valueRange = 256..1024,
-                                    label = "Width"
+                                    label = stringResource(R.string.imagegen_width_label)
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
@@ -1237,7 +1244,7 @@ fun ImageGenScreen(navController: NavController) {
                                     value = height,
                                     onValueChange = { height = it },
                                     valueRange = 256..1024,
-                                    label = "Height"
+                                    label = stringResource(R.string.imagegen_height_label)
                                 )
                             }
                         }
@@ -1251,7 +1258,7 @@ fun ImageGenScreen(navController: NavController) {
                                     value = steps,
                                     onValueChange = { steps = it },
                                     valueRange = 1..50,
-                                    label = "Steps"
+                                    label = stringResource(R.string.imagegen_steps_label)
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
@@ -1259,14 +1266,14 @@ fun ImageGenScreen(navController: NavController) {
                                     value = cfgScale,
                                     onValueChange = { cfgScale = it },
                                     valueRange = 1f..20f,
-                                    label = "CFG",
+                                    label = stringResource(R.string.imagegen_cfg_label),
                                     decimalPlaces = 1
                                 )
                             }
                         }
                         
                         // Sampler
-                        Text("Sampler", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.imagegen_sampler_label), style = MaterialTheme.typography.bodyMedium)
                         Spacer(modifier = Modifier.height(4.dp))
                         var samplerExpanded by remember { mutableStateOf(false) }
                         ExposedDropdownMenuBox(
@@ -1309,13 +1316,13 @@ fun ImageGenScreen(navController: NavController) {
                                 value = if (seed == -1L) "" else seed.toString(),
                                 onValueChange = { seed = it.toLongOrNull() ?: -1L },
                                 modifier = Modifier.weight(1f),
-                                label = { Text("Seed (-1 = random)") },
+                                label = { Text(stringResource(R.string.imagegen_seed_label)) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 shape = RoundedCornerShape(12.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(onClick = { seed = (0..Int.MAX_VALUE).random().toLong() }) {
-                                Icon(Icons.Default.Refresh, "Random seed")
+                                Icon(Icons.Default.Refresh, stringResource(R.string.imagegen_random_seed))
                             }
                         }
                         
@@ -1326,11 +1333,11 @@ fun ImageGenScreen(navController: NavController) {
                             value = if (threads <= 0) 4 else threads,
                             onValueChange = { threads = it },
                             valueRange = 1..16,
-                            label = "Threads (-1 = auto)",
+                            label = stringResource(R.string.imagegen_threads_label),
                             steps = 14
                         )
                         Text(
-                            "Number of CPU threads for generation",
+                            stringResource(R.string.imagegen_threads_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1354,7 +1361,7 @@ fun ImageGenScreen(navController: NavController) {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "Generating...",
+                            stringResource(R.string.status_generating),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
@@ -1364,7 +1371,7 @@ fun ImageGenScreen(navController: NavController) {
                         val totalStepsVal by modeStateHolder.totalSteps.collectAsState()
                         val currentStepVal by modeStateHolder.currentStep.collectAsState()
                         Text(
-                            "Step $currentStepVal / $totalStepsVal ($progressPercent%)",
+                            stringResource(R.string.imagegen_step_progress, currentStepVal, totalStepsVal, progressPercent),
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
@@ -1387,7 +1394,7 @@ fun ImageGenScreen(navController: NavController) {
                         ) {
                             Icon(Icons.Default.Close, null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Cancel")
+                            Text(stringResource(R.string.action_cancel))
                         }
                     }
                 }
@@ -1412,8 +1419,8 @@ fun ImageGenScreen(navController: NavController) {
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         when (selectedMode) {
-                            2 -> "Upscale Image"
-                            else -> "Generate Image"
+                            2 -> stringResource(R.string.imagegen_upscale_btn)
+                            else -> stringResource(R.string.imagegen_generate_btn)
                         },
                         fontWeight = FontWeight.Bold
                     )
@@ -1453,7 +1460,7 @@ fun ImageGenScreen(navController: NavController) {
                         Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Image generated successfully!",
+                            stringResource(R.string.imagegen_success),
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
@@ -1470,7 +1477,13 @@ fun ImageGenScreen(navController: NavController) {
                     .padding(horizontal = 16.dp)
             ) {
                 // Filter buttons (with emoji for workflow)
-                val filterLabels = listOf("All", "txt2img", "img2img", "upscaled", "⚙️")
+                val filterLabels = listOf(
+                    stringResource(R.string.imagegen_gallery_all),
+                    stringResource(R.string.imagegen_mode_txt2img),
+                    stringResource(R.string.imagegen_mode_img2img),
+                    stringResource(R.string.imagegen_mode_upscale),
+                    "⚙️"
+                )
                 SingleChoiceSegmentedButtonRow(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1514,7 +1527,7 @@ fun ImageGenScreen(navController: NavController) {
                             Text("📷", style = MaterialTheme.typography.displayLarge)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                if (galleryFilter == 0) "No images yet" else "No ${filterLabels[galleryFilter]} images",
+                                if (galleryFilter == 0) stringResource(R.string.imagegen_gallery_empty) else stringResource(R.string.imagegen_gallery_empty_filter, filterLabels[galleryFilter]),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1632,7 +1645,7 @@ fun ImageGenScreen(navController: NavController) {
                                     putExtra(Intent.EXTRA_STREAM, uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share Image"))
+                                context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.imagegen_share_chooser)))
                             } catch (e: Exception) {
                                 android.widget.Toast.makeText(
                                     context, 
@@ -1645,7 +1658,7 @@ fun ImageGenScreen(navController: NavController) {
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Share")
+                    Text(stringResource(R.string.action_share))
                 }
             },
             dismissButton = {
@@ -1662,9 +1675,9 @@ fun ImageGenScreen(navController: NavController) {
                                     SDModeStateHolder.txt2img.removeImage(file)
                                     SDModeStateHolder.img2img.removeImage(file)
                                     SDModeStateHolder.upscale.removeImage(file)
-                                    android.widget.Toast.makeText(context, "Image deleted", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, context.getString(R.string.imagegen_delete_confirm), android.widget.Toast.LENGTH_SHORT).show()
                                 } else {
-                                    android.widget.Toast.makeText(context, "Failed to delete", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, context.getString(R.string.imagegen_delete_fail), android.widget.Toast.LENGTH_SHORT).show()
                                 }
                                 fullscreenImage = null
                             }
@@ -1673,18 +1686,18 @@ fun ImageGenScreen(navController: NavController) {
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Delete")
+                        Text(context.getString(R.string.action_delete))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     // Close button
                     TextButton(onClick = { fullscreenImage = null }) {
-                        Text("Close")
+                        Text(context.getString(R.string.action_close))
                     }
                 }
             },
             title = { 
                 Column {
-                    Text("Generated Image")
+                    Text(context.getString(R.string.imagegen_generated_title))
                     bitmap?.let {
                         Text(
                             "${it.width} × ${it.height}",

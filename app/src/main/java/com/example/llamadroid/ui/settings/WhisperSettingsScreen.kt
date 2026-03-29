@@ -13,6 +13,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
 
 /**
@@ -29,10 +31,10 @@ fun WhisperSettingsScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Whisper Settings") },
+                title = { Text(stringResource(R.string.whisper_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 }
             )
@@ -57,7 +59,7 @@ fun WhisperSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("🎤 Transcription Threads", fontWeight = FontWeight.Bold)
+                            Text("🎤 " + stringResource(R.string.whisper_threads_title), fontWeight = FontWeight.Bold)
                             Text("$whisperThreads", color = MaterialTheme.colorScheme.primary)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -68,7 +70,7 @@ fun WhisperSettingsScreen(navController: NavController) {
                             steps = 6
                         )
                         Text(
-                            "Number of CPU threads for audio transcription",
+                            stringResource(R.string.whisper_threads_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -87,15 +89,15 @@ fun WhisperSettingsScreen(navController: NavController) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            "ℹ️ Tips",
+                            "ℹ️ " + stringResource(R.string.whisper_tips_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "• More threads = faster transcription but more battery usage\n" +
-                            "• 4-6 threads is recommended for most devices\n" +
-                            "• Transcriptions are auto-saved to Notes Manager",
+                            stringResource(R.string.whisper_tip_1) + "\n" +
+                            stringResource(R.string.whisper_tip_2) + "\n" +
+                            stringResource(R.string.whisper_tip_3),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

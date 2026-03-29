@@ -5,6 +5,7 @@ data class LlamaConfig(
     val isEmbedding: Boolean = false,
     val contextSize: Int = 8192,
     val threads: Int = 4,
+    val batchSize: Int = 512,
     val port: Int = 8080,
     val temperature: Float = 0.8f,
     val host: String = "0.0.0.0",
@@ -20,7 +21,19 @@ data class LlamaConfig(
     val nGpuLayers: Int = 0,
     // Tensor split: proportion for EACH WORKER (not master): "worker1_prop,worker2_prop,..."
     // e.g., "0.60,0.40" for worker1 gets 60% of nGpuLayers, worker2 gets 40%
-    val tensorSplit: String? = null
+    val tensorSplit: String? = null,
+    // Disable memory mapping - loads entire model into RAM
+    val noMmap: Boolean = false,
+    // Speculative decoding (draft model) - runs draft locally on master
+    val draftModelPath: String? = null,   // Path to draft GGUF model
+    val draftMax: Int = 16,               // Max tokens to draft per step
+    val draftMin: Int = 0,                // Min tokens to draft
+    val draftPMin: Float = 0.75f,         // Min probability threshold for acceptance
+    // Advanced overrides
+    val parallel: Int? = null,
+    val cacheRam: Int? = null,
+    val customFlags: String? = null,
+    val flashAttention: Boolean = false
 )
 
 sealed class ServerState {

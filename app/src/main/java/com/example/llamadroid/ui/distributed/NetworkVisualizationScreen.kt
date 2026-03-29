@@ -30,6 +30,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import com.example.llamadroid.service.DistributedMode
 import com.example.llamadroid.service.DistributedService
 import com.example.llamadroid.service.LlamaService
@@ -65,19 +67,18 @@ fun NetworkVisualizationScreen(navController: NavController) {
     val modelSizeMB by DistributedService.modelSizeMB.collectAsState()
     val inferenceRunning by DistributedService.inferenceRunning.collectAsState()
     val transferProgress by DistributedService.transferProgress.collectAsState()
+    val lastCommand by DistributedService.lastCommand.collectAsState()
     
     // LlamaService state
     val serverState by LlamaService.state.collectAsState()
     
     val masterLayers = modelLayerCount - rpcLayerCount
-    val totalRam = masterRamMB + workers.sumOf { it.availableRamMB }
+    val totalConnectedRam = masterRamMB + workers.filter { it.isConnected }.sumOf { it.availableRamMB }
     
     // Calculate proportions for display
-    val totalWorkerProportion = workers.mapNotNull { it.assignedProportion }.sum()
-    val masterProportion = if (totalWorkerProportion > 0f) {
-        ((1f - totalWorkerProportion) * 100).toInt()
-    } else if (totalRam > 0) {
-        (masterRamMB.toFloat() / totalRam * 100).toInt()
+    // If calculating based on RAM
+    val masterProportion = if (totalConnectedRam > 0) {
+        (masterRamMB.toFloat() / totalConnectedRam * 100).toInt()
     } else {
         100
     }
@@ -100,7 +101,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
             TopAppBar(
                 title = { 
                     Text(
-                        "> NETWORK_STATUS",
+                        "> " + stringResource(R.string.net_title),
                         fontFamily = FontFamily.Monospace,
                         color = MatrixGreen
                     )
@@ -109,7 +110,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack, 
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.net_back),
                             tint = MatrixGreen
                         )
                     }
@@ -131,18 +132,18 @@ fun NetworkVisualizationScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Terminal Header
-            TerminalBox(title = "SYSTEM STATUS") {
+            TerminalBox(title = stringResource(R.string.net_system_status)) {
                 val (statusText, statusColor) = when (serverState) {
-                    is ServerState.Running -> "[ONLINE]" to MatrixGreen
-                    is ServerState.Loading -> "[LOADING]" to MatrixYellow
-                    is ServerState.Starting -> "[INIT...]" to MatrixYellow
-                    is ServerState.Error -> "[ERROR]" to MatrixRed
-                    ServerState.Stopped -> "[OFFLINE]" to MatrixRed
+                    is ServerState.Running -> stringResource(R.string.net_status_online) to MatrixGreen
+                    is ServerState.Loading -> stringResource(R.string.net_status_loading) to MatrixYellow
+                    is ServerState.Starting -> stringResource(R.string.net_status_init) to MatrixYellow
+                    is ServerState.Error -> stringResource(R.string.net_status_error) to MatrixRed
+                    ServerState.Stopped -> stringResource(R.string.net_status_offline) to MatrixRed
                 }
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "INFERENCE_SERVER: ",
+                        text = stringResource(R.string.net_inference_server) + " ",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         color = MatrixDarkGreen
@@ -157,7 +158,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                 }
                 
                 Text(
-                    text = "MODE: ${mode.name}",
+                    text = stringResource(R.string.net_mode, mode.name),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     color = MatrixDarkGreen
@@ -165,7 +166,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                 
                 if (inferenceRunning) {
                     Text(
-                        text = "▓▓▓ PROCESSING ▓▓▓" + if (cursorVisible > 0.5f) "_" else " ",
+                        text = stringResource(R.string.net_processing) + if (cursorVisible > 0.5f) "_" else " ",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         color = MatrixGreen
@@ -174,7 +175,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
             }
             
             // Network Topology
-            TerminalBox(title = "NETWORK TOPOLOGY") {
+            TerminalBox(title = stringResource(R.string.net_topology)) {
                 // Master node
                 Text(
                     text = "┌─────────────────────────────────────┐",
@@ -185,7 +186,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                 Row {
                     Text("│ ", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MatrixBorder)
                     Text(
-                        text = "[MASTER] 👑 LOCAL_NODE",
+                        text = stringResource(R.string.net_master_node),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -196,8 +197,15 @@ fun NetworkVisualizationScreen(navController: NavController) {
                 }
                 Row {
                     Text("│ ", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MatrixBorder)
+                    
+                    val masterEstMb = if (modelSizeMB > 0 && totalConnectedRam > 0) {
+                        (masterProportion / 100f * modelSizeMB).toInt()
+                    } else 0
+                    
+                    val ramText = if (masterEstMb > 0) " | EST: ~${masterEstMb}MB" else ""
+                    
                     Text(
-                        text = "RAM: ${masterRamMB}MB | LAYERS: $masterLayers | LOAD: $masterProportion%",
+                        text = "RAM: ${masterRamMB}MB | LOAD: $masterProportion%$ramText",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp,
                         color = MatrixGreen,
@@ -261,12 +269,33 @@ fun NetworkVisualizationScreen(navController: NavController) {
                         }
                         Row {
                             Text("│ ", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MatrixBorder)
-                            val workerProp = worker.assignedProportion?.let { "${(it * 100).toInt()}%" } ?: "auto"
+                            val workerProp = if (totalConnectedRam > 0 && worker.isConnected) {
+                                (worker.availableRamMB.toFloat() / totalConnectedRam * 100).toInt()
+                            } else {
+                                0
+                            }
+                            
+                            // Determine RAM display (Real > Est)
+                            val ramUsageText = if (worker.realRamUsageMB != null) {
+                                " | REAL: ${worker.realRamUsageMB}MB"
+                            } else {
+                                val workerEstMb = if (modelSizeMB > 0 && worker.isConnected) {
+                                    (workerProp / 100f * modelSizeMB).toInt()
+                                } else 0
+                                if (workerEstMb > 0) " | EST: ~${workerEstMb}MB" else ""
+                            }
+                            
+                            val statusColor = if (worker.isConnected) MatrixGreen else MatrixRed
+                            val statusText = if (worker.isConnected) "ONLINE" else "OFFLINE"
+                            
+                            // Use Cyan for Real RAM usage to distinguish from Estimate
+                            val usageColor = if (worker.realRamUsageMB != null) MatrixCyan else statusColor
+                            
                             Text(
-                                text = "RAM: ${worker.availableRamMB}MB | LAYERS: ~$layersPerWorker | LOAD: $workerProp",
+                                text = "RAM: ${worker.availableRamMB}MB | STATUS: $statusText | LOAD: $workerProp%$ramUsageText",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 9.sp,
-                                color = MatrixGreen,
+                                color = usageColor,
                                 modifier = Modifier.weight(1f)
                             )
                             Text(" │", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = MatrixBorder)
@@ -280,7 +309,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                     }
                 } else {
                     Text(
-                        text = "\n[NO_WORKERS_CONNECTED]",
+                        text = "\n" + stringResource(R.string.net_no_workers),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         color = MatrixRed
@@ -290,7 +319,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
             
             // Model Info
             if (modelLayerCount > 0) {
-                TerminalBox(title = "MODEL METRICS") {
+                TerminalBox(title = stringResource(R.string.net_model_metrics)) {
                     Text(
                         text = "TOTAL_LAYERS: $modelLayerCount",
                         fontFamily = FontFamily.Monospace,
@@ -325,7 +354,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                     val workerBlocks = barWidth - masterBlocks
                     
                     Text(
-                        text = "LAYER_DISTRIBUTION:",
+                        text = stringResource(R.string.net_layer_distribution),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp,
                         color = MatrixDarkGreen
@@ -338,14 +367,14 @@ fun NetworkVisualizationScreen(navController: NavController) {
                     )
                     Row {
                         Text(
-                            text = " LOCAL",
+                            text = " " + stringResource(R.string.net_local_label),
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                             color = MatrixCyan
                         )
                         Spacer(modifier = Modifier.weight(1f))
                         Text(
-                            text = "RPC ",
+                            text = stringResource(R.string.net_rpc_label) + " ",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                             color = MatrixYellow
@@ -356,7 +385,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
             
             // Transfer progress
             if (transferProgress > 0 && transferProgress < 100) {
-                TerminalBox(title = "TRANSFER") {
+                TerminalBox(title = stringResource(R.string.net_transfer)) {
                     val progressBlocks = (transferProgress / 100f * 30).toInt()
                     Text(
                         text = "SYNCING: [${"▓".repeat(progressBlocks)}${"░".repeat(30 - progressBlocks)}] $transferProgress%",
@@ -368,9 +397,9 @@ fun NetworkVisualizationScreen(navController: NavController) {
             }
             
             // Memory stats
-            TerminalBox(title = "MEMORY ALLOCATION") {
+            TerminalBox(title = stringResource(R.string.net_memory_allocation)) {
                 Text(
-                    text = "TOTAL_CLUSTER_RAM: ${totalRam}MB",
+                    text = "TOTAL_CLUSTER_RAM: ${totalConnectedRam}MB",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     color = MatrixGreen
@@ -391,10 +420,23 @@ fun NetworkVisualizationScreen(navController: NavController) {
                 }
             }
             
+            // Server Launch Command
+            if (lastCommand != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TerminalBox(title = "LAUNCH_COMMAND") {
+                    Text(
+                        text = lastCommand!!,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = MatrixCyan
+                    )
+                }
+            }
+            
             Spacer(modifier = Modifier.height(8.dp))
             
             // Control buttons
-            TerminalBox(title = "CONTROLS") {
+            TerminalBox(title = stringResource(R.string.net_controls)) {
                 Button(
                     onClick = {
                         val intent = Intent(context, LlamaService::class.java).apply {
@@ -411,7 +453,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                     Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "> TERMINATE_SERVER",
+                        stringResource(R.string.net_terminate_server),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp
                     )
@@ -433,7 +475,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                         Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "> STOP_RPC_WORKER",
+                            stringResource(R.string.net_stop_rpc),
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp
                         )
@@ -455,7 +497,7 @@ fun NetworkVisualizationScreen(navController: NavController) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "> CLEAR_WORKERS",
+                        stringResource(R.string.net_clear_workers),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp
                     )

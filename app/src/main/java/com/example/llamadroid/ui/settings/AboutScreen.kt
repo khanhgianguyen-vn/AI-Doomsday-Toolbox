@@ -7,12 +7,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -213,8 +213,57 @@ fun AboutScreen(navController: NavController) {
                         )
                         LibraryItem(
                             name = "Kiwix-tools",
-                            description = "Offline Wikipedia and ZIM file server",
+                            description = stringResource(R.string.about_zim_desc),
                             url = "https://github.com/kiwix/kiwix-tools"
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = stringResource(R.string.about_compatible_tools),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        
+                        LibraryItem(
+                            name = "EasyDataset",
+                            description = stringResource(R.string.about_easy_dataset_desc),
+                            url = "https://github.com/ConardLi/easy-dataset"
+                        )
+                        LibraryItem(
+                            name = "Ollama",
+                            description = stringResource(R.string.about_ollama_desc),
+                            url = "https://github.com/ollama/ollama"
+                        )
+                        LibraryItem(
+                            name = "Open WebUI",
+                            description = stringResource(R.string.about_open_webui_desc),
+                            url = "https://github.com/open-webui/open-webui"
+                        )
+                        LibraryItem(
+                            name = "Big-AGI",
+                            description = stringResource(R.string.about_big_agi_desc),
+                            url = "https://github.com/enricoros/big-AGI"
+                        )
+                        LibraryItem(
+                            name = "Oobabooga",
+                            description = stringResource(R.string.about_oobabooga_desc),
+                            url = "https://github.com/oobabooga/text-generation-webui"
+                        )
+                        LibraryItem(
+                            name = "FastSDCPU",
+                            description = stringResource(R.string.about_fastsdcpu_desc),
+                            url = "https://github.com/rupeshs/fastsdcpu"
+                        )
+                        LibraryItem(
+                            name = "AUTOMATIC1111 / Stable Diffusion WebUI",
+                            description = stringResource(R.string.about_sd_sketch_desc),
+                            url = "https://github.com/AUTOMATIC1111/stable-diffusion-webui"
+                        )
+                        LibraryItem(
+                            name = "Termux",
+                            description = stringResource(R.string.about_termux_desc),
+                            url = "https://github.com/termux"
                         )
                     }
                 }
@@ -257,7 +306,7 @@ private fun DonationButton(
         Text(text = text)
         Spacer(modifier = Modifier.weight(1f))
         Icon(
-            Icons.Default.ArrowForward,
+            Icons.AutoMirrored.Filled.ArrowForward,
             contentDescription = null,
             modifier = Modifier.size(16.dp)
         )
@@ -297,7 +346,7 @@ private fun LibraryItem(
             }
         ) {
             Icon(
-                Icons.Default.ArrowForward,
+                Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = "Open",
                 modifier = Modifier.size(18.dp)
             )

@@ -134,7 +134,7 @@ fun PDFToolboxScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("PDF Toolbox") },
+                title = { Text(stringResource(R.string.pdf_toolbox_title)) },
                 navigationIcon = {
                     IconButton(onClick = { 
                         if (selectedTool != null) {
@@ -144,7 +144,7 @@ fun PDFToolboxScreen(navController: NavController) {
                             navController.popBackStack() 
                         }
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 }
             )
@@ -161,7 +161,7 @@ fun PDFToolboxScreen(navController: NavController) {
             ) {
                 item {
                     Text(
-                        "📄 PDF Tools",
+                        stringResource(R.string.pdf_tools_header),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -171,8 +171,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "🔗",
-                        title = "Merge PDFs",
-                        description = "Combine multiple PDF files into one",
+                        title = stringResource(R.string.pdf_merge),
+                        description = stringResource(R.string.pdf_merge_desc),
                         gradientColors = listOf(
                             Color(0xFF4CAF50).copy(alpha = 0.15f),
                             Color(0xFF388E3C).copy(alpha = 0.3f)
@@ -184,8 +184,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "✂️",
-                        title = "Split PDF",
-                        description = "Extract specific pages or split into parts",
+                        title = stringResource(R.string.pdf_split),
+                        description = stringResource(R.string.pdf_split_desc),
                         gradientColors = listOf(
                             Color(0xFF2196F3).copy(alpha = 0.15f),
                             Color(0xFF1976D2).copy(alpha = 0.3f)
@@ -197,8 +197,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "📝",
-                        title = "Extract Text",
-                        description = "Extract all text content from PDF",
+                        title = stringResource(R.string.pdf_extract_text),
+                        description = stringResource(R.string.pdf_extract_text_desc),
                         gradientColors = listOf(
                             Color(0xFF9C27B0).copy(alpha = 0.15f),
                             Color(0xFF7B1FA2).copy(alpha = 0.3f)
@@ -210,8 +210,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "🤖",
-                        title = "AI Summary",
-                        description = "Summarize PDF content using AI",
+                        title = stringResource(R.string.pdf_ai_summary),
+                        description = stringResource(R.string.pdf_ai_summary_desc),
                         gradientColors = listOf(
                             Color(0xFFFF9800).copy(alpha = 0.15f),
                             Color(0xFFF57C00).copy(alpha = 0.3f)
@@ -223,8 +223,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "🔍",
-                        title = "OCR (Text Recognition)",
-                        description = "Extract text from scanned PDFs/images",
+                        title = stringResource(R.string.pdf_ocr_full),
+                        description = stringResource(R.string.pdf_ocr_desc),
                         gradientColors = listOf(
                             Color(0xFF00BCD4).copy(alpha = 0.15f),
                             Color(0xFF0097A7).copy(alpha = 0.3f)
@@ -236,8 +236,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "🖼️",
-                        title = "Images to PDF",
-                        description = "Convert images into a PDF document",
+                        title = stringResource(R.string.pdf_images_to_pdf),
+                        description = stringResource(R.string.pdf_images_to_pdf_desc),
                         gradientColors = listOf(
                             Color(0xFF673AB7).copy(alpha = 0.15f),
                             Color(0xFF512DA8).copy(alpha = 0.3f)
@@ -249,8 +249,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "📦",
-                        title = "Compress PDF",
-                        description = "Reduce file size with 9 quality levels",
+                        title = stringResource(R.string.pdf_compress),
+                        description = stringResource(R.string.pdf_compress_desc),
                         gradientColors = listOf(
                             Color(0xFF607D8B).copy(alpha = 0.15f),
                             Color(0xFF455A64).copy(alpha = 0.3f)
@@ -262,8 +262,8 @@ fun PDFToolboxScreen(navController: NavController) {
                 item {
                     PDFToolCard(
                         icon = "📐",
-                        title = "Split by Size",
-                        description = "Divide PDF into parts of max size",
+                        title = stringResource(R.string.pdf_split_size),
+                        description = stringResource(R.string.pdf_split_size_desc),
                         gradientColors = listOf(
                             Color(0xFF795548).copy(alpha = 0.15f),
                             Color(0xFF5D4037).copy(alpha = 0.3f)
@@ -283,13 +283,13 @@ fun PDFToolboxScreen(navController: NavController) {
                 when (selectedTool) {
                     "merge" -> {
                         Text(
-                            "🔗 Merge PDFs",
+                            stringResource(R.string.pdf_merge_header),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Select multiple PDFs to combine into one file",
+                            stringResource(R.string.pdf_merge_help),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -301,12 +301,12 @@ fun PDFToolboxScreen(navController: NavController) {
                         ) {
                             Icon(Icons.Default.Add, null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Select PDFs")
+                            Text(stringResource(R.string.pdf_select_multiple))
                         }
                         
                         if (selectedPdfs.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Selected: ${selectedPdfs.size} files", fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.pdf_selected_count, selectedPdfs.size), fontWeight = FontWeight.Medium)
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             LazyColumn(
@@ -351,12 +351,12 @@ fun PDFToolboxScreen(navController: NavController) {
                                             val result = pdfService.mergePdfs(selectedPdfs)
                                             result.fold(
                                                 onSuccess = { 
-                                                    Toast.makeText(context, "PDFs merged successfully!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, context.getString(R.string.pdf_merged_success), Toast.LENGTH_SHORT).show()
                                                     selectedTool = null
                                                     selectedPdfStrings = emptyList()
                                                 },
                                                 onFailure = {
-                                                    Toast.makeText(context, "Error: ${it.message}", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, context.getString(R.string.error_param, it.message), Toast.LENGTH_LONG).show()
                                                 }
                                             )
                                         } finally {
@@ -378,13 +378,13 @@ fun PDFToolboxScreen(navController: NavController) {
                     
                     "split" -> {
                         Text(
-                            "✂️ Split PDF",
+                            stringResource(R.string.pdf_split_header),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Extract specific pages from a PDF",
+                            stringResource(R.string.pdf_split_help),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -411,11 +411,11 @@ fun PDFToolboxScreen(navController: NavController) {
                                     Text("📄", style = MaterialTheme.typography.headlineSmall)
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        selectedPdfs.first().lastPathSegment ?: "Selected PDF",
+                                        selectedPdfs.first().lastPathSegment ?: stringResource(R.string.pdf_selected_file),
                                         modifier = Modifier.weight(1f)
                                     )
                                     IconButton(onClick = { selectedPdfStrings = emptyList() }) {
-                                        Icon(Icons.Default.Close, "Remove")
+                                        Icon(Icons.Default.Close, stringResource(R.string.action_remove))
                                     }
                                 }
                             }
@@ -425,15 +425,15 @@ fun PDFToolboxScreen(navController: NavController) {
                             OutlinedTextField(
                                 value = splitPageRange,
                                 onValueChange = { splitPageRange = it },
-                                label = { Text("Pages to extract") },
-                                placeholder = { Text("e.g. 1-3, 5, 7-10") },
+                                label = { Text(stringResource(R.string.pdf_pages_to_extract)) },
+                                placeholder = { Text(stringResource(R.string.pdf_pages_range_hint)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                             )
                             
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "Enter page numbers or ranges separated by commas",
+                                stringResource(R.string.pdf_split_range_help),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -447,13 +447,13 @@ fun PDFToolboxScreen(navController: NavController) {
                                             val result = pdfService.splitPdf(selectedPdfs.first(), splitPageRange)
                                             result.fold(
                                                 onSuccess = {
-                                                    Toast.makeText(context, "PDF split successfully!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, context.getString(R.string.pdf_split_success), Toast.LENGTH_SHORT).show()
                                                     selectedTool = null
                                                     selectedPdfStrings = emptyList()
                                                     splitPageRange = ""
                                                 },
                                                 onFailure = {
-                                                    Toast.makeText(context, "Error: ${it.message}", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, context.getString(R.string.error_param, it.message), Toast.LENGTH_LONG).show()
                                                 }
                                             )
                                         } finally {
@@ -468,20 +468,20 @@ fun PDFToolboxScreen(navController: NavController) {
                                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Text("Extract Pages")
+                                Text(stringResource(R.string.pdf_pages_to_extract))
                             }
                         }
                     }
                     
                     "extract" -> {
                         Text(
-                            "📝 Extract Text",
+                            stringResource(R.string.pdf_extract_header),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Extract all text content from a PDF file",
+                            stringResource(R.string.pdf_extract_help),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -494,7 +494,7 @@ fun PDFToolboxScreen(navController: NavController) {
                             ) {
                                 Icon(Icons.Default.Add, null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Select PDF")
+                                Text(stringResource(R.string.pdf_select))
                             }
                         } else {
                             Card(
@@ -508,11 +508,11 @@ fun PDFToolboxScreen(navController: NavController) {
                                     Text("📄", style = MaterialTheme.typography.headlineSmall)
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        selectedPdfs.first().lastPathSegment ?: "Selected PDF",
+                                        selectedPdfs.first().lastPathSegment ?: stringResource(R.string.pdf_selected_file),
                                         modifier = Modifier.weight(1f)
                                     )
                                     IconButton(onClick = { selectedPdfStrings = emptyList() }) {
-                                        Icon(Icons.Default.Close, "Remove")
+                                        Icon(Icons.Default.Close, stringResource(R.string.action_remove))
                                     }
                                 }
                             }
@@ -530,18 +530,18 @@ fun PDFToolboxScreen(navController: NavController) {
                                                     val db = com.example.llamadroid.data.db.AppDatabase.getDatabase(context)
                                                     db.noteDao().insert(
                                                         com.example.llamadroid.data.db.NoteEntity(
-                                                            title = "PDF: ${selectedPdfs.first().lastPathSegment ?: "Extracted"}",
+                                                            title = context.getString(R.string.pdf_extract_note_title, selectedPdfs.first().lastPathSegment ?: "Extracted"),
                                                             content = text,
                                                             type = com.example.llamadroid.data.db.NoteType.PDF_SUMMARY,
                                                             sourceFile = selectedPdfs.first().toString()
                                                         )
                                                     )
-                                                    Toast.makeText(context, "Text extracted and saved to Notes!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, context.getString(R.string.pdf_extract_success), Toast.LENGTH_SHORT).show()
                                                     selectedTool = null
                                                     selectedPdfStrings = emptyList()
                                                 },
                                                 onFailure = {
-                                                    Toast.makeText(context, "Error: ${it.message}", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, context.getString(R.string.error_param, it.message), Toast.LENGTH_LONG).show()
                                                 }
                                             )
                                         } finally {
@@ -556,12 +556,12 @@ fun PDFToolboxScreen(navController: NavController) {
                                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Text("Extract Text")
+                                Text(stringResource(R.string.pdf_extract_text))
                             }
                             
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "Extracted text will be saved to Notes Manager",
+                                stringResource(R.string.pdf_extract_save_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -570,13 +570,13 @@ fun PDFToolboxScreen(navController: NavController) {
                     
                     "ocr" -> {
                         Text(
-                            "🔍 OCR (Text Recognition)",
+                            stringResource(R.string.pdf_ocr_header),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Extract text from images using ML Kit",
+                            stringResource(R.string.pdf_ocr_help),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -589,7 +589,7 @@ fun PDFToolboxScreen(navController: NavController) {
                             ) {
                                 Icon(Icons.Default.Add, null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Select Image")
+                                Text(stringResource(R.string.pdf_select_image))
                             }
                         } else {
                             Card(
@@ -624,9 +624,10 @@ fun PDFToolboxScreen(navController: NavController) {
                                                 result.fold(
                                                     onSuccess = { text ->
                                                         ocrResult = text
+                                                        Toast.makeText(context, context.getString(R.string.pdf_ocr_success), Toast.LENGTH_SHORT).show()
                                                     },
                                                     onFailure = {
-                                                        Toast.makeText(context, "OCR Error: ${it.message}", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, context.getString(R.string.error_param, it.message), Toast.LENGTH_LONG).show()
                                                     }
                                                 )
                                             } finally {
@@ -641,10 +642,13 @@ fun PDFToolboxScreen(navController: NavController) {
                                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                     }
-                                    Text("Extract Text (OCR)")
+                                    Text(stringResource(R.string.pdf_ocr_extract_text))
                                 }
                             } else {
-                                Text("📝 Extracted Text", fontWeight = FontWeight.Bold)
+                                Text(
+                                    stringResource(R.string.pdf_ocr_result_title),
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
                                 Card(
@@ -668,13 +672,13 @@ fun PDFToolboxScreen(navController: NavController) {
                                             val db = com.example.llamadroid.data.db.AppDatabase.getDatabase(context)
                                             db.noteDao().insert(
                                                 com.example.llamadroid.data.db.NoteEntity(
-                                                    title = "OCR: ${selectedImages.first().lastPathSegment ?: "Image"}",
+                                                    title = context.getString(R.string.pdf_ocr_note_title, selectedImages.first().lastPathSegment ?: "OCR"),
                                                     content = ocrResult,
                                                     type = com.example.llamadroid.data.db.NoteType.PDF_SUMMARY,
                                                     sourceFile = selectedImages.first().toString()
                                                 )
                                             )
-                                            Toast.makeText(context, "OCR result saved to Notes!", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.pdf_ocr_success), Toast.LENGTH_SHORT).show()
                                             selectedTool = null
                                             selectedImageStrings = emptyList()
                                             ocrResult = ""
@@ -684,7 +688,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                 ) {
                                     Icon(Icons.Default.Check, null)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Save to Notes")
+                                    Text(stringResource(R.string.pdf_ocr_save_btn))
                                 }
                             }
                         }
@@ -692,13 +696,13 @@ fun PDFToolboxScreen(navController: NavController) {
                     
                     "images_to_pdf" -> {
                         Text(
-                            "🖼️ Images to PDF",
+                            stringResource(R.string.pdf_images_to_pdf_header),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Select multiple images to combine into a PDF",
+                            stringResource(R.string.pdf_images_to_pdf_help),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -710,12 +714,12 @@ fun PDFToolboxScreen(navController: NavController) {
                         ) {
                             Icon(Icons.Default.Add, null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Select Images")
+                            Text(stringResource(R.string.pdf_select_images))
                         }
                         
                         if (selectedImages.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Selected: ${selectedImages.size} images", fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.pdf_selected_images_count, selectedImages.size), fontWeight = FontWeight.Medium)
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             LazyColumn(
@@ -734,7 +738,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                             Text("🖼️", style = MaterialTheme.typography.titleMedium)
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
-                                                "${index + 1}. ${uri.lastPathSegment ?: "Image"}",
+                                                "${index + 1}. ${uri.lastPathSegment ?: stringResource(R.string.pdf_selected_image)}",
                                                 modifier = Modifier.weight(1f),
                                                 maxLines = 1
                                             )
@@ -744,7 +748,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                                 },
                                                 modifier = Modifier.size(32.dp)
                                             ) {
-                                                Icon(Icons.Default.Close, "Remove", modifier = Modifier.size(18.dp))
+                                                Icon(Icons.Default.Close, stringResource(R.string.action_remove), modifier = Modifier.size(18.dp))
                                             }
                                         }
                                     }
@@ -760,12 +764,12 @@ fun PDFToolboxScreen(navController: NavController) {
                                             val result = pdfService.imagesToPdf(selectedImages)
                                             result.fold(
                                                 onSuccess = { 
-                                                    Toast.makeText(context, "PDF created successfully!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, context.getString(R.string.pdf_images_to_pdf_success), Toast.LENGTH_SHORT).show()
                                                     selectedTool = null
                                                     selectedImageStrings = emptyList()
                                                 },
                                                 onFailure = {
-                                                    Toast.makeText(context, "Error: ${it.message}", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, context.getString(R.string.error_param, it.message), Toast.LENGTH_LONG).show()
                                                 }
                                             )
                                         } finally {
@@ -780,7 +784,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Text("Create PDF")
+                                Text(stringResource(R.string.pdf_images_to_pdf))
                             }
                         }
                     }
@@ -789,13 +793,13 @@ fun PDFToolboxScreen(navController: NavController) {
                         var compressionLevel by remember { mutableStateOf(5) }
                         
                         Text(
-                            "📦 Compress PDF",
+                            stringResource(R.string.pdf_compress_header),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Reduce file size by compressing images",
+                            stringResource(R.string.pdf_compress_help),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -806,7 +810,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                 onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Select PDF")
+                                Text(stringResource(R.string.pdf_select))
                             }
                         } else {
                             Card(
@@ -822,11 +826,11 @@ fun PDFToolboxScreen(navController: NavController) {
                                     Text("📄", style = MaterialTheme.typography.titleLarge)
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        selectedPdfs.first().lastPathSegment ?: "PDF",
+                                        selectedPdfs.first().lastPathSegment ?: stringResource(R.string.pdf_selected_file),
                                         modifier = Modifier.weight(1f)
                                     )
                                     IconButton(onClick = { selectedPdfStrings = emptyList() }) {
-                                        Icon(Icons.Default.Close, "Remove")
+                                        Icon(Icons.Default.Close, stringResource(R.string.action_remove))
                                     }
                                 }
                             }
@@ -834,7 +838,13 @@ fun PDFToolboxScreen(navController: NavController) {
                             Spacer(modifier = Modifier.height(16.dp))
                             
                             Text(
-                                "Compression Level: $compressionLevel (${if (compressionLevel <= 3) "High Quality" else if (compressionLevel <= 6) "Medium" else "Max Compression"})",
+                                stringResource(
+                                    R.string.pdf_compression_level, 
+                                    compressionLevel, 
+                                    if (compressionLevel <= 3) stringResource(R.string.pdf_quality_high) 
+                                    else if (compressionLevel <= 6) stringResource(R.string.pdf_quality_medium) 
+                                    else stringResource(R.string.pdf_quality_max)
+                                ),
                                 fontWeight = FontWeight.Medium
                             )
                             Slider(
@@ -845,7 +855,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
                             Text(
-                                "1 = Best quality, 9 = Smallest file",
+                                stringResource(R.string.pdf_quality_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -861,7 +871,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                         onClick = {
                                             currentJob?.cancel()
                                             isProcessing = false
-                                            Toast.makeText(context, "Cancelled", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.action_cancelled), Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.outlinedButtonColors(
@@ -870,7 +880,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                     ) {
                                         Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Cancel")
+                                        Text(stringResource(R.string.action_cancel))
                                     }
                                 }
                                 
@@ -881,11 +891,11 @@ fun PDFToolboxScreen(navController: NavController) {
                                             try {
                                                 pdfService.compressPdf(selectedPdfs.first(), compressionLevel).fold(
                                                     onSuccess = { result ->
-                                                        Toast.makeText(context, "Compressed! Saved to output folder", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, context.getString(R.string.pdf_compress_success), Toast.LENGTH_LONG).show()
                                                         selectedPdfStrings = emptyList()
                                                     },
                                                     onFailure = {
-                                                        Toast.makeText(context, "Error: ${it.message}", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, context.getString(R.string.error_param, it.message), Toast.LENGTH_LONG).show()
                                                     }
                                                 )
                                             } finally {
@@ -901,7 +911,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                     }
-                                    Text("Compress")
+                                    Text(stringResource(R.string.pdf_compress))
                                 }
                             }
                         }
@@ -911,13 +921,13 @@ fun PDFToolboxScreen(navController: NavController) {
                         var sizeInput by remember { mutableStateOf("5") }
                         
                         Text(
-                            "📐 Split by Size",
+                            stringResource(R.string.pdf_split_size_header),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Divide PDF into parts with maximum file size",
+                            stringResource(R.string.pdf_split_size_help),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -928,7 +938,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                 onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Select PDF")
+                                Text(stringResource(R.string.pdf_select))
                             }
                         } else {
                             Card(
@@ -944,11 +954,11 @@ fun PDFToolboxScreen(navController: NavController) {
                                     Text("📄", style = MaterialTheme.typography.titleLarge)
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
-                                        selectedPdfs.first().lastPathSegment ?: "PDF",
+                                        selectedPdfs.first().lastPathSegment ?: stringResource(R.string.pdf_selected_file),
                                         modifier = Modifier.weight(1f)
                                     )
                                     IconButton(onClick = { selectedPdfStrings = emptyList() }) {
-                                        Icon(Icons.Default.Close, "Remove")
+                                        Icon(Icons.Default.Close, stringResource(R.string.action_remove))
                                     }
                                 }
                             }
@@ -958,7 +968,7 @@ fun PDFToolboxScreen(navController: NavController) {
                             OutlinedTextField(
                                 value = sizeInput,
                                 onValueChange = { sizeInput = it.filter { c -> c.isDigit() } },
-                                label = { Text("Max Size (MB)") },
+                                label = { Text(stringResource(R.string.pdf_max_size_label)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -975,7 +985,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                         onClick = {
                                             currentJob?.cancel()
                                             isProcessing = false
-                                            Toast.makeText(context, "Cancelled", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.action_cancelled), Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.outlinedButtonColors(
@@ -984,7 +994,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                     ) {
                                         Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Cancel")
+                                        Text(stringResource(R.string.action_cancel))
                                     }
                                 }
                                 
@@ -997,11 +1007,11 @@ fun PDFToolboxScreen(navController: NavController) {
                                             try {
                                                 pdfService.splitBySize(selectedPdfs.first(), sizeBytes).fold(
                                                     onSuccess = { uris ->
-                                                        Toast.makeText(context, "Split into ${uris.size} parts!", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, context.getString(R.string.pdf_split_size_success, uris.size), Toast.LENGTH_LONG).show()
                                                         selectedPdfStrings = emptyList()
                                                     },
                                                     onFailure = {
-                                                        Toast.makeText(context, "Error: ${it.message}", Toast.LENGTH_LONG).show()
+                                                        Toast.makeText(context, context.getString(R.string.error_param, it.message), Toast.LENGTH_LONG).show()
                                                     }
                                                 )
                                             } finally {
@@ -1017,7 +1027,7 @@ fun PDFToolboxScreen(navController: NavController) {
                                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                     }
-                                    Text("Split by Size")
+                                    Text(stringResource(R.string.pdf_split_size))
                                 }
                             }
                         }

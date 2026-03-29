@@ -88,7 +88,7 @@ fun LogsScreen(navController: NavController) {
                 onClick = { selectedTab = LogTab.APP },
                 text = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("📱 App Logs")
+                        Text("📱 " + stringResource(R.string.logs_tab_app))
                         if (appLogs.isNotEmpty()) {
                             Spacer(Modifier.width(4.dp))
                             Badge { Text("${appLogs.size}") }
@@ -101,7 +101,7 @@ fun LogsScreen(navController: NavController) {
                 onClick = { selectedTab = LogTab.RPC },
                 text = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🌐 RPC Logs")
+                        Text("🌐 " + stringResource(R.string.logs_tab_rpc))
                         if (rpcLogs.isNotEmpty()) {
                             Spacer(Modifier.width(4.dp))
                             Badge(
@@ -133,8 +133,8 @@ fun LogsScreen(navController: NavController) {
             FilledTonalButton(
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("LlamaDroid Logs", logText))
-                    Toast.makeText(context, "Logs copied!", Toast.LENGTH_SHORT).show()
+                    clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.logs_clip_label), logText))
+                    Toast.makeText(context, context.getString(R.string.logs_copied), Toast.LENGTH_SHORT).show()
                 },
                 enabled = currentLogs.isNotEmpty(),
                 modifier = Modifier.weight(1f),
@@ -186,7 +186,7 @@ private fun AppLogsContent(
     dateFormat: SimpleDateFormat
 ) {
     if (logs.isEmpty()) {
-        EmptyLogsPlaceholder("No app logs yet", "Perform an action to see logs here")
+        EmptyLogsPlaceholder(stringResource(R.string.logs_no_app), stringResource(R.string.logs_no_app_desc))
     } else {
         Card(
             modifier = Modifier
@@ -252,8 +252,8 @@ private fun RpcLogsContent(
 ) {
     if (logs.isEmpty()) {
         EmptyLogsPlaceholder(
-            "No RPC logs yet",
-            "Start a worker to see RPC server output"
+            stringResource(R.string.logs_no_rpc),
+            stringResource(R.string.logs_no_rpc_desc)
         )
     } else {
         // Hacker-style terminal card
@@ -282,7 +282,7 @@ private fun RpcLogsContent(
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        "rpc-server -- /dev/tty",
+                        stringResource(R.string.logs_terminal_header),
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFamily = FontFamily.Monospace
                         ),

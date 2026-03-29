@@ -17,6 +17,9 @@ interface ModelDao {
     
     @Query("SELECT * FROM models WHERE type IN (:types)")
     fun getModelsByTypes(types: List<ModelType>): Flow<List<ModelEntity>>
+    
+    @Query("SELECT * FROM models WHERE type IN (:types)")
+    suspend fun getModelsByTypesSync(types: List<ModelType>): List<ModelEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertModel(model: ModelEntity)

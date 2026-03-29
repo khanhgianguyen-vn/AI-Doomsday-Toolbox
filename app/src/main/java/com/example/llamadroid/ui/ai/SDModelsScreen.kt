@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -240,7 +242,7 @@ fun SDModelsScreen(navController: NavController) {
             title = { 
                 Column {
                     Text(
-                        "Select File",
+                        stringResource(R.string.sd_models_select_file),
                         fontWeight = FontWeight.Bold
                     )
                     Text(
@@ -334,7 +336,7 @@ fun SDModelsScreen(navController: NavController) {
                                 }
                                 Icon(
                                     Icons.Default.Add,
-                                    contentDescription = "Download",
+                                    contentDescription = stringResource(R.string.sd_models_tab_downloading),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
@@ -348,7 +350,7 @@ fun SDModelsScreen(navController: NavController) {
                     selectedRepoId = null
                     availableFiles = emptyList()
                 }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             },
             shape = RoundedCornerShape(16.dp)
@@ -359,7 +361,7 @@ fun SDModelsScreen(navController: NavController) {
     if (isLoadingFiles) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text("Loading files...") },
+            title = { Text(stringResource(R.string.sd_models_loading_files)) },
             text = { CircularProgressIndicator() },
             confirmButton = {}
         )
@@ -388,7 +390,7 @@ fun SDModelsScreen(navController: NavController) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
             }
             Text(
-                "🎨 SD Models",
+                stringResource(R.string.sd_models_title),
                 style = MaterialTheme.typography.headlineSmall.copy(
                     fontWeight = FontWeight.Bold
                 )
@@ -403,14 +405,14 @@ fun SDModelsScreen(navController: NavController) {
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
-                text = { Text("Installed ($totalInstalledCount)") }
+                text = { Text(stringResource(R.string.sd_models_tab_installed, totalInstalledCount)) }
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
                 text = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Downloading")
+                        Text(stringResource(R.string.sd_models_tab_downloading))
                         if (activeDownloads.isNotEmpty()) {
                             Spacer(modifier = Modifier.width(4.dp))
                             Badge { Text("${activeDownloads.size}") }
@@ -421,7 +423,7 @@ fun SDModelsScreen(navController: NavController) {
             Tab(
                 selected = selectedTab == 2,
                 onClick = { selectedTab = 2 },
-                text = { Text("Discover") }
+                text = { Text(stringResource(R.string.sd_models_tab_discover)) }
             )
         }
         
@@ -510,7 +512,7 @@ private fun InstalledSDModelsTab(
                         val sourceFile = File(model.path)
                         if (!sourceFile.exists()) {
                             withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(context, "Source file not found", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.sd_models_error_source_not_found), android.widget.Toast.LENGTH_SHORT).show()
                             }
                             return@launch
                         }
@@ -525,12 +527,12 @@ private fun InstalledSDModelsTab(
                                 }
                             }
                             withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(context, "Exported: ${model.filename}", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.sd_models_export_success, model.filename), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.sd_models_export_failed, e.message), android.widget.Toast.LENGTH_SHORT).show()
                         }
                     } finally {
                         pendingExportModel = null
@@ -578,17 +580,17 @@ private fun InstalledSDModelsTab(
                 showImportDialog = false
                 pendingUri = null
             },
-            title = { Text("Import SD Model") },
+            title = { Text(stringResource(R.string.sd_models_import_title)) },
             text = {
                 val types = listOf(
-                    ModelType.SD_CHECKPOINT to "SD Checkpoint (SD1.5/SDXL)",
-                    ModelType.SD_DIFFUSION to "FLUX Diffusion Model",
-                    ModelType.SD_CLIP_L to "CLIP-L Text Encoder",
-                    ModelType.SD_T5XXL to "T5-XXL Text Encoder",
-                    ModelType.SD_VAE to "VAE",
-                    ModelType.SD_CONTROLNET to "ControlNet",
-                    ModelType.SD_LORA to "LoRA",
-                    ModelType.SD_UPSCALER to "Upscaler (ESRGAN)"
+                    ModelType.SD_CHECKPOINT to stringResource(R.string.sd_type_checkpoint),
+                    ModelType.SD_DIFFUSION to stringResource(R.string.sd_type_diffusion),
+                    ModelType.SD_CLIP_L to stringResource(R.string.sd_type_clip_l),
+                    ModelType.SD_T5XXL to stringResource(R.string.sd_type_t5xxl),
+                    ModelType.SD_VAE to stringResource(R.string.sd_type_vae),
+                    ModelType.SD_CONTROLNET to stringResource(R.string.sd_type_controlnet),
+                    ModelType.SD_LORA to stringResource(R.string.sd_type_lora),
+                    ModelType.SD_UPSCALER to stringResource(R.string.sd_type_upscaler)
                 )
                 
                 LazyColumn(
@@ -596,20 +598,20 @@ private fun InstalledSDModelsTab(
                 ) {
                     item {
                         // Editable filename
-                        Text("Filename:", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.sd_models_filename_label), style = MaterialTheme.typography.labelMedium)
                         Spacer(modifier = Modifier.height(4.dp))
                         OutlinedTextField(
                             value = pendingFilename,
                             onValueChange = { pendingFilename = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            placeholder = { Text("model.safetensors") }
+                            placeholder = { Text(stringResource(R.string.sd_models_filename_hint)) }
                         )
                         
                         Spacer(modifier = Modifier.height(16.dp))
                         
                         // Model type selection
-                        Text("Model Type:", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.sd_models_type_label), style = MaterialTheme.typography.labelMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                     
@@ -637,7 +639,7 @@ private fun InstalledSDModelsTab(
                     if (selectedImportType == ModelType.SD_CHECKPOINT) {
                         item {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Capabilities:", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.sd_models_capabilities_label), style = MaterialTheme.typography.labelMedium)
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -646,7 +648,7 @@ private fun InstalledSDModelsTab(
                                     onCheckedChange = { supportsTxt2Img = it }
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Text-to-Image (txt2img)")
+                                Text(stringResource(R.string.sd_models_cap_txt2img))
                             }
                             
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -655,7 +657,7 @@ private fun InstalledSDModelsTab(
                                     onCheckedChange = { supportsImg2Img = it }
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Image-to-Image (img2img)")
+                                Text(stringResource(R.string.sd_models_cap_img2img))
                             }
                         }
                     }
@@ -702,7 +704,7 @@ private fun InstalledSDModelsTab(
                     supportsTxt2Img = true
                     supportsImg2Img = true
                 }) {
-                    Text("Import")
+                    Text(stringResource(R.string.action_import))
                 }
             },
             dismissButton = {
@@ -711,7 +713,7 @@ private fun InstalledSDModelsTab(
                     pendingUri = null
                     pendingFilename = ""
                 }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -721,7 +723,7 @@ private fun InstalledSDModelsTab(
     if (isImporting) {
         AlertDialog(
             onDismissRequest = { /* Can't dismiss during import */ },
-            title = { Text("Importing Model") },
+            title = { Text(stringResource(R.string.sd_models_importing_title)) },
             text = {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -746,7 +748,7 @@ private fun InstalledSDModelsTab(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Please wait...",
+                        stringResource(R.string.sd_models_please_wait),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -777,13 +779,13 @@ private fun InstalledSDModelsTab(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "No SD models installed",
+                        stringResource(R.string.sd_models_no_sd_models),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Go to Discover or tap + to import",
+                        stringResource(R.string.sd_models_import_hint),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -799,7 +801,7 @@ private fun InstalledSDModelsTab(
                 if (checkpoints.isNotEmpty()) {
                     item {
                         Text(
-                            "🎨 Checkpoints (${checkpoints.size})",
+                            stringResource(R.string.sd_models_checkpoints_label, checkpoints.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -819,7 +821,7 @@ private fun InstalledSDModelsTab(
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "⚡ FLUX Diffusion (${diffusionModels.size})",
+                            stringResource(R.string.sd_models_flux_diffusion_label, diffusionModels.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -839,7 +841,7 @@ private fun InstalledSDModelsTab(
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "📝 CLIP-L Encoders (${clipLModels.size})",
+                            stringResource(R.string.sd_models_clip_l_label, clipLModels.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -859,7 +861,7 @@ private fun InstalledSDModelsTab(
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "📝 T5-XXL Encoders (${t5xxlModels.size})",
+                            stringResource(R.string.sd_models_t5xxl_label, t5xxlModels.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -879,7 +881,7 @@ private fun InstalledSDModelsTab(
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "🎨 VAE (${vaeModels.size})",
+                            stringResource(R.string.sd_models_vae_label, vaeModels.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -899,7 +901,7 @@ private fun InstalledSDModelsTab(
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "🎛️ ControlNet (${controlNetModels.size})",
+                            stringResource(R.string.sd_models_controlnet_label, controlNetModels.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -919,7 +921,7 @@ private fun InstalledSDModelsTab(
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "✨ LoRA (${loraModels.size})",
+                            stringResource(R.string.sd_models_lora_label, loraModels.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -939,7 +941,7 @@ private fun InstalledSDModelsTab(
                     item {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "⬆️ Upscalers (${upscalers.size})",
+                            stringResource(R.string.sd_models_upscalers_label, upscalers.size),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
@@ -964,7 +966,7 @@ private fun InstalledSDModelsTab(
                 .padding(16.dp),
             containerColor = MaterialTheme.colorScheme.primary
         ) {
-            Icon(Icons.Default.Add, contentDescription = "Import SD model")
+            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.sd_models_import_title))
         }
     }
 }
@@ -997,7 +999,7 @@ private suspend fun importSDModel(
                 onProgress(1f)  // Instant completion
                 android.widget.Toast.makeText(
                     context,
-                    "Model linked from external storage (no copy needed)",
+                    context.getString(R.string.sd_models_linked_external),
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
             }
@@ -1008,7 +1010,7 @@ private suspend fun importSDModel(
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     android.widget.Toast.makeText(
                         context, 
-                        "Tip: Grant 'All files access' in Settings to use models without copying", 
+                        context.getString(R.string.sd_models_permission_tip), 
                         android.widget.Toast.LENGTH_LONG
                     ).show()
                 }
@@ -1151,7 +1153,7 @@ private fun DownloadingTab(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "No active downloads",
+                    stringResource(R.string.sd_models_no_active_downloads),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1247,12 +1249,12 @@ private fun DiscoverTab(
             value = searchQuery,
             onValueChange = onQueryChange,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search HuggingFace for SD models...") },
+            placeholder = { Text(stringResource(R.string.sd_models_search_hint)) },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
-                        Icon(Icons.Default.Clear, "Clear")
+                        Icon(Icons.Default.Clear, stringResource(R.string.action_clear))
                     }
                 }
             },
@@ -1279,7 +1281,7 @@ private fun DiscoverTab(
                 Icon(Icons.Default.Search, null)
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Text(if (isSearching) "Searching..." else "Search")
+            Text(if (isSearching) stringResource(R.string.sd_models_searching) else stringResource(R.string.action_search))
         }
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -1291,12 +1293,12 @@ private fun DiscoverTab(
             if (searchResults.isEmpty() && !isSearching) {
                 item {
                     Text(
-                        "Quick Search Suggestions",
+                        stringResource(R.string.sd_models_quick_search),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Tap to search HuggingFace",
+                        stringResource(R.string.sd_models_tap_to_search),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1314,7 +1316,7 @@ private fun DiscoverTab(
             if (searchResults.isNotEmpty()) {
                 item {
                     Text(
-                        "Search Results (${searchResults.size})",
+                        stringResource(R.string.sd_models_search_results, searchResults.size),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
@@ -1354,7 +1356,7 @@ private fun SuggestionCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "Search: \"${suggestion.query}\"",
+                stringResource(R.string.sd_models_search_label, suggestion.query),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

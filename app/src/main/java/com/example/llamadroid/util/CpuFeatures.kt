@@ -66,6 +66,13 @@ object CpuFeatures {
     }
     
     /**
+     * Get the current device architecture (e.g. "arm64-v8a", "armeabi-v7a", "x86_64")
+     */
+    fun getArch(): String {
+        return android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: android.os.Build.CPU_ABI
+    }
+
+    /**
      * Log all CPU features for debugging
      */
     fun logFeatures() {

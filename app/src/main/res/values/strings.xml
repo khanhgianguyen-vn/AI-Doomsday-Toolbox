@@ -8,6 +8,8 @@
     <string name="nav_notes">Notes</string>
     <string name="nav_models">Models</string>
     <string name="nav_settings">Settings</string>
+    <string name="nav_logs">Logs</string>
+    <string name="nav_tama">Tama</string>
     
     <!-- Dashboard -->
     <string name="dashboard_title">Dashboard</string>
@@ -56,36 +58,63 @@
     
     <!-- Image Generation -->
     <string name="imagegen_title">Image Generation</string>
-    <string name="imagegen_prompt">Prompt</string>
+    <string name="imagegen_tab_generate">Generate</string>
+    <string name="imagegen_tab_gallery">Gallery</string>
+    <string name="imagegen_mode_txt2img">txt2img</string>
+    <string name="imagegen_mode_img2img">img2img</string>
+    <string name="imagegen_mode_upscale">upscale</string>
+    <string name="imagegen_prompt_label">Prompt</string>
+    <string name="imagegen_get_sd_models">Get SD Models</string>
+    <string name="imagegen_get_upscaler_models">Get Upscaler Models</string>
+    <string name="imagegen_gallery">Gallery</string>
     <string name="imagegen_prompt_hint">Describe the image you want to create…</string>
-    <string name="imagegen_negative_prompt">Negative prompt</string>
-    <string name="imagegen_negative_hint">What to avoid…</string>
-    <string name="imagegen_generate">Generate</string>
-    <string name="imagegen_generating">Generating…</string>
-    <string name="imagegen_enhance_prompt">Enhance prompt with AI</string>
-    <string name="imagegen_steps">Steps</string>
-    <string name="imagegen_cfg_scale">CFG Scale</string>
-    <string name="imagegen_seed">Seed</string>
-    <string name="imagegen_random_seed">Random</string>
+    <string name="imagegen_negative_prompt_label">Negative Prompt</string>
+    <string name="imagegen_negative_prompt_placeholder">Things to avoid in the image...</string>
+    <string name="imagegen_advanced_options">Advanced Options</string>
+    <string name="imagegen_steps_label">Steps</string>
+    <string name="imagegen_cfg_label">CFG</string>
+    <string name="imagegen_seed_label">Seed (-1 = random)</string>
+    <string name="imagegen_random_seed">Random seed</string>
     <string name="imagegen_resolution">Resolution</string>
+    <string name="imagegen_width_label">Width</string>
+    <string name="imagegen_height_label">Height</string>
+    <string name="imagegen_sampler_label">Sampler</string>
+    <string name="imagegen_prompt_placeholder">Describe the image you want to generate...</string>
+    <string name="imagegen_threads_label">Threads (-1 = auto)</string>
+    <string name="imagegen_threads_desc">Number of CPU threads for generation</string>
+    <string name="imagegen_strength_label">Strength</string>
+    <string name="imagegen_strength_desc">Lower = more like original, Higher = more creative</string>
+    <string name="imagegen_select_model">Select model</string>
+    <string name="imagegen_no_model">No SD model selected</string>
+    <string name="imagegen_no_vae_installed">No VAE models installed</string>
+    <string name="imagegen_generate_btn">Generate Image</string>
+    <string name="imagegen_upscale_btn">Upscale Image</string>
+    <string name="imagegen_upscale_factor">Upscale factor</string>
+    <string name="imagegen_success">Image generated successfully!</string>
     <string name="imagegen_save">Save image</string>
     <string name="imagegen_share">Share</string>
-    <string name="imagegen_mode_txt2img">Text to Image</string>
-    <string name="imagegen_mode_img2img">Image to Image</string>
-    <string name="imagegen_mode_upscale">Upscale</string>
+    <string name="imagegen_share_chooser">Share Image</string>
+    <string name="imagegen_delete_confirm">Image deleted</string>
+    <string name="imagegen_delete_fail">Failed to delete</string>
+    <string name="imagegen_gallery_all">All</string>
+    <string name="imagegen_gallery_empty">No images yet</string>
+    <string name="imagegen_advanced">Advanced</string>
+    <string name="imagegen_cfg_scale">CFG Scale</string>
+    <string name="imagegen_height">Height</string>
+    <string name="imagegen_negative_hint">Avoid...</string>
+    <string name="imagegen_negative_prompt">Negative Prompt</string>
+    <string name="imagegen_prompt">Prompt</string>
+    <string name="imagegen_seed">Seed</string>
+    <string name="imagegen_steps">Steps</string>
     <string name="imagegen_strength">Strength</string>
-    <string name="imagegen_upscale_factor">Upscale factor</string>
-    <string name="imagegen_no_model">No SD model selected</string>
-    <string name="imagegen_select_model">Select model in settings</string>
+    <string name="imagegen_width">Width</string>
+    <string name="imagegen_gallery_empty_filter">No %s images</string>
+    <string name="imagegen_step_progress">Step %1$d / %2$d (%3$d%%)</string>
     <string name="imagegen_progress">Progress: %d%%</string>
-    <string name="imagegen_select_image">Select Image</string>
-    <string name="imagegen_cancel">Cancel</string>
-    <string name="imagegen_gallery">Gallery</string>
-    <string name="imagegen_advanced">Advanced Options</string>
+    <string name="status_generating">Generating...</string>
+    
     <string name="imagegen_lora">LoRA</string>
     <string name="imagegen_select_lora">Select LoRA</string>
-    <string name="imagegen_width">Width</string>
-    <string name="imagegen_height">Height</string>
     <string name="imagegen_memory_opt">Memory Optimization</string>
     <string name="imagegen_vae_tiling">VAE Tiling</string>
     <string name="imagegen_tile_overlap">Tile Overlap</string>
@@ -96,6 +125,36 @@
     <string name="imagegen_export_success">Exported to %s</string>
     <string name="imagegen_export_fail">Export failed: %s</string>
     <string name="imagegen_vae_gguf_note">Note: GGUF VAEs are recommended for lower RAM usage.</string>
+    <string name="imagegen_flux_encoders">FLUX Encoders</string>
+    <string name="imagegen_flux_encoders_desc">FLUX models require text encoders (CLIP-L &amp; T5) to understand prompts.</string>
+    <string name="imagegen_clip_l_label">CLIP-L Text Encoder</string>
+    <string name="imagegen_select_clip_l">Select CLIP-L</string>
+    <string name="imagegen_t5xxl_label">T5-XXL Text Encoder</string>
+    <string name="imagegen_select_t5xxl">Select T5-XXL</string>
+    <string name="imagegen_no_clip_l">No CLIP-L models installed</string>
+    <string name="imagegen_no_t5xxl">No T5-XXL models installed</string>
+    <string name="imagegen_get_flux_components">Get FLUX Components</string>
+    <string name="imagegen_checkpoint_desc">Required only if the model doesn\'t have a built-in VAE.</string>
+    <string name="imagegen_flux_vae_desc">Flux models strictly require a VAE if not baked into the GGUF.</string>
+    <string name="imagegen_none_builtin">None (Use Built-in)</string>
+    <string name="imagegen_quantization_title">Model Quantization (--type)</string>
+    <string name="imagegen_quant_desc">Will load model using %s quantization.</string>
+    <string name="imagegen_flux_warning">Warning: Flux might fail if VAE or Encoders are missing.</string>
+    <string name="imagegen_upscale_factor_label">Model Factor</string>
+    <string name="imagegen_upscale_factor_desc">Auto-detected from model filename</string>
+    <string name="imagegen_upscale_repeats">Upscale Repeats</string>
+    <string name="imagegen_upscale_repeats_warn">Multiple repeats = longer processing time</string>
+    <string name="imagegen_final_factor">Final Factor:</string>
+    <string name="imagegen_output_res">Output Resolution:</string>
+    <string name="imagegen_original_base">Original: %1$s×%2$s → Base: %3$s×%4$s</string>
+    <string name="imagegen_generated_title">Generated Image</string>
+    <string name="imagegen_vae_optional">VAE (Optional)</string>
+    <string name="imagegen_select_vae">Select VAE (or system default)</string>
+    <string name="imagegen_upscale_model_info">Select an upscaler model to see scaling options</string>
+    <string name="imagegen_no_models_installed">No SD/FLUX models installed.</string>
+    <string name="imagegen_no_upscalers_installed">No upscaler models installed.</string>
+    <string name="imagegen_select_image">Select Image</string>
+    <string name="imagegen_cancel">Cancel</string>
     
     <!-- Audio Transcription -->
     <string name="whisper_title">Audio Transcription</string>
@@ -110,6 +169,34 @@
     <string name="whisper_save">Save to file</string>
     <string name="whisper_language">Language</string>
     <string name="whisper_auto_detect">Auto-detect</string>
+    <string name="whisper_source_label">Audio Source</string>
+    <string name="whisper_media_btn">Audio/Video</string>
+    <string name="whisper_record_btn">Record</string>
+    <string name="whisper_settings_label">Settings</string>
+    <string name="whisper_language_label">Language</string>
+    <string name="whisper_translate_label">Translate to English</string>
+    <string name="whisper_output_formats">Output Formats</string>
+    <string name="whisper_transcribe_btn">Transcribe</string>
+    <string name="whisper_result_label">Transcription</string>
+    <string name="whisper_select_model">Select Model</string>
+    <string name="whisper_record_title">Record Audio</string>
+    <string name="whisper_record_hint">Tap Start to begin recording</string>
+    <string name="whisper_use_recording">Use Recording</string>
+    <string name="whisper_extracting_audio">Extracting audio from video…</string>
+    <string name="whisper_extraction_success">Audio extracted successfully!</string>
+    <string name="whisper_selected_file">Selected: %s</string>
+    <string name="whisper_status_converting">Converting audio…</string>
+    <string name="whisper_status_transcribing">Transcribing…</string>
+    <string name="whisper_record_saved">Recording saved</string>
+    <string name="whisper_video_loaded_note">Video file loaded. Audio extraction will happen on transcribe.</string>
+    <string name="whisper_error_shared_file">Failed to load shared file: %s</string>
+    <string name="whisper_error_extraction">Failed to extract audio (exit code: %d)</string>
+    <string name="whisper_error_permission">Recording permission denied</string>
+    <string name="whisper_error_no_model">Please select a model</string>
+    <string name="whisper_error_no_audio">Please select an audio file</string>
+    <string name="whisper_error_save_recording">Failed to save recording: %s</string>
+    <string name="whisper_error_start_recording">Failed to start recording: %s</string>
+    <string name="whisper_error_stop_recording">Failed to stop recording: %s</string>
     
     <!-- Video Summary -->
     <string name="video_sumup_title">Video Summary</string>
@@ -118,6 +205,46 @@
     <string name="video_sumup_analyzing">Analyzing…</string>
     <string name="video_sumup_frames">Extracting frames…</string>
     <string name="video_sumup_summary">Summary</string>
+    <string name="video_sumup_ai_title">Video Sumup AI</string>
+    <string name="video_sumup_ai_desc">Extract audio → Transcribe with Whisper → Summarize with LLM</string>
+    <string name="video_sumup_models_label">Models</string>
+    <string name="video_sumup_select_whisper">Select Whisper Model</string>
+    <string name="video_sumup_whisper_label">Whisper Model</string>
+    <string name="video_sumup_no_whisper">No Whisper models - download one first</string>
+    <string name="video_sumup_select_llm">Select LLM Model</string>
+    <string name="video_sumup_llm_label">LLM Model</string>
+    <string name="video_sumup_no_llm">No LLM models - download one first</string>
+    <string name="video_sumup_params_label">LLM Parameters</string>
+    <string name="video_sumup_kv_cache">KV Cache Quantization</string>
+    <string name="video_sumup_select_video">Select Video</string>
+    <string name="video_sumup_video_placeholder">Video</string>
+    <string name="video_sumup_btn">Summarize Video</string>
+    <string name="video_sumup_step1">Step 1/3</string>
+    <string name="video_sumup_step2">Step 2/3</string>
+    <string name="video_sumup_step3">Step 3/3</string>
+    <string name="video_sumup_summary_label">Summary</string>
+    <string name="video_sumup_transcript_label">Transcript</string>
+    <string name="video_sumup_saved_notes">Saved to Notes</string>
+    <string name="video_sumup_error_no_whisper">Please select a Whisper model</string>
+    <string name="video_sumup_error_no_llm">Please select an LLM model</string>
+    <string name="video_sumup_error_read">Could not read video: %s</string>
+    <string name="video_sumup_extracting_audio">Extracting audio…</string>
+    <string name="video_sumup_transcribing_whisper">Transcribing with Whisper…</string>
+    <string name="video_sumup_transcribing">Transcribing…</string>
+    <string name="video_sumup_summarizing_ai">Summarizing with AI…</string>
+    <string name="video_sumup_summarizing">Summarizing…</string>
+    <string name="video_sumup_summary_saved">Summary saved!</string>
+    <string name="video_sumup_complete">Complete!</string>
+    <string name="video_summary_remote_settings_title">Remote Summary Settings</string>
+    <string name="video_summary_chunk_count">Projected summary chunks: %1$d</string>
+    <string name="video_sumup_notification_title">Transcribe + Summary: %1$s</string>
+    <string name="video_sumup_notification_complete">Summary ready</string>
+    <string name="video_sumup_note_title">Video: %1$s</string>
+    <string name="label_threads">Threads</string>
+    <string name="label_context_size">Context Size</string>
+    <string name="label_max_tokens">Max Tokens</string>
+    <string name="label_temperature">Temperature</string>
+    <string name="action_remove">Remove</string>
     
     <!-- Video Upscaler -->
     <string name="upscaler_title">Video Upscaler</string>
@@ -125,21 +252,177 @@
     <string name="upscaler_start">Start upscaling</string>
     <string name="upscaler_stop">Stop</string>
     <string name="upscaler_progress">Progress: %d%%</string>
-    <string name="upscaler_processing">Processing frame %d of %d</string>
+    <string name="upscaler_processing">Processing frame %1$d of %2$d</string>
     <string name="upscaler_complete">Upscaling complete!</string>
     <string name="upscaler_scale">Scale</string>
     <string name="upscaler_2x">2x</string>
     <string name="upscaler_4x">4x</string>
     
     <!-- PDF Tools -->
-    <string name="pdf_title">PDF Tools</string>
+    <string name="pdf_toolbox_title">PDF Toolbox</string>
+    <string name="pdf_tools_header">📄 PDF Tools</string>
+    <string name="pdf_merge">Merge PDFs</string>
+    <string name="pdf_merge_desc">Combine multiple PDF files into one</string>
+    <string name="pdf_split">Split PDF</string>
+    <string name="pdf_split_desc">Extract specific pages or split into parts</string>
+    <string name="pdf_extract_text">Extract Text</string>
+    <string name="pdf_extract_text_desc">Extract all text content from PDF</string>
+    <string name="pdf_ai_summary">AI Summary</string>
+    <string name="pdf_ai_summary_desc">Summarize PDF content using AI</string>
+    <string name="pdf_ocr_full">OCR (Text Recognition)</string>
+    <string name="pdf_ocr_desc">Extract text from scanned PDFs/images</string>
+    <string name="pdf_images_to_pdf">Images to PDF</string>
+    <string name="pdf_images_to_pdf_desc">Convert images into a PDF document</string>
+    <string name="pdf_compress">Compress PDF</string>
+    <string name="pdf_compress_desc">Reduce file size with 9 quality levels</string>
+    <string name="pdf_split_size">Split by Size</string>
+    <string name="pdf_split_size_desc">Divide PDF into parts of max size</string>
+    
+    <string name="pdf_merge_header">🔗 Merge PDFs</string>
+    <string name="pdf_merge_help">Combine multiple PDF files into one</string>
+    <string name="pdf_select_multiple">Select PDFs</string>
+    <string name="pdf_selected_count">Selected: %d files</string>
+    <string name="pdf_merged_success">PDFs merged successfully!</string>
+    <string name="error_param">Error: %s</string>
+    
+    <string name="pdf_split_header">✂️ Split PDF</string>
+    <string name="pdf_split_help">Extract specific pages from a PDF</string>
     <string name="pdf_select">Select PDF</string>
-    <string name="pdf_summary">Summary</string>
-    <string name="pdf_ocr">OCR</string>
-    <string name="pdf_processing">Processing…</string>
-    <string name="pdf_pages">%d pages</string>
-    <string name="pdf_extract_text">Extract text</string>
-    <string name="pdf_summarize">Summarize with AI</string>
+    <string name="pdf_selected_file">Selected PDF</string>
+    <string name="pdf_pages_to_extract">Pages to extract</string>
+    <string name="pdf_pages_range_hint">e.g. 1-3, 5, 7-10</string>
+    <string name="pdf_split_range_help">Enter page numbers or ranges separated by commas</string>
+    <string name="pdf_split_success">PDF split successfully!</string>
+    
+    <string name="pdf_extract_header">📝 Extract Text</string>
+    <string name="pdf_extract_help">Extract all text content from a PDF file</string>
+    <string name="pdf_extract_note_title">PDF: %s</string>
+    <string name="pdf_extract_success">Text extracted and saved to Notes!</string>
+    <string name="pdf_extract_save_hint">Extracted text will be saved to Notes</string>
+    
+    <string name="pdf_ocr_header">🔍 OCR (Text Recognition)</string>
+    <string name="pdf_ocr_help">Extract text from images using ML Kit</string>
+    <string name="pdf_select_image">Select Image</string>
+    <string name="pdf_selected_image">Selected Image</string>
+    <string name="pdf_ocr_extract_text">Extract Text (OCR)</string>
+    <string name="pdf_ocr_result_title">📝 Extracted Text</string>
+    <string name="pdf_ocr_note_title">OCR: %s</string>
+    <string name="pdf_ocr_success">OCR result saved to Notes!</string>
+    <string name="pdf_ocr_save_btn">Save to Notes</string>
+    
+    <string name="pdf_images_to_pdf_header">🖼️ Images to PDF</string>
+    <string name="pdf_images_to_pdf_help">Select multiple images to combine into a PDF</string>
+    <string name="pdf_select_images">Select Images</string>
+    <string name="pdf_selected_images_count">Selected: %d images</string>
+    <string name="pdf_images_to_pdf_success">PDF created successfully!</string>
+    
+    <string name="pdf_compress_header">📦 Compress PDF</string>
+    <string name="pdf_compress_help">Reduce file size by compressing images</string>
+    <string name="pdf_compression_level">Compression Level: %1$d (%2$s)</string>
+    <string name="pdf_quality_high">High Quality</string>
+    <string name="pdf_quality_medium">Medium</string>
+    <string name="pdf_quality_max">Max Compression</string>
+    <string name="pdf_quality_hint">1 = Best quality, 9 = Smallest file</string>
+    <string name="pdf_compress_success">Compressed! Saved to output folder</string>
+    <string name="action_cancelled">Cancelled</string>
+    <string name="summary_cancelled_message">The summary job was cancelled.</string>
+    <string name="summary_progress_single">Generating summary</string>
+    <string name="summary_progress_chunk">Summarizing chunk %1$d of %2$d</string>
+    <string name="summary_progress_merge">Combining summaries</string>
+    <string name="summary_progress_merge_batch">Combining summary batch %1$d of %2$d</string>
+    <string name="summary_partial_item_label">Chunk %1$d</string>
+    <string name="summary_section_title">Summary</string>
+    <string name="transcript_section_title">Transcript</string>
+    <string name="summary_note_content">## %1$s\n\n%2$s\n\n## %3$s\n\n%4$s</string>
+    
+    <string name="pdf_split_size_header">📐 Split by Size</string>
+    <string name="pdf_split_size_help">Divide PDF into parts with maximum file size</string>
+    <string name="pdf_max_size_label">Max Size (MB)</string>
+    <string name="pdf_split_size_success">Split into %d parts!</string>
+    
+    <!-- Zim Library (Kiwix) -->
+    <string name="zim_title">ZIM Library</string>
+    <string name="zim_tab_installed">Installed</string>
+    <string name="zim_tab_catalog">Catalog</string>
+    <string name="zim_tab_downloads">Downloads</string>
+    <string name="zim_tab_share">Share</string>
+    <string name="zim_storage_title">Select ZIM Storage Folder</string>
+    <string name="zim_storage_desc">Choose where to store downloaded ZIM files. ZIM files can be large (100MB - 90GB), so select a folder with enough space.</string>
+    <string name="zim_select_folder">Select Folder</string>
+    <string name="zim_skip_internal">Skip for now (use internal storage)</string>
+    <string name="zim_using_ref">Using reference: %s</string>
+    <string name="zim_copying">Copying %s...</string>
+    <string name="zim_imported_copied">Imported (copied)</string>
+    <string name="zim_imported_ref">Imported (reference)</string>
+    <string name="zim_import_success_copied">Imported (copied): %s</string>
+    <string name="zim_import_success_ref">Imported (reference): %s</string>
+    <string name="zim_import_failed">Import failed: %s</string>
+    <string name="zim_file_not_found">File not found</string>
+    <string name="zim_exporting">Exporting to Downloads...</string>
+    <string name="zim_exported_success">Exported to Downloads: %s</string>
+    <string name="zim_export_failed">Export failed: %s</string>
+    <string name="zim_no_installed">No ZIM files installed</string>
+    <string name="zim_browse_catalog">Browse the catalog to download offline content</string>
+    <string name="zim_import_desc">Import ZIM</string>
+    <string name="zim_rename_title">Rename ZIM</string>
+    <string name="zim_new_name_label">New name</string>
+    <string name="zim_rename_hint">Extension .zim will be kept</string>
+    <string name="zim_action_rename">Rename</string>
+    <string name="zim_share_title">Share %s</string>
+    <string name="zim_share_network_desc">To share ZIM files over the network:</string>
+    <string name="zim_share_step1">1. Open the Kiwix Viewer</string>
+    <string name="zim_share_step2">2. The server will start automatically</string>
+    <string name="zim_share_step3">3. Enable LAN access in Settings</string>
+    <string name="zim_share_step4">4. Other devices can connect to:</string>
+    <string name="zim_connect_wifi">Connect to WiFi</string>
+    <string name="zim_search_placeholder">Search ZIMs...</string>
+    <string name="zim_loading_catalog">Loading catalog...</string>
+    <string name="zim_error_prefix">Error: %s</string>
+    <string name="zim_retry">Retry</string>
+    <string name="zim_no_results">No results found</string>
+    <string name="zim_downloading_desc">Downloading ZIM file</string>
+    <string name="zim_downloading_toast">Downloading: %s</string>
+    <string name="zim_download_failed">Download failed: %s</string>
+    <string name="zim_articles_count">%d articles</string>
+    <string name="zim_more_options">More options</string>
+    <string name="zim_menu_rename">Rename</string>
+    <string name="zim_menu_export">Export to Downloads</string>
+    <string name="zim_menu_share">Share over Network</string>
+    <string name="zim_menu_delete">Delete</string>
+    <string name="zim_size_unknown">Size unknown</string>
+    <string name="zim_get">Get</string>
+    <string name="zim_no_active_downloads">No active downloads</string>
+    <string name="zim_active_downloads_hint">Download ZIMs from the Catalog tab</string>
+    <string name="zim_cancel_download">Cancel Download</string>
+    <string name="zim_sharing_title">Sharing ZIM Files</string>
+    <string name="zim_file_server_title">ZIM File Server</string>
+    <string name="zim_available_count">%d ZIM file(s) available for download</string>
+    <string name="zim_active_downloads_count">📥 %d active download(s)</string>
+    <string name="zim_stop_server">Stop Server</string>
+    <string name="zim_start_server">Start File Server (Port 8087)</string>
+    <string name="zim_scan_to_download">📲 Scan to Download ZIM Files</string>
+    <string name="zim_qr_content_desc">QR for %s</string>
+    <string name="zim_open_url_browser">Open any URL in a browser to download ZIM files</string>
+    <string name="zim_network_share_info">Share ZIM files with other devices on your network. They can download files directly from this device.</string>
+    <string name="zim_storage_header">Storage</string>
+    <string name="zim_storage_info">ZIM files are stored in the app\'s internal storage for fast access by the Kiwix server.</string>
+    <string name="zim_path_label">Path: %s</string>
+    <string name="zim_server_header">Kiwix Server</string>
+    <string name="zim_lan_access">LAN Access</string>
+    <string name="zim_lan_access_on">Server accessible from other devices (0.0.0.0)</string>
+    <string name="zim_lan_access_off">Local only (127.0.0.1)</string>
+    <string name="zim_storage_warning">ZIM files can be very large (100MB - 90GB). Make sure you have enough storage space.</string>
+    <string name="lang_all">All Languages</string>
+    <string name="lang_eng">English</string>
+    <string name="lang_spa">Spanish</string>
+    <string name="lang_fra">French</string>
+    <string name="lang_deu">German</string>
+    <string name="lang_por">Portuguese</string>
+    <string name="lang_rus">Russian</string>
+    <string name="lang_zho">Chinese</string>
+    <string name="lang_ara">Arabic</string>
+    <string name="lang_hin">Hindi</string>
+    <string name="lang_jpn">Japanese</string>
     
     <!-- Model Hub -->
     <string name="models_hub">Model Hub</string>
@@ -164,6 +447,38 @@
     <string name="models_import_title">Importing Model</string>
     <string name="models_import_wait">Please wait, copying file…</string>
     
+    <!-- Model Manager New Strings -->
+    <string name="models_tab_installed">Installed</string>
+    <string name="models_tab_downloading">Downloading</string>
+    <string name="models_tab_discover">Discover</string>
+    <string name="models_export_error_not_found">Source file not found</string>
+    <string name="models_export_success">Exported: %s</string>
+    <string name="models_export_failed">Export failed: %s</string>
+    <string name="models_import_type_label">Model Type:</string>
+    <string name="models_type_llm">LLM (Language Model)</string>
+    <string name="models_type_embedding">Embedding Model</string>
+    <string name="models_type_vision_projector">Vision Projector (mmproj)</string>
+    <string name="models_import_caps_label">Capabilities:</string>
+    <string name="models_cap_vision">Vision Support (VLM)</string>
+    <string name="models_cap_embedding">Embedding Model</string>
+    <string name="models_empty_installed_desc">Go to Discover to download or tap + to import</string>
+    <string name="models_rename_title">Rename Model</string>
+    <string name="models_rename_label">New name</string>
+    <string name="models_rename_extension_info">Extension: .%s (will be kept)</string>
+    <string name="models_rename_success">Renamed to %s</string>
+    <string name="models_rename_failed">Failed to rename file</string>
+    <string name="models_import_file_label">File: %s</string>
+    <string name="models_no_downloads">No active downloads</string>
+    <string name="models_downloading_desc">Models will appear here while downloading</string>
+    <string name="models_select_quantization">Select Quantization</string>
+    <string name="models_download_vision">Download vision projector</string>
+    <string name="models_search_hint">Search HuggingFace...</string>
+    <string name="models_downloading_percent">Downloading %d%%</string>
+    <string name="models_vision_detected">Vision Model Detected</string>
+    <string name="models_vision_desc">This model supports vision capabilities (image input).</string>
+    <string name="models_vision_download_ask">Would you like to download the vision projector file to enable this feature?</string>
+    <string name="models_vision_badge">Vision Support</string>
+    
     <!-- Model Share -->
     <string name="share_title">Share Models</string>
     <string name="share_server_running">Server Running</string>
@@ -174,6 +489,21 @@
     <string name="share_interfaces">%d network interfaces available</string>
     <string name="share_active_downloads">%d active download(s)</string>
     <string name="share_no_models">No models available to share</string>
+    
+    <!-- Worker Mode -->
+    <string name="dist_web_monitor">Master WebUI Monitor</string>
+    <string name="dist_web_monitor_desc">View and control the Master\'s inference UI.</string>
+    <string name="dist_master_ip">Master IP</string>
+    <string name="dist_open_monitor">Open Monitor</string>
+    <string name="dist_load_command">Load Command</string>
+    <string name="dist_save_command">Save Command</string>
+    <string name="dist_save_command_title">Save Custom Command</string>
+    <string name="dist_save_command_desc">Save the current model settings and configuration as a preset.</string>
+    <string name="dist_command_preset_name">Preset Name</string>
+    <string name="dist_command_saved">Command saved!</string>
+    <string name="dist_load_command_title">Load Custom Command</string>
+    <string name="dist_no_commands_saved">No custom commands saved yet.</string>
+    <string name="dist_command_loaded">Command loaded!</string>
     
     <!-- Settings Hub -->
     <string name="settings_title">Settings</string>
@@ -216,13 +546,38 @@
     <string name="general_battery_allow">Allow Unrestricted Battery</string>
     <string name="general_battery_hint">Required for image/video AI processing to continue in background</string>
     <string name="general_battery_ok">App can run AI tasks without interruption</string>
+    <string name="general_battery_warning">⚠️ Some device manufacturers add extra battery restrictions that may still pause AI tasks.</string>
+    <string name="general_battery_fix_link">📱 Device-specific fix → dontkillmyapp.com</string>
+
+    <string name="general_all_files_title">All Files Access</string>
+    <string name="general_all_files_enabled">Enabled - Use models directly from SD card/Downloads</string>
+    <string name="general_all_files_disabled">Disabled - Models will be copied to app storage</string>
+    <string name="general_all_files_grant_btn">Grant All Files Access</string>
+    <string name="general_all_files_hint">Required for using large models without copying them</string>
+    <string name="general_all_files_ok">✓ Models can be used directly from external storage</string>
     <string name="general_model_storage">Use External Storage</string>
     <string name="general_model_storage_enabled">Enabled</string>
     <string name="general_model_storage_disabled">Disabled</string>
     <string name="general_model_storage_internal">📂 Internal app storage (deleted on uninstall)</string>
     <string name="general_model_storage_external">📂 %s/models/</string>
     <string name="general_model_storage_warning">⚠️ Note: Native AI binaries can only access app-specific directories. Custom folders are not supported on Android 11+.</string>
-    
+
+    <!-- Database Backup/Restore -->
+    <string name="backup_section_title">Database Backup</string>
+    <string name="backup_section_desc">Protect your chats, notes, agents, and pet data</string>
+    <string name="backup_create_btn">Create Backup</string>
+    <string name="backup_restore_btn">Restore Backup</string>
+    <string name="backup_creating">Creating backup…</string>
+    <string name="backup_restoring">Restoring backup…</string>
+    <string name="backup_success">✓ Backup created successfully!</string>
+    <string name="backup_restore_success">✓ Backup restored! The app will restart.</string>
+    <string name="backup_error">Backup failed: %s</string>
+    <string name="backup_restore_error">Restore failed: %s</string>
+    <string name="backup_restore_confirm_title">Restore Backup?</string>
+    <string name="backup_restore_confirm_msg">This will replace ALL current data (chats, notes, agents, pets) with the backup data. This cannot be undone.\n\nThe app will restart after restoring.</string>
+    <string name="backup_restore_confirm_btn">Restore</string>
+    <string name="backup_hint">💡 Back up regularly before updating the app</string>
+
     <!-- LLM Settings -->
     <string name="llm_settings_title">LLM Settings</string>
     <string name="llm_model">Model</string>
@@ -236,9 +591,22 @@
     <string name="llm_vision_model">Vision Projector</string>
     <string name="llm_remote_access">Remote Access</string>
     <string name="llm_remote_hint">Allow connections from other devices</string>
+    <string name="llm_active_model">Active Model</string>
+    <string name="llm_context_hint">Tokens (128 - 131072)</string>
+    <string name="llm_kv_cache_warning">⚠️ Quantized cache uses less memory but may reduce accuracy</string>
+    <string name="llm_kv_cache_type_k">Cache Type K</string>
+    <string name="llm_kv_cache_type_v">Cache Type V</string>
+    <string name="llm_kv_cache_disabled">Disabled</string>
+    <string name="llm_mmap_title">Disable Memory Mapping</string>
+    <string name="llm_mmap_desc">Load entire model into RAM</string>
+    <string name="llm_mmap_on">⚡ ON: Faster inference, but slower startup and uses more RAM. Model must fit in memory.</string>
+    <string name="llm_mmap_off">💾 OFF (default): Model loads on-demand from storage. Slower but can run larger models.</string>
+    <string name="llm_vision_desc">Enable image understanding</string>
+    <string name="llm_vision_not_selected">Not selected</string>
+    <string name="llm_vision_select_title">Select Vision Projector</string>
+    <string name="action_cancel">Cancel</string>
     
     <!-- Image Gen Settings -->
-    <string name="imagegen_settings_title">Image Gen Settings</string>
     <string name="imagegen_sd_model">SD Model</string>
     <string name="imagegen_vae">VAE</string>
     <string name="imagegen_clip_skip">CLIP Skip</string>
@@ -252,6 +620,12 @@
     <string name="whisper_model">Whisper Model</string>
     <string name="whisper_threads">Threads</string>
     <string name="whisper_translate">Translate to English</string>
+    <string name="whisper_threads_title">Transcription Threads</string>
+    <string name="whisper_threads_desc">Number of CPU threads for audio transcription</string>
+    <string name="whisper_tips_title">Tips</string>
+    <string name="whisper_tip_1">• More threads = faster transcription but more battery usage</string>
+    <string name="whisper_tip_2">• 4-6 threads is recommended for most devices</string>
+    <string name="whisper_tip_3">• Transcriptions are auto-saved to Notes Manager</string>
     
     <!-- Upscaler Settings -->
     <string name="upscaler_settings_title">Video Upscaler Settings</string>
@@ -259,15 +633,10 @@
     <string name="upscaler_model">Upscaler Model</string>
     
     <!-- PDF Settings -->
-    <string name="pdf_settings_title">PDF Settings</string>
     <string name="pdf_model">Summary Model</string>
     <string name="pdf_chunk_size">Chunk Size</string>
     
-    <!-- System Prompts -->
-    <string name="prompts_title">System Prompts</string>
-    <string name="prompts_chat">Chat System Prompt</string>
-    <string name="prompts_enhancer">Prompt Enhancer</string>
-    <string name="prompts_pdf">PDF Summary</string>
+    <!-- System Prompts Settings (Redundant - moved to centralized section) -->
     
     <!-- Logs/Debug -->
     <string name="logs_title">Debug Logs</string>
@@ -276,22 +645,144 @@
     <string name="logs_binaries">Binaries</string>
     <string name="logs_copy">Copy All</string>
     
+    <!-- Logs Screen New Strings -->
+    <string name="logs_tab_app">App Logs</string>
+    <string name="logs_tab_rpc">RPC Logs</string>
+    <string name="logs_copied">Logs copied!</string>
+    <string name="logs_no_app">No app logs yet</string>
+    <string name="logs_no_app_desc">Perform an action to see logs here</string>
+    <string name="logs_no_rpc">No RPC logs yet</string>
+    <string name="logs_no_rpc_desc">Start a worker to see RPC server output</string>
+    <string name="logs_terminal_header">rpc-server -- /dev/tty</string>
+    <string name="logs_clip_label">LlamaDroid Logs</string>
+    
     <!-- Notes -->
     <string name="notes_title">Notes</string>
     <string name="notes_new">New note</string>
     <string name="notes_delete">Delete</string>
     <string name="notes_no_notes">No notes yet</string>
     <string name="notes_hint">Tap + to create a note</string>
+    <string name="notes_search_hint">Search notes...</string>
+    <string name="notes_clear_search">Clear search</string>
+    <string name="notes_empty_desc">Create a note or transcribe audio to get started</string>
+    <string name="notes_delete_title">Delete Note?</string>
+    <string name="notes_delete_confirm">Are you sure you want to delete \"%s\"?</string>
+    <string name="notes_has_audio">Has audio</string>
+    <string name="notes_source_prefix">Source: %s</string>
+    <string name="notes_new_title">New Note</string>
+    <string name="notes_edit_title">Edit Note</string>
+    <string name="notes_field_title">Title</string>
+    <string name="notes_field_content">Content</string>
+    <string name="notes_details_title">Note Details</string>
+    <string name="notes_details_close">Close</string>
+    <string name="notes_audio_play">Play</string>
+    <string name="notes_audio_stop">Stop</string>
+    <string name="notes_audio_label">Audio</string>
+    <string name="notes_type_transcription">Transcription</string>
+    <string name="notes_type_pdf_summary">PDF Summary</string>
+    <string name="notes_type_video_summary">Video Summary</string>
+    <string name="notes_type_workflow">Workflow</string>
+    <string name="notes_type_note">Note</string>
+    <string name="notes_search">Search…</string>
+    <string name="notes_all">All</string>
+    <string name="notes_transcription">Transcriptions</string>
+    <string name="notes_summary">Summaries</string>
+    <string name="notes_manual">Manual</string>
     
     <!-- Common Actions -->
     <string name="action_start">Start</string>
     <string name="action_stop">Stop</string>
-    <string name="action_cancel">Cancel</string>
+    <string name="action_temperature">Temperature</string>
+    <string name="action_save_settings">Save Settings</string>
+    <string name="action_export">Export</string>
+    <string name="file_type_pdf">PDF</string>
+    <string name="file_type_text">Text</string>
+    <!-- Termux Screen -->
+    <string name="termux_title">🖥️ Termux Tools</string>
+    <string name="termux_setup_guide">Setup Guide</string>
+    <string name="termux_webui_info">WebUI: ⬅️ = navigate within page | 🏠 = exit (keeps running) | ❌ = stop server</string>
+    <string name="termux_connection_title">🔌 SSH Connection</string>
+    <string name="termux_connected">✅ Connected</string>
+    <string name="termux_host">Host</string>
+    <string name="termux_port">Port</string>
+    <string name="termux_username">Username</string>
+    <string name="termux_password">Password</string>
+    <string name="termux_toggle_password">Toggle password</string>
+    <string name="termux_disconnect">Disconnect</string>
+    <string name="termux_connecting">Connecting...</string>
+    <string name="termux_connect">Connect</string>
+    <string name="termux_confirm_command">⚠️ Confirm Command</string>
+    <string name="termux_execute">Execute</string>
+    <string name="termux_edit_commands">✏️ Edit Commands</string>
+    <string name="termux_install_tool">🚀 Install %s</string>
+    <string name="termux_edit_commands_hint">Edit commands (one per line):</string>
+    <string name="termux_run_all_summary">This will run %d commands:</string>
+    <string name="termux_run_edited">Run Edited</string>
+    <string name="termux_run_all">Run All</string>
+    <string name="termux_miniconda_title">🐍 Miniconda (Prerequisite)</string>
+    <string name="termux_miniconda_subtitle">Install ONCE before Open WebUI, Oobabooga, FastSD CPU</string>
+    <string name="termux_miniconda_warning">⚠️ Install this FIRST if you plan to use tools marked with 🐍</string>
+    <string name="termux_install_miniconda">Install Miniconda (%d steps)</string>
+    <string name="termux_install_tools_title">📦 Install Tools</string>
+    <string name="termux_install_tools_subtitle">Install AI tools in Termux proot</string>
+    <string name="termux_remove_tools_title">🗑️ Remove Tools</string>
+    <string name="termux_remove_tools_subtitle">Uninstall individual or all tools</string>
+    <string name="termux_remove_all">Remove all:</string>
+    <string name="termux_remove_all_confirm">⚠️ Remove ALL tools</string>
+    <string name="termux_remove_individual">Remove individual:</string>
+    <string name="termux_run_servers_title">▶️ Run Servers</string>
+    <string name="termux_run_servers_subtitle">Start and stop AI servers</string>
+    <string name="termux_status_stopped">Stopped</string>
+    <string name="termux_status_running">Running on :%d</string>
+    <string name="termux_open_webui">Open WebUI</string>
+    <string name="termux_lan">🌐 LAN</string>
+    <string name="termux_local">🔒 Local</string>
+    <string name="termux_lan_desc">Accessible from network (0.0.0.0)</string>
+    <string name="termux_local_desc">Localhost only (127.0.0.1)</string>
+    <string name="termux_ram_requirement">RAM: </string>
+    <string name="termux_setup_description">Miniconda setup</string>
+    <string name="termux_remove_tool_description">Remove %s</string>
+    <string name="termux_start_tool_description">Start %s</string>
+    <string name="termux_stop_tool_description">Stop %s</string>
+    <string name="termux_low_ram_tips">💡 Low-RAM Tips:</string>
+    <string name="termux_integration">🔗 Integration:</string>
+    <string name="termux_features">✨ Features:</string>
+    <string name="termux_file_manager_title">File Manager</string>
+    <string name="termux_file_manager_desc">Browse and manage files for installed tools</string>
+    <string name="termux_output_title">📤 Output</string>
+    <string name="termux_output_running">Running...</string>
+    <string name="termux_output_none">No output</string>
+    <string name="termux_manual_command_title">⌨️ Manual Command</string>
+    <string name="termux_quick_commands_hint">💡 Quick commands:</string>
+    <string name="termux_setup_debian_title">📋 Termux Debian Setup</string>
+    <string name="termux_setup_step_1">1. Install Termux from F-Droid</string>
+    <string name="termux_setup_step_2">2. Install proot-distro &amp; Ubuntu:</string>
+    <string name="termux_setup_step_3">3. Install SSH server:</string>
+    <string name="termux_setup_step_4">4. Create sshd directory:</string>
+    <string name="termux_setup_step_5">5. Enable root login:</string>
+    <string name="termux_setup_step_6">6. Set password:</string>
+    <string name="termux_setup_step_7">7. Start SSH on port 8022:</string>
+    <string name="termux_one_liner_setup">🚀 One-Liner Setup (run in Termux):</string>
+    <string name="termux_default_password">Default password: termux</string>
+    <string name="termux_start_ssh_hint">After logging into proot, start SSH with:</string>
+    <string name="termux_individual_commands">Individual commands:</string>
+    <string name="termux_copy_toast">Copied!</string>
+    <string name="termux_edit_command">✏️ Edit Command</string>
+    <string name="termux_run_all_steps">Run All %d Steps</string>
+    <string name="termux_or_run_individually">Or run individually:</string>
     <string name="action_save">Save</string>
     <string name="action_delete">Delete</string>
     <string name="action_back">Back</string>
     <string name="action_next">Next</string>
     <string name="action_done">Done</string>
+    <string name="action_copy_all">Copy All</string>
+    <string name="action_info">Info</string>
+    <string name="action_expand">Expand</string>
+    <string name="action_collapse">Collapse</string>
+    <string name="action_command">Command</string>
+    <string name="action_port">Port %d</string>
+    <string name="dataset_steps">%d steps</string>
+    <string name="fastsd_gallery_title">Gallery</string>
     <string name="action_skip">Skip</string>
     <string name="action_change">Change</string>
     <string name="action_reset">Reset</string>
@@ -305,6 +796,7 @@
     <string name="action_download">Download</string>
     <string name="action_refresh">Refresh</string>
     <string name="action_open">Open</string>
+    <string name="action_sort">Sort</string>
     
     <!-- Status Messages -->
     <string name="status_loading">Loading…</string>
@@ -316,6 +808,74 @@
     <string name="status_idle">Idle</string>
     <string name="status_running">Running</string>
     <string name="status_stopped">Stopped</string>
+    
+    <!-- Ollama Manager -->
+    <string name="ollama_title">Ollama Manager</string>
+    <string name="ollama_desc">Manage Ollama servers and models</string>
+    <string name="ollama_servers">Servers</string>
+    <string name="ollama_models">Models</string>
+    <string name="ollama_add_server">Add Server</string>
+    <string name="ollama_edit_server">Edit Server</string>
+    <string name="ollama_server_name">Name</string>
+    <string name="ollama_server_url">URL</string>
+    <string name="ollama_pull_model">Pull Model</string>
+    <string name="ollama_model_name">Model Name (e.g. tinyllama)</string>
+    <string name="ollama_download">Download</string>
+
+    <!-- Native Llama Client -->
+    <string name="llama_client_title">Native Llama Chat</string>
+    <string name="llama_client_desc">Direct connection to llama-server</string>
+    <string name="llama_servers_title">Llama Servers</string>
+    <string name="llama_add_server">Add Server</string>
+    <string name="llama_server_name_hint">Server Name (e.g. My PC)</string>
+    <string name="llama_server_host_hint">Host IP (e.g. 192.168.1.5)</string>
+    <string name="llama_server_port_hint">Port (e.g. 8080)</string>
+    <string name="llama_chats_title">Chats</string>
+    <string name="llama_new_chat">New Chat</string>
+    <string name="llama_chat_title_hint">Chat Title</string>
+    <string name="llama_context_size">Context Size</string>
+    <string name="llama_context_size_desc">Max tokens to send (Default: 8192)</string>
+    <string name="llama_system_prompt">System Prompt</string>
+    <string name="llama_system_prompt_hint">Define how the AI behaves...</string>
+    <string name="llama_parameters">Parameters</string>
+    <string name="llama_attach_image">Attach Image</string>
+    <string name="llama_system_prompt_placeholder">e.g. "You are a helpful assistant."</string>
+    <string name="llama_edit_server">Edit Server</string>
+    <string name="llama_supports_vision">Vision Support</string>
+    <string name="llama_reload_model">Reload Model</string>
+    <string name="llama_continue">Continue</string>
+    <string name="llama_export_chat">Export Chat</string>
+    <string name="llama_import_chat">Import Chat</string>
+    <string name="llama_export_success">Chat exported successfully</string>
+    <string name="llama_import_success">Chat imported successfully</string>
+    <string name="llama_import_error">Import failed</string>
+    <string name="llama_search_chat">Search messages…</string>
+    <string name="llama_scroll_to_bottom">Scroll to bottom</string>
+    <string name="llama_token_estimate">~%d tokens</string>
+    <string name="llama_edit_message">Edit Message</string>
+    <string name="llama_delete_message">Delete Message</string>
+    <string name="llama_delete_chat">Delete Chat</string>
+    <string name="llama_delete_server">Delete Server</string>
+    <string name="llama_copy_code">Copy Code</string>
+    <string name="llama_code_copied">Code copied!</string>
+    <string name="llama_message_copied">Message copied!</string>
+    <string name="llama_regenerate">Regenerate</string>
+    <string name="llama_stop">Stop</string>
+    <string name="llama_error">Error: %s</string>
+    <string name="llama_no_servers">No servers added</string>
+    <string name="llama_no_chats">No chats yet</string>
+    <string name="llama_server_unreachable">Server unreachable</string>
+    <string name="llama_active_server">Active: %s</string>
+    <string name="llama_thinking">Thinking…</string>
+    <string name="llama_thinking_process">Thinking Process</string>
+    <string name="llama_message_stats">%1$s · %2$d tokens · %3$.1f t/s · %4$d prompt</string>
+    <string name="llama_edit_chat">Edit Chat</string>
+    <string name="llama_context_legacy_notice">Context size will be automatically determined by the server.</string>
+    <string name="ollama_active_downloads">Active Downloads</string>
+    <string name="ollama_delete_model">Delete Model</string>
+    <string name="ollama_show_modelfile">Show Modelfile</string>
+    <string name="ollama_create_model">Create Model</string>
+    <string name="ollama_copy_model">Copy Model</string>
     
     <!-- Welcome Screen -->
     <string name="welcome_title">Welcome to AI Doomsday Toolbox</string>
@@ -340,6 +900,29 @@
     <string name="welcome_folder_skip">You can skip this and change it later in Settings</string>
     <string name="welcome_ready">You\'re all set!</string>
     <string name="welcome_get_started">Get Started</string>
+
+    <string name="welcome_all_files_title">All Files Access</string>
+    <string name="welcome_all_files_desc">Required to use AI models directly from your SD card or Downloads folder without copying them.</string>
+    <string name="welcome_all_files_granted">All files access granted</string>
+    <string name="welcome_all_files_benefits">Benefits:</string>
+    <string name="welcome_all_files_benefit_1">• Use models directly from SD card</string>
+    <string name="welcome_all_files_benefit_2">• No need to copy large files</string>
+    <string name="welcome_all_files_benefit_3">• Save storage space</string>
+    <string name="welcome_all_files_grant_btn">Grant All Files Access</string>
+    <string name="welcome_all_files_skip_desc">You can skip this and models will be copied instead</string>
+
+    <string name="welcome_phantom_title">Prevent Process Killing</string>
+    <string name="welcome_phantom_desc">Android 12+ limits background processes, which can kill AI tasks. Use ADB to disable this.</string>
+    <string name="welcome_phantom_a14_title">✨ Android 14+ Option</string>
+    <string name="welcome_phantom_a14_desc">Go to Settings → Developer Options → Disable child process restrictions</string>
+    <string name="welcome_phantom_or_adb">— OR use ADB commands below —</string>
+    <string name="welcome_phantom_adb_pc">ADB Commands (run on PC with phone connected):</string>
+    <string name="welcome_phantom_copy_btn">Copy ADB Commands</string>
+    <string name="welcome_phantom_skip_desc">Skip this if AI tasks complete without issues</string>
+
+    <string name="welcome_toast_commands_copied">Commands copied to clipboard!</string>
+    <string name="welcome_phantom_copy_label">ADB Commands</string>
+    <string name="welcome_status_selected">Selected</string>
     
     <!-- About Screen -->
     <string name="about_title">About</string>
@@ -357,13 +940,156 @@
     <string name="about_stable_diffusion">stable-diffusion.cpp - Image generation</string>
     <string name="about_ffmpeg">FFmpeg - Media processing</string>
     <string name="about_thanks">Thank you for using Doomsday AI Toolbox!</string>
+    <string name="about_zim_desc">Offline Wikipedia and ZIM file server</string>
+    <string name="about_compatible_tools">Compatible Frontends &amp; Tools</string>
+    <string name="about_easy_dataset_desc">Dataset processing and preparation</string>
+    <string name="about_ollama_desc">Local LLM runner with API compatibility</string>
+    <string name="about_open_webui_desc">Web frontend for LLM interaction</string>
+    <string name="about_big_agi_desc">AI-powered productivity suite</string>
+    <string name="about_oobabooga_desc">Text generation web UI</string>
+    <string name="about_fastsdcpu_desc">Fast Stable Diffusion on CPU</string>
+    <string name="about_sd_sketch_desc">Experimental Stable Diffusion WebUI workflow based on AUTOMATIC1111</string>
+    <string name="about_termux_desc">Terminal emulator for Android</string>
     
+    <!-- System Prompts -->
+    <string name="prompts_title">System Prompts</string>
+    <string name="prompts_pdf_summary_section">📄 PDF Summary</string>
+    <string name="prompts_summary_label">Summary Prompt</string>
+    <string name="prompts_summary_default">Default: Summarizes extracted PDF text concisely</string>
+    <string name="prompts_unification_label">Unification Prompt</string>
+    <string name="prompts_unification_default">Default: Combines chunk summaries into a cohesive document summary</string>
+    <string name="prompts_saved_section">💾 Saved Custom Prompts</string>
+    <string name="prompts_add_prompt_desc">Add Prompt</string>
+    <string name="prompts_no_custom">No custom prompts saved</string>
+    <string name="prompts_create_btn">Create Prompt</string>
+    <string name="prompts_apply_as">Apply as:</string>
+    <string name="prompts_selected">✓ Selected</string>
+    <string name="prompts_select">Select</string>
+    <string name="prompts_pdf_sum_btn">PDF Sum</string>
+    <string name="prompts_pdf_unify_btn">PDF Unify</string>
+    <string name="prompts_edit_title">Edit Prompt</string>
+    <string name="prompts_new_title">New Custom Prompt</string>
+    <string name="prompts_name_label">Name</string>
+    <string name="prompts_content_label">Prompt Content</string>
+
+    <!-- Benchmark -->
+    <string name="benchmark_title">⚡ Benchmark</string>
+    <string name="benchmark_model_label">📦 Model</string>
+    <string name="benchmark_no_model">No model selected</string>
+    <string name="benchmark_select_hint">⚠️ Select a model in LLM Settings first</string>
+    <string name="benchmark_live_results">📊 Live Results</string>
+    <string name="benchmark_saved_results">📊 Saved Results</string>
+    <string name="benchmark_threads">Threads</string>
+    <string name="benchmark_prompt_ts">Prompt</string>
+    <string name="benchmark_gen_ts">Generation</string>
+    <string name="benchmark_optimal">✨ Optimal: %d threads</string>
+    <string name="benchmark_gen_speed">Generation: %s t/s</string>
+    <string name="benchmark_new_title">⚙️ New Benchmark</string>
+    <string name="benchmark_max_threads">Max Threads</string>
+    <string name="benchmark_prompt_tokens">Prompt tokens (-p)</string>
+    <string name="benchmark_gen_tokens">Gen tokens (-n)</string>
+    <string name="benchmark_stop">Stop Benchmark</string>
+    <string name="benchmark_run">Run Benchmark (1-%d threads)</string>
+    <string name="benchmark_info">ℹ️ Runs llama-bench with --progress. Results are saved and shown automatically when you return.</string>
+    <string name="benchmark_delete_title">Delete Results?</string>
+    <string name="benchmark_delete_desc">Delete all saved benchmark results for this model?</string>
+
+    <!-- PDF AI Settings -->
+    <string name="pdf_settings_title">PDF AI Settings</string>
+    <string name="pdf_summary_model">🤖 Summary Backend</string>
+    <string name="pdf_summary_model_desc">Choose the remote server used for PDF summarization</string>
+    <string name="pdf_use_chat_model">Use saved remote settings</string>
+    <string name="pdf_context_size_label">📏 Context Size</string>
+    <string name="pdf_tokens_unit">%d tokens</string>
+    <string name="pdf_context_desc">Larger context allows processing more text at once</string>
+    <string name="pdf_context_desc_remote">Used for client-side chunking. Ollama also receives it per request; llama-server may keep its own runtime context.</string>
+    <string name="pdf_threads_label">⚡ CPU Threads</string>
+    <string name="pdf_threads_desc">More threads = faster processing, but higher CPU usage</string>
+    <string name="pdf_temperature_label">🌡️ Temperature</string>
+    <string name="pdf_temp_desc">Lower = more focused, Higher = more creative</string>
+    <string name="pdf_max_tokens_label">📝 Max Output Tokens</string>
+    <string name="pdf_max_tokens_desc">Maximum length of the generated summary</string>
+    <string name="pdf_timeout_label">⏱️ Timeout per Call</string>
+    <string name="pdf_timeout_desc">Set a limit for each llama-cli call. Use 0 to disable the timeout.</string>
+    <string name="pdf_timeout_desc_remote">Set a limit for each remote summary call. Use 0 to disable the timeout.</string>
+    <string name="pdf_timeout_disabled_hint">Timeout is disabled. Long summaries will keep running until they finish or you cancel them.</string>
+    <string name="pdf_minutes_suffix">m</string>
+    <string name="pdf_kv_cache_label">💾 KV Cache Quantization</string>
+    <string name="pdf_kv_cache_desc">Reduce memory usage</string>
+    <string name="pdf_cache_type_k">Cache Type K</string>
+    <string name="pdf_cache_type_v">Cache Type V</string>
+    <string name="pdf_select_model_title">Select PDF Model</string>
+    <string name="pdf_use_chat_option">Use Chat Model</string>
+    <string name="pdf_use_chat_option_desc">Uses the main LLM model</string>
+    <string name="pdf_backend_title">Remote Backend</string>
+    <string name="pdf_backend_desc">Choose whether PDF summary calls go to Ollama or llama-server.</string>
+    <string name="pdf_backend_ollama">Ollama</string>
+    <string name="pdf_backend_llama_server">llama-server</string>
+    <string name="pdf_backend_details_title">Backend Details</string>
+    <string name="pdf_ollama_url_label">Ollama URL</string>
+    <string name="pdf_llama_server_url_label">llama-server URL</string>
+    <string name="pdf_ollama_model_label">Ollama Model</string>
+    <string name="pdf_select_ollama_model">Select an Ollama model</string>
+    <string name="pdf_no_remote_models_loaded">No remote models loaded</string>
+    <string name="pdf_manual_model_label">Manual model name</string>
+    <string name="pdf_llama_server_model_label">Server model</string>
+    <string name="pdf_llama_server_context_label">Server context</string>
+    <string name="pdf_refresh_backend_info">Refresh Backend Info</string>
+    <string name="pdf_refreshing_metadata">Refreshing backend info…</string>
+    <string name="pdf_metadata_ollama_loaded">Loaded %1$d Ollama models.</string>
+    <string name="pdf_metadata_llama_loaded">Server model: %1$s. Server context: %2$s.</string>
+    <string name="pdf_metadata_refresh_failed">Failed to refresh backend info: %1$s</string>
+    <string name="pdf_server_value_unavailable">Unavailable</string>
+    <string name="pdf_context_warning">Requested context %1$d tokens exceeds the last known server context of %2$d tokens.</string>
+    <string name="pdf_thinking_toggle_title">Reasoning / Thinking</string>
+    <string name="pdf_thinking_toggle_desc">Disabled by default for cleaner summaries. Enable only if your server/model needs it.</string>
+    <string name="pdf_active_settings_title">Active Summary Settings</string>
+    <string name="pdf_target_language_label">Final Summary Language</string>
+    <string name="pdf_target_language_desc">Free text target language or style, for example Spanish, English, or Portuguese (Brazil).</string>
+    <string name="pdf_merge_context_label">Merge Context Size</string>
+    <string name="pdf_merge_max_tokens_label">Merge Max Output Tokens</string>
+    <string name="pdf_target_language_chip">Language: %1$s</string>
+    <string name="pdf_chunk_context_chip">Chunk ctx: %1$d</string>
+    <string name="pdf_chunk_max_chip">Chunk max: %1$d</string>
+    <string name="pdf_merge_context_chip">Merge ctx: %1$d</string>
+    <string name="pdf_merge_max_chip">Merge max: %1$d</string>
+    <string name="pdf_backend_url_label">Server URL</string>
+    <string name="pdf_model_value_label">Model</string>
+    <string name="pdf_server_context_value_label">Known server context</string>
+    <string name="pdf_timeout_off">Off</string>
+    <string name="pdf_timeout_value_minutes">%1$d min</string>
+    <string name="pdf_error_missing_ollama_model">Choose an Ollama model before summarizing.</string>
+    <string name="pdf_missing_llama_server_url">Set the llama-server URL before summarizing.</string>
+
+    <!-- Video Upscaler Settings -->
+    <string name="video_upscaler_settings_title">Video Upscaler Settings</string>
+    <string name="video_upscaler_load_threads">📥 Load Threads</string>
+    <string name="video_upscaler_load_desc">Threads for loading video frames</string>
+    <string name="video_upscaler_proc_threads">⚙️ Process Threads</string>
+    <string name="video_upscaler_proc_desc">Threads for GPU/CPU upscaling</string>
+    <string name="video_upscaler_save_threads">💾 Save Threads</string>
+    <string name="video_upscaler_save_desc">Threads for saving upscaled frames</string>
+    <string name="video_upscaler_opt_title">ℹ️ Thread Optimization</string>
+    <string name="video_upscaler_opt_desc">• Load/Save threads handle disk I/O\n• Process threads handle the actual upscaling\n• Lower values = less memory, slower processing\n• Higher values = more memory, faster processing</string>
+
+    <!-- Image Gen Settings -->
+    <string name="imagegen_settings_title">Image Generation Settings</string>
+    <string name="imagegen_txt2img_threads">🖼️ txt2img Threads</string>
+    <string name="imagegen_txt2img_desc">CPU threads for text-to-image generation</string>
+    <string name="imagegen_img2img_threads">🔄 img2img Threads</string>
+    <string name="imagegen_img2img_desc">CPU threads for image-to-image generation</string>
+    <string name="imagegen_upscale_threads">⬆️ Upscale Threads</string>
+    <string name="imagegen_upscale_desc">CPU threads for image upscaling</string>
+    <string name="imagegen_presets">Presets:</string>
+    <string name="imagegen_default">Default</string>
+
     <!-- Errors -->
     <string name="error_generic">Something went wrong</string>
     <string name="error_no_permission">Permission required</string>
     <string name="error_file_not_found">File not found</string>
     <string name="error_network">Network error</string>
     <string name="error_model_load">Failed to load model</string>
+    <string name="ssh_not_connected_error">Not connected to SSH. Go back and connect first.</string>
     
     <!-- Remote Access -->
     <string name="remote_access">Remote Access</string>
@@ -374,6 +1100,35 @@
     <string name="kv_cache_title">KV Cache Quantization</string>
     <string name="kv_cache_desc">Reduce memory for larger contexts</string>
     <string name="kv_cache_reuse">Cache Reuse Tokens</string>
+    
+    <string name="dashboard_active_downloads">%d active download(s)</string>
+    <string name="dashboard_qr_connect">📲 Connect via QR</string>
+    <string name="dashboard_qr_collapse">Collapse</string>
+    <string name="dashboard_qr_expand">Expand</string>
+    <string name="dashboard_ram_needed">~%s GB RAM needed</string>
+    <string name="dashboard_running_port">Running on port %d</string>
+    <string name="dashboard_connect_from">Connect from:</string>
+    <string name="dashboard_local_only">Local only (enable remote access in Settings)</string>
+    <string name="dashboard_setup_distributed">Setup Distributed</string>
+    <string name="dashboard_setup_distributed_desc">Connect multiple phones to run large models together</string>
+    <string name="dashboard_distributed_title">Distributed Inference</string>
+    <string name="dashboard_kiwix_library">Kiwix Library</string>
+    <string name="dashboard_offline_wikipedia">Offline Wikipedia &amp; more</string>
+    <string name="dashboard_zim_installed">%d ZIM files installed</string>
+    <string name="dashboard_ram_used">Used</string>
+    <string name="dashboard_ram_free">Free</string>
+    <string name="dashboard_ram_total">Total</string>
+    <string name="dashboard_ram_unit">%s GB</string>
+    <string name="net_type_wifi">WiFi</string>
+    <string name="net_type_ethernet">Ethernet</string>
+    <string name="net_type_vpn">VPN</string>
+    <string name="net_type_mobile">Mobile</string>
+    <string name="net_type_unknown">Unknown</string>
+    <string name="dashboard_qr_for">QR for %s</string>
+    
+
+    <string name="dist_device_total_ram">Total Device RAM: %d MB</string>
+    <string name="dist_device_free_ram">Free RAM: %d MB</string>
     
     <!-- File Server -->
     <string name="file_server">File Server</string>
@@ -420,6 +1175,345 @@
     <string name="dashboard_scan_access_files">Scan to access files</string>
     <string name="dashboard_stop_server_btn">Stop Server</string>
     <string name="dashboard_start_server_port">Start Server (Port %d)</string>
+    
+    <string name="hub_workflows">Workflows</string>
+    <string name="hub_workflows_desc">Chain AI operations</string>
+    <string name="hub_benchmark">Benchmark</string>
+    <string name="hub_benchmark_desc">Find optimal thread count</string>
+    <string name="hub_dataset">Dataset Creator</string>
+    <string name="hub_dataset_desc">Create fine-tuning datasets</string>
+    <string name="hub_termux">Termux SSH</string>
+    <string name="hub_termux_desc">Run commands in Termux</string>
+    <string name="hub_agent">AI Agent</string>
+    <string name="hub_agent_desc">Coding agent workspace</string>
+    <string name="agent_title">AI Agent</string>
+    <string name="agent_restored_project">🏠 Restored project: %s</string>
+    <string name="agent_restored_messages">📜 Restored %d messages from history</string>
+    <string name="agent_plan_approved">✅ Plan approved by user</string>
+    <string name="agent_plan_approved_msg">Plan approved by user. Proceed with implementation.</string>
+    <string name="agent_plan_rejected">❌ Plan rejected by user</string>
+    <string name="agent_denied_execution">User denied execution of %s. Please stop or try another way.</string>
+    <string name="agent_deny_reason_title">Deny Action</string>
+    <string name="agent_deny_reason_desc">Optionally explain why you are denying this action. This helps the AI understand and adjust.</string>
+    <string name="agent_deny_reason_hint">Reason (optional)</string>
+    <string name="agent_deny_skip_reason">Skip</string>
+    <string name="agent_project_default_prefix">project_</string>
+    <string name="agent_ready_msg">🤖 AI Agent ready for project **%1$s** (/workspace/%2$s/).\n\nConnect to the agent workspace to start coding.</string>
+    <string name="agent_new_project_title">📁 New Project</string>
+    <string name="agent_new_project_desc">Enter a name for your project.</string>
+    <string name="agent_project_name_label">Project Name</string>
+    <string name="agent_welcome_title">👋 Welcome to AI Agent!</string>
+
+    <!-- Agent Workspace -->
+    <string name="agent_workspace_title">📁 Workspace</string>
+    <string name="agent_parent_folder">Parent folder</string>
+    <string name="agent_empty_folder">Empty folder</string>
+    <string name="agent_confirm_delete_file">Delete file?</string>
+    <string name="agent_confirm_delete_folder">Delete folder?</string>
+    <string name="agent_confirm_delete_msg">Are you sure you want to delete %1$s?</string>
+    <string name="agent_new_file">New File</string>
+    <string name="agent_new_folder">New Folder</string>
+    <string name="agent_name_label">Name</string>
+    <string name="agent_create_btn">Create</string>
+    <string name="agent_save_toast">Saved!</string>
+    <string name="agent_delete_toast">Deleted</string>
+    <string name="agent_create_toast">Created</string>
+    <string name="agent_error_prefix">Error: %1$s</string>
+    <string name="agent_reconnecting">Reconnecting…</string>
+    <string name="agent_connecting">Connecting…</string>
+    <string name="agent_ollama_offline">Ollama is offline</string>
+    <string name="agent_disconnected">Agent disconnected</string>
+    <string name="agent_selected_count">%d selected</string>
+    <string name="agent_ready_to">ready to %s</string>
+    <string name="action_compress">Compress</string>
+    <string name="action_uncompress">Uncompress</string>
+    <string name="action_upload">Upload</string>
+    <string name="action_paste_here">Paste Here</string>
+    <string name="action_move">Move</string>
+    <string name="agent_retry_message">Retrying in %1$ds... (Attempt %2$d/%3$d)</string>
+    <string name="agent_retry_failed">Connection failed after multiple attempts.</string>
+    <string name="agent_upload_success">Uploaded %1$s</string>
+    <string name="agent_compress_success">Archive created: %1$s</string>
+    <string name="agent_uncompress_success">Uncompressed successfully</string>
+
+    <!-- Custom Tools & Agents -->
+    <string name="agent_custom_tools_title">🔧 Custom Tools</string>
+    <string name="agent_custom_agents_title">🤖 Custom Agents</string>
+    <string name="agent_add_tool">Add Tool</string>
+    <string name="agent_add_agent">Add Agent</string>
+    <string name="agent_no_tools">No custom tools yet</string>
+    <string name="agent_no_custom_agents">No custom agents yet</string>
+    <string name="agent_tap_plus_hint">Tap + to create one</string>
+    <string name="agent_edit_tool">Edit Tool</string>
+    <string name="agent_new_tool">New Tool</string>
+    <string name="agent_tool_name_label">Tool Name*</string>
+    <string name="agent_tool_name_hint">e.g., api_call</string>
+    <string name="agent_tool_desc_label">Description*</string>
+    <string name="agent_tool_desc_hint">What does this tool do?</string>
+    <string name="agent_tool_template_label">Command Template*</string>
+    <string name="agent_tool_template_hint">e.g., curl -X POST {url} -d \'{body}\'</string>
+    <string name="agent_tool_template_desc">Use {param_name} for placeholders</string>
+    <string name="agent_tool_params_label">Parameters (JSON)</string>
+    <string name="agent_tool_params_hint">{\"url\": \"API endpoint\", \"body\": \"JSON body\"}</string>
+    <string name="agent_tool_required_label">Required Params (JSON array)</string>
+    <string name="agent_tool_required_hint">[\"url\"]</string>
+    <string name="agent_tool_example_label">Example Usage*</string>
+    <string name="agent_tool_example_hint">tool_call=api_call(url=\"https://...\")</string>
+    <string name="agent_tool_example_desc">This helps the AI understand how to use the tool</string>
+    <string name="agent_tool_approval_label">Requires User Approval</string>
+    <string name="agent_tool_save_changes">Save Changes</string>
+    <string name="agent_tool_create_btn">Create Tool</string>
+    
+    <string name="agent_edit_agent">Edit Agent</string>
+    <string name="agent_new_agent">New Agent</string>
+    <string name="agent_agent_emoji_label">Emoji</string>
+    <string name="agent_agent_name_label">Name*</string>
+    <string name="agent_agent_name_hint">DEBUGGER</string>
+    <string name="agent_agent_display_name_label">Display Name*</string>
+    <string name="agent_agent_display_name_hint">e.g., Debugger</string>
+    <string name="agent_prompt_label">System Prompt*</string>
+    <string name="agent_agent_prompt_hint">You are the Debugger agent. Your job is to...</string>
+    <string name="agent_model_label">Model Override (optional)</string>
+    <string name="agent_agent_model_hint">Leave empty for default</string>
+    <string name="agent_agent_example_label">Example Usage</string>
+    <string name="agent_agent_example_desc">Helps Orchestrator understand when to use this agent</string>
+    <string name="agent_agent_delegate_label">Can Delegate to Other Agents</string>
+    <string name="agent_agent_create_btn">Create Agent</string>
+    
+    <string name="agent_disabled_label">Disabled</string>
+    <string name="agent_tool_example_template_title">Load Example</string>
+    <string name="agent_tool_example_template_desc">Load a pre-made template to learn how to create a custom tool.</string>
+    <string name="agent_agent_example_template_title">Load Example</string>
+    <string name="agent_agent_example_template_desc">Load a pre-made template to learn how to create a custom agent.</string>
+
+
+    <!-- Project Management -->
+    <string name="agent_project_mgmt_title">📦 Project Management</string>
+    <string name="agent_export_success">✅ Export successful!</string>
+    <string name="agent_export_failed">❌ Export failed: %1$s</string>
+    <string name="agent_import_success">✅ Import successful! Current project replaced.</string>
+    <string name="agent_import_failed">❌ Import failed: %1$s</string>
+    <string name="agent_current_project">Current Project</string>
+    <string name="agent_export_import_header">📤 Export / Import</string>
+    <string name="agent_export_zip">Export ZIP</string>
+    <string name="agent_import_zip">Import ZIP</string>
+    <string name="agent_snapshots_header">📸 Snapshots (Undo/Rollback)</string>
+    <string name="agent_no_snapshots">No snapshots yet</string>
+    <string name="agent_rollback_hint">Create one to enable rollback</string>
+    <string name="agent_files_count">%1$d files</string>
+    <string name="agent_restore_btn">Restore</string>
+    <string name="agent_create_snapshot_title">📸 Create Snapshot</string>
+    <string name="agent_snapshot_desc_label">Enter a description for this snapshot:</string>
+    <string name="agent_snapshot_success">✅ Snapshot created!</string>
+    <string name="agent_snapshot_failed">❌ Failed to create snapshot</string>
+    <string name="agent_snapshot_deleted">Snapshot deleted</string>
+    <string name="agent_rollback_failed">❌ Rollback failed</string>
+    <string name="agent_files_count_label">files</string>
+    <string name="agent_snapshot_desc_placeholder">e.g., Before refactoring</string>
+    <string name="agent_snapshot_default_name">Snapshot %1$d</string>
+
+    <!-- Agent Dialogs & Settings -->
+    <string name="agent_select_model">Select Model</string>
+    <string name="agent_installed_models">Installed Models</string>
+    <string name="agent_custom_model_label">Custom Model</string>
+    <string name="agent_setup_title">🤖 AI Agent Setup</string>
+    <string name="agent_ram_req">RAM: </string>
+    <string name="agent_ram_desc">~500MB + Ollama model RAM (8GB+ recommended)</string>
+    <string name="agent_unit_gb">GB</string>
+    <string name="agent_unit_mb">MB</string>
+    <string name="agent_unit_kb">KB</string>
+    <string name="agent_unit_b">B</string>
+    <string name="agent_generic_tool">the tool</string>
+    <string name="agent_downloading_model">Downloading %s...</string>
+    <string name="agent_model_ready">%s ready!</string>
+    <string name="agent_recommended_models">💡 Recommended Models:</string>
+    <string name="agent_integration_title">🔗 Integration:</string>
+    <string name="agent_integration_desc">SSH to isolated ai-agent proot. Uses Ollama API for LLM inference with tool calling.</string>
+    <string name="agent_features_title">✨ Features:</string>
+    <string name="agent_one_line_install">📋 One-Line Install (copy &amp; paste in Termux):</string>
+    <string name="agent_start_ssh_server">▶️ Start SSH Server:</string>
+    <string name="agent_default_ssh_settings">🔑 Default SSH Settings:</string>
+    <string name="agent_got_it">Got it</string>
+    <string name="connection_settings_title">⚙️ Connection Settings</string>
+    <string name="ssh_connection_title">SSH Connection</string>
+    <string name="ssh_host_label">Host: localhost</string>
+    <string name="ssh_port_label">Port: 8023</string>
+    <string name="ssh_user_label">User: root</string>
+    <string name="ssh_password_label">Password: agent</string>
+    <string name="ssh_host_label_short">Host</string>
+    <string name="ssh_port_label_short">Port</string>
+    <string name="ssh_user_label_short">User</string>
+    <string name="ssh_password_label_short">Password</string>
+    <string name="ollama_server_title">Ollama Server</string>
+    <string name="ollama_url_label">Ollama URL</string>
+    <string name="ollama_mmap_label">Use MMAP</string>
+    <string name="ollama_mmap_desc">Memory-map model (faster startup)</string>
+    <string name="ollama_threads_label">Threads: %1$d</string>
+    <string name="ollama_context_tokens_label">Context Tokens:</string>
+    <string name="ollama_context_tokens_desc">Default: 4096. Higher = more memory used.</string>
+    <string name="agent_auto_mode_title">⚡ Auto Mode</string>
+    <string name="agent_auto_mode_desc">Auto-approve safe file writes and plans.</string>
+    <string name="agent_command_auto_accept_title">🖥️ Command Auto-Accept</string>
+    <string name="agent_command_auto_accept_desc">⚠️ Auto-approve run_command calls. Use with extreme caution — may execute dangerous commands!</string>
+    <string name="agent_available_tools">Available Tools</string>
+    <string name="agent_tool_desc_read_file">Read file content in line-numbered chunks</string>
+    <string name="agent_tool_desc_write_file">Create or edit files</string>
+    <string name="agent_tools_desc">The agent has access to these tools to help you:</string>
+    <string name="agent_tool_format"><b>%s</b>: %s</string>
+    <string name="agent_tool_copy">Copy tool name</string>
+    <string name="agent_settings_title">🤖 Agent Settings</string>
+    <string name="agent_settings_desc">Configure model and system prompt for each agent</string>
+    <string name="agent_reset_default">Reset to Default</string>
+    <string name="agent_conversations_title">📚 Conversations</string>
+    <string name="agent_stop_all">Stop All</string>
+    <string name="agent_hide_output">Hide Extra Output</string>
+    <string name="agent_show_output">Show Extra Output</string>
+    <string name="agent_hide_debug">Hide Debug Console</string>
+    <string name="agent_show_debug">Show Debug Console</string>
+    <string name="agent_debug_console">🔍 Debug Console</string>
+    <string name="agent_no_logs">No logs yet...</string>
+    <string name="agent_type_msg">Type a message...</string>
+    <string name="agent_thinking">Agent is thinking...</string>
+    <string name="agent_custom_model_hint">e.g., llama3.2:3b</string>
+    <string name="agent_copy_success">Copied %1$s!</string>
+    <string name="agent_model_tip_qwen">qwen2.5-coder:3b (~2GB) for coding</string>
+    <string name="agent_model_tip_llama">llama3.2:3b for general purpose</string>
+    <string name="agent_model_tip_granite">granite3-dense:2b (~1.5GB) minimal RAM</string>
+    <string name="agent_feature_codegen">Code gen</string>
+    <string name="agent_feature_file_io">File read/write</string>
+    <string name="agent_feature_commands">Commands</string>
+    <string name="agent_feature_multi_agent">Multi-agent</string>
+    <string name="agent_feature_vision">Vision</string>
+    <string name="agent_feature_web_search">Web search</string>
+    <string name="agent_orchestrator_name">Orchestrator</string>
+    <string name="agent_orchestrator_desc">Main agent that delegates tasks</string>
+    <string name="agent_coder_name">Coder</string>
+    <string name="agent_coder_desc">Writes and edits code</string>
+    <string name="agent_reviewer_name">Reviewer</string>
+    <string name="agent_reviewer_desc">Reviews code for issues</string>
+    <string name="agent_executor_name">Executor</string>
+    <string name="agent_executor_desc">Runs commands and tests</string>
+    <string name="agent_summarizer_name">Summarizer</string>
+    <string name="agent_summarizer_desc">Summarizes project progress</string>
+    <string name="agent_websearch_name">Web Search</string>
+    <string name="agent_thinking_enabled">Enable Thinking</string>
+    <string name="agent_thinking_enabled_desc">Model will show its reasoning</string>
+    <string name="agent_websearch_desc">Summarizes search results using AI</string>
+    <string name="agent_websearch_enabled">Enable Web Search</string>
+    <string name="agent_websearch_max_results">Max results</string>
+    <string name="agent_websearch_max_chars">Max chars/page</string>
+    <string name="agent_websearch_context">Context size</string>
+    
+    <string name="agent_backend_title">AI Backend</string>
+    <string name="agent_backend_desc">Choose API. Ollama has local management tools; llama-server is lighter.</string>
+    <string name="agent_llama_server_url">llama-server URL</string>
+    <string name="agent_llama_server_note">Note: Model, Threads and KV settings are managed by llama-server via CLI arguments, not here.</string>
+    
+    <string name="agent_kiwix_enabled">Enable Kiwix Search</string>
+    <string name="agent_kiwix_url">Kiwix Server URL</string>
+    <string name="agent_kiwix_model">Model</string>
+    <string name="agent_kiwix_max_results">Max results</string>
+    <string name="agent_kiwix_max_chars">Max chars/page</string>
+    <string name="agent_kiwix_context">Context size</string>
+    
+    <string name="agent_context_label">Context Window (tokens)</string>
+    <string name="agent_system_prompt">System Prompt</string>
+    <string name="agent_install_cmd_label">install command</string>
+    <string name="agent_start_cmd_label">start command</string>
+    <string name="agent_snapshot_item_desc">%1$s • %2$d %3$s</string>
+    <string name="agent_welcome_desc">Before you start chatting with the AI:</string>
+    <string name="agent_workspace_project_label">Workspace: %s</string>
+    <string name="agent_workspace_last_updated">Last updated: %s</string>
+    <string name="agent_workspace_created">Created: %s</string>
+    <string name="agent_project_item_updated">Updated %s</string>
+    <string name="agent_project_item_active">Active</string>
+    <string name="agent_status_idle">Idle</string>
+    <string name="agent_status_working">Working…</string>
+    <string name="agent_status_thinking">Thinking…</string>
+    <string name="agent_status_interrupted">Interrupted</string>
+    <string name="agent_status_memory_update_required">Memory update required…</string>
+    <string name="agent_status_awaiting_approval">Awaiting approval…</string>
+    <string name="agent_status_web_searching">Searching web: %1$s</string>
+    <string name="agent_status_web_fetching">Fetching web result %1$d/%2$d: %3$s</string>
+    <string name="agent_status_web_summarizing">Summarizing web result %1$d/%2$d: %3$s</string>
+    <string name="agent_status_kiwix_searching">Searching Kiwix: %1$s</string>
+    <string name="agent_status_kiwix_fetching">Fetching Kiwix result %1$d/%2$d: %3$s</string>
+    <string name="agent_status_kiwix_summarizing">Summarizing Kiwix result %1$d/%2$d: %3$s</string>
+    <string name="agent_context_usage_label">Context %1$d%% · %2$d/%3$d tokens</string>
+    <string name="agent_context_usage_tracking">Auto-compacts at %1$d%% of the context window.</string>
+    <string name="agent_context_usage_compacted">Older history compacted automatically (%1$d turns omitted).</string>
+    <string name="agent_context_usage_tracking_detail">Raw estimate %1$d tokens. Auto-compacts at %2$d%% of the window.</string>
+    <string name="agent_context_usage_normalized_detail">Normalized prompt estimate %1$d tokens. History compaction starts at %2$d%% of the window.</string>
+    <string name="agent_context_usage_compacted_detail">Packed %1$d → %2$d tokens, %3$d turns omitted.</string>
+    <string name="agent_context_usage_show_details">Show details</string>
+    <string name="agent_context_usage_hide_details">Hide details</string>
+    <string name="agent_context_usage_history_title">Recent compactions</string>
+    <string name="agent_context_usage_history_empty">No compaction events recorded yet.</string>
+    <string name="agent_context_usage_history_item">%1$s · %2$d → %3$d tokens</string>
+    <string name="agent_tool_recovery_failed_summary">The previous response attempted a tool call, but the call was malformed.</string>
+    <string name="agent_tool_recovery_failed_hint">First emit {\"name\": \"read_file\", \"arguments\": {\"path\": \"brain/tools_reference.md\"}}, then retry with a proper structured tool call outside &lt;think&gt;.</string>
+    <string name="agent_empty_response_summary">The previous response produced no visible answer and no structured tool call.</string>
+    <string name="agent_empty_response_hint">First emit {\"name\": \"read_file\", \"arguments\": {\"path\": \"brain/tools_reference.md\"}}, then reply with either a concise answer or a proper structured tool call outside &lt;think&gt;.</string>
+    <string name="agent_memory_update_required_summary">Project memory must be updated before this task can finish.</string>
+    <string name="agent_memory_update_required_hint">Call write_memory or the Summarizer to record what changed and why, then retry finish_task.</string>
+    <string name="agent_ollama_reconnecting">Reconnecting to Ollama…</string>
+    <string name="agent_stream_interrupted_suffix">[Connection interrupted: %1$s]</string>
+    <string name="agent_process_stopped">🛑 **Process stopped by user.**</string>
+    <string name="agent_executing_tool">Executing %s…</string>
+    <string name="agent_request_write">📝 **Requesting approval to write file:** `%s`</string>
+    <string name="agent_request_edit_lines">✏️ **Requesting approval to edit lines %2$d-%3$d in:** `%1$s`</string>
+    <string name="agent_request_apply_patch">🩹 **Requesting approval to apply patch:**\n```diff\n%1$s\n```</string>
+    <string name="agent_file_written">✓ File written: %s</string>
+    <string name="agent_request_command">⚡ **Requesting approval to run command:**\n```bash\n%s\n```</string>
+    <string name="agent_executing_command">🐚 **Executing command:** `%s`</string>
+    <string name="agent_delegating_to">🔄 **Delegating to %1$s %2$s**\n\n**Task:** %3$s</string>
+    <string name="agent_delegating_custom">🔄 **Delegating to custom agent: %1$s**\n\n**Task:** %2$s</string>
+    <string name="agent_project_confirm_delete_title">Delete Project?</string>
+    <string name="agent_project_confirm_delete_msg">Are you sure you want to delete project \"%s\"? All workspace files will be removed.</string>
+    <string name="agent_tool_example_full">Example Tool: %s</string>
+    <string name="agent_custom_tool_header">Custom Tool: %s</string>
+    <string name="agent_custom_agent_header">Custom Agent: %s</string>
+    <string name="agent_welcome_step1">1️⃣ Set up Ollama &amp; proot environment</string>
+    <string name="agent_welcome_step2">2️⃣ Create a new project by tapping the 📁 icon in the top-left corner</string>
+    <string name="agent_welcome_step3">3️⃣ Select a model and start chatting!</string>
+    <string name="agent_welcome_note">The project tells the AI where your files are.</string>
+    <string name="agent_conversations_menu">Conversations</string>
+    <string name="agent_new_project_btn">New Project</string>
+    <string name="agent_no_conversations">No conversations yet</string>
+    <string name="agent_delete_project_title">Delete Project?</string>
+    <string name="agent_delete_project_desc">This will permanently delete the conversation history.</string>
+    <string name="agent_delete_files_warning">🚨 ALSO REMOVING FILES IN PROOT ENVIRONMENT:</string>
+    <string name="action_create">Create</string>
+    <string name="action_got_it">Got it!</string>
+    <string name="action_delete_everything">Delete Everything</string>
+    <string name="icon_warning_desc">Warning</string>
+    <string name="agent_tool_label">🔧 %s</string>
+    <string name="agent_custom_agent_label">🤖 %s</string>
+    <string name="agent_role_label">👷 %s</string>
+    <string name="agent_role_orchestrator">Orchestrator</string>
+    <string name="agent_role_coder">Coder</string>
+    <string name="agent_role_reviewer">Reviewer</string>
+    <string name="agent_role_executor">Executor</string>
+    <string name="agent_role_summarizer">Summarizer</string>
+    <string name="agent_assistant_label">🤖 Assistant</string>
+    <string name="agent_user_label">You</string>
+    <string name="agent_delegation_title">🔄 Agent Delegation</string>
+    <string name="agent_approve_file_title">⚠️ Create/Modify File?</string>
+    <string name="agent_approve_cmd_title">⚠️ Command requires approval:</string>
+    <string name="agent_approve_edit_title">⚠️ Edit lines in file?</string>
+    <string name="agent_approve_generic_title">⚠️ Approve tool: %1$s?</string>
+    <string name="agent_no_args">No arguments</string>
+    <string name="agent_path_label">Path: %s</string>
+    <string name="agent_thinking_process">Thinking Process</string>
+    <string name="agent_plan_title">🗺️ Implementation Plan</string>
+    <string name="agent_tool_call_title">🔧 Tool: %s</string>
+    <string name="agent_modify_plan">Modify Plan</string>
+    <string name="agent_running_tool">Running %s</string>
+    <string name="action_regenerate">Regenerate</string>
+    <string name="action_deny">Deny</string>
+    <string name="action_allow">Allow</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_approve">Approve</string>
     
     <!-- Model Import/Management -->
     <string name="model_import_title">Import Model</string>
@@ -469,8 +1563,6 @@
     <string name="upscaler_no_model">No upscaler model</string>
     <string name="upscaler_extracting">Extracting frames…</string>
     <string name="upscaler_encoding">Encoding video…</string>
-    <string name="pdf_merge">Merge PDFs</string>
-    <string name="pdf_split">Split PDF</string>
     <string name="pdf_no_model">No LLM model for summary</string>
     <string name="models_select">Select</string>
     <string name="models_selected">Selected</string>
@@ -481,12 +1573,980 @@
     <string name="pdf_summary_prompt">Summary prompt</string>
     <string name="pdf_unification_prompt">Unification prompt</string>
     <string name="prompts_reset">Reset</string>
-    <string name="notes_search">Search…</string>
-    <string name="notes_all">All</string>
-    <string name="notes_transcription">Transcriptions</string>
-    <string name="notes_summary">Summaries</string>
-    <string name="notes_manual">Manual</string>
     <string name="error_no_space">No space</string>
     <string name="error_cancelled">Cancelled</string>
     <string name="whisper_processing">Processing…</string>
+    
+    <!-- Subtitle Burn -->
+    <string name="subtitle_burn_desc">Burn subtitles into videos</string>
+    <string name="subtitle_files">Files</string>
+    <string name="subtitle_styling">Styling Options</string>
+    <string name="subtitle_font_size">Font Size</string>
+    <string name="subtitle_alignment">Alignment</string>
+    <string name="subtitle_margin_v">Vertical Margin</string>
+    <string name="subtitle_margin_l">Left Margin</string>
+    <string name="subtitle_color">Color</string>
+    <string name="subtitle_font">Font</string>
+    <string name="subtitle_start">Start Burning</string>
+    <string name="subtitle_processing">Burning subtitles…</string>
+    <string name="subtitle_complete">Subtitle burning complete!</string>
+    <string name="subtitle_error">Error burning subtitles</string>
+    <string name="subtitle_info_title">Styling Options Guide</string>
+    <string name="subtitle_info_fontsize">FontSize: Text size in pixels (16-48 recommended)</string>
+    <string name="subtitle_info_alignment">Alignment: Position using numpad layout (1-9)</string>
+    <string name="subtitle_info_marginv">MarginV: Vertical margin from edge (pixels)</string>
+    <string name="subtitle_info_marginl">MarginL: Left margin (pixels)</string>
+    <string name="subtitle_info_color">Color: Subtitle text color</string>
+    <string name="subtitle_info_font">Font: Font family for subtitles</string>
+    <string name="format_txt">TXT</string>
+    <string name="format_srt">SRT</string>
+    <string name="format_vtt">VTT</string>
+    <string name="format_json">JSON</string>
+    <string name="video_sumup_kv_k">K: %s</string>
+    <string name="video_sumup_kv_v">V: %s</string>
+    <string name="action_open_with">Open with…</string>
+    
+    <!-- Video Upscaler -->
+    <string name="upscaler_error_shared_video">Failed to load shared video: %s</string>
+    <string name="upscaler_error_video_info">Could not read video info</string>
+    <string name="upscaler_output_resolution">Output: %1$dx%2$d</string>
+    <string name="upscaler_engine_label">Engine</string>
+    <string name="upscaler_model_label">Model</string>
+    <string name="upscaler_scale_label">Scale Factor</string>
+    <string name="upscaler_denoise_label">Denoise Level</string>
+    <string name="upscaler_none">None</string>
+    <string name="upscaler_status_frames">Upscaling %1$d/%2$d frames</string>
+    <string name="upscaler_eta">ETA: %s</string>
+    <string name="upscaler_status_extracting">Extracting frames…</string>
+    <string name="upscaler_status_rebuilding">Rebuilding video with audio…</string>
+    <string name="upscaler_error_no_video">Please select a video</string>
+    <string name="upscaler_error_no_model">Please select a model</string>
+    <string name="upscaler_error_not_found">Upscaled file not found in cache</string>
+    <string name="upscaler_error_save_folder">Could not save to output folder. Video saved in cache.</string>
+    <string name="upscaler_error_save_generic">Save error: %s. Video may be in cache.</string>
+    <string name="upscaler_error_no_folder">No output folder set. Video saved to cache: %s</string>
+    <string name="upscaler_success_toast">Video saved to %s</string>
+    <string name="upscaler_start_btn">Start Upscaling</string>
+    <string name="upscaler_success_msg">Video upscaled successfully!</string>
+    <string name="upscaler_badge_anime">anime</string>
+    <string name="upscaler_badge_denoise">denoise</string>
+    
+    <!-- SD Models -->
+    <string name="sd_models_title">SD Models</string>
+    <string name="sd_models_select_file">Select File</string>
+    <string name="sd_models_loading_files">Loading files…</string>
+    <string name="sd_models_tab_installed">Installed (%d)</string>
+    <string name="sd_models_tab_downloading">Downloading</string>
+    <string name="sd_models_tab_discover">Discover</string>
+    <string name="sd_models_no_models">No SD models installed</string>
+    <string name="sd_models_import_hint">Go to Discover or tap + to import</string>
+    <string name="sd_models_checkpoints_label">Checkpoints (%d)</string>
+    <string name="sd_models_flux_diffusion_label">FLUX Diffusion (%d)</string>
+    <string name="sd_models_clip_l_label">CLIP-L Encoders (%d)</string>
+    <string name="sd_models_t5xxl_label">T5-XXL Encoders (%d)</string>
+    <string name="sd_models_vae_label">VAE (%d)</string>
+    <string name="sd_models_controlnet_label">ControlNet (%d)</string>
+    <string name="sd_models_lora_label">LoRA (%d)</string>
+    <string name="sd_models_upscalers_label">Upscalers (%d)</string>
+    <string name="sd_models_import_title">Import SD Model</string>
+    <string name="sd_models_filename_label">Filename:</string>
+    <string name="sd_models_filename_hint">model.safetensors</string>
+    <string name="sd_models_type_label">Model Type:</string>
+    <string name="sd_models_capabilities_label">Capabilities:</string>
+    <string name="sd_models_cap_txt2img">Text-to-Image (txt2img)</string>
+    <string name="sd_models_cap_img2img">Image-to-Image (img2img)</string>
+    <string name="sd_models_importing_title">Importing Model</string>
+    <string name="sd_models_please_wait">Please wait…</string>
+    <string name="sd_models_no_active_downloads">No active downloads</string>
+    <string name="sd_models_search_hint">Search HuggingFace for SD models…</string>
+    <string name="sd_models_searching">Searching…</string>
+    <string name="sd_models_quick_search">Quick Search Suggestions</string>
+    <string name="sd_models_tap_to_search">Tap to search HuggingFace</string>
+    <string name="sd_models_search_results">Search Results (%d)</string>
+    <string name="sd_models_search_label">Search: \"%s\"</string>
+    <string name="sd_models_error_source_not_found">Source file not found</string>
+    <string name="sd_models_export_success">Exported: %s</string>
+    <string name="sd_models_export_failed">Export failed: %s</string>
+    <string name="sd_models_linked_external">Model linked from external storage (no copy needed)</string>
+    <string name="sd_models_permission_tip">Tip: Grant \'All files access\' in Settings to use models without copying</string>
+    
+    <!-- SD Types -->
+    <string name="sd_type_checkpoint">SD Checkpoint (SD1.5/SDXL)</string>
+    <string name="sd_type_diffusion">FLUX Diffusion Model</string>
+    <string name="sd_type_clip_l">CLIP-L Text Encoder</string>
+    <string name="sd_type_t5xxl">T5-XXL Text Encoder</string>
+    <string name="sd_type_vae">VAE</string>
+    <string name="sd_type_controlnet">ControlNet</string>
+    <string name="sd_type_lora">LoRA</string>
+    <string name="sd_type_upscaler">Upscaler (ESRGAN)</string>
+    <string name="action_import">Import</string>
+    <string name="sd_models_no_sd_models">No SD models installed</string>
+    <string name="action_search">Search</string>
+    <string name="action_clear">Clear</string>
+    
+    <!-- Workflows -->
+    <string name="workflow_title">AI Workflows</string>
+    <string name="workflow_subtitle">Chain multiple AI operations together</string>
+    <string name="workflow_transcribe_summary">Transcribe + Summary</string>
+    <string name="workflow_transcribe_summary_desc">Transcribe audio/video, then summarize with LLM</string>
+    <string name="workflow_txt2img_upscale">txt2img + Upscale</string>
+    <string name="workflow_txt2img_upscale_desc">Generate image, then upscale it</string>
+    <string name="workflow_running_transcribe">Transcribe + Summary running…</string>
+    <string name="workflow_step_starting">Starting…</string>
+    <string name="workflow_running_txt2img">txt2img + Upscale running…</string>
+    <string name="workflow_step_extracting">Step 1/3: Extracting audio…</string>
+    <string name="workflow_step_transcribing">Step 2/3: Transcribing…</string>
+    <string name="workflow_step_summarizing">Step 3/3: Summarizing…</string>
+    <string name="workflow_step_generating">Step 1/2: Generating image…</string>
+    <string name="workflow_step_upscaling">Step 2/2: Upscaling…</string>
+    <string name="workflow_recording_title">Record Audio</string>
+    <string name="workflow_recording_status">Recording…</string>
+    <string name="workflow_recording_saved">Recording saved</string>
+    <string name="workflow_recording_hint">Tap Start to begin recording</string>
+    <string name="workflow_use_recording">Use Recording</string>
+    <string name="workflow_templates_btn">Templates (%d)</string>
+    <string name="workflow_template_name">Template Name</string>
+    <string name="workflow_template_fallback">Template #%1$d</string>
+    <string name="workflow_no_templates">No saved templates</string>
+    <string name="workflow_save_current_template">Save current as template…</string>
+    <string name="workflow_edit_template">Edit Template</string>
+    <string name="workflow_templates_count">Templates (%d)</string>
+    <string name="workflow_save_template">Save Template</string>
+    <string name="workflow_step_gen_img">Step 1: Generate Image</string>
+    <string name="workflow_sd_model_label">SD Model</string>
+    <string name="workflow_prompt_label">Prompt</string>
+    <string name="workflow_negative_prompt_label">Negative Prompt</string>
+    <string name="workflow_width_label">Width</string>
+    <string name="workflow_height_label">Height</string>
+    <string name="workflow_steps_label">Steps</string>
+    <string name="workflow_cfg_label">CFG Scale</string>
+    <string name="workflow_threads_label">Threads</string>
+    <string name="workflow_sampler_label">Sampler</string>
+    <string name="workflow_seed_label">Seed (-1 = random)</string>
+    <string name="workflow_step_upscale">Step 2: Upscale</string>
+    <string name="workflow_upscaler_model_label">Upscaler Model</string>
+    <string name="workflow_repeats_label">Upscale Repeats</string>
+    <string name="workflow_upscale_threads_label">Upscale Threads</string>
+    <string name="workflow_final_res_label">Final Resolution:</string>
+    <string name="workflow_complete">Workflow Complete!</string>
+    <string name="workflow_saved_to">Saved: %s</string>
+    <string name="workflow_badge">Workflow</string>
+    <string name="workflow_run_btn">Run Workflow</string>
+    <string name="workflow_running_btn">Running…</string>
+    <string name="workflow_step_transcribe">Step 1: Transcribe</string>
+    <string name="workflow_whisper_model_label">Whisper Model</string>
+    <string name="workflow_language_label">Language</string>
+    <string name="workflow_audio_video_placeholder">Audio/Video</string>
+    <string name="workflow_record_btn">Record</string>
+    <string name="workflow_step_summarize">Step 2: Summarize</string>
+    <string name="workflow_llm_model_label">LLM Model</string>
+    <string name="workflow_system_prompt_label">System Prompt</string>
+    <string name="workflow_summary_label">Summary</string>
+    <string name="workflow_note_title">Transcription: %1$s</string>
+    <string name="workflow_error_perm_denied">Recording permission denied</string>
+    <string name="workflow_error_load_audio">Failed to load audio: %1$s</string>
+    <string name="workflow_error_save_failed">Failed to save recording: %s</string>
+    <string name="workflow_error_start_failed">Failed to start recording: %s</string>
+    <string name="workflow_error_stop_failed">Failed to stop recording: %s</string>
+    <string name="workflow_select_model">Select model</string>
+    <string name="workflow_select_whisper">Select Whisper model</string>
+    <string name="workflow_select_llm">Select LLM model</string>
+    <string name="workflow_select_upscaler">Select upscaler</string>
+    <string name="workflow_error_upscale_failed">Upscale failed: %s</string>
+    <string name="dataset_title">📊 Dataset Creator</string>
+    <string name="dataset_new">New Dataset</string>
+    <string name="dataset_name_label">Dataset Name</string>
+    <string name="dataset_header">🤖 LLM-Powered Q&amp;A Generation</string>
+    <string name="dataset_desc">Create fine-tuning datasets from PDFs and text files. Pipeline: Clean → Questions (5×) → Answers → Rating</string>
+    <string name="dataset_count_label">Datasets</string>
+    <string name="dataset_empty">No datasets yet</string>
+    <string name="dataset_empty_hint">Tap + to create your first dataset</string>
+    <string name="dataset_delete_title">Delete Dataset?</string>
+    <string name="dataset_delete_message">\"%s\" and all its data will be permanently deleted.</string>
+    <string name="dataset_created_at">Created %s</string>
+    
+    <!-- Dataset Project Tabs -->
+    <string name="dataset_tab_sources">Sources</string>
+    <string name="dataset_tab_chunks">Chunks</string>
+    <string name="dataset_tab_process">Process</string>
+    <string name="dataset_tab_review">Review</string>
+    <string name="dataset_tab_queue">Queue</string>
+    <string name="dataset_tab_settings">Settings</string>
+    
+    <!-- Sources Tab -->
+    <string name="dataset_sources_count">sources</string>
+    <string name="dataset_chunks_count">chunks</string>
+    <string name="dataset_chunks_count_param">%d chunks</string>
+    <string name="dataset_add_pdf">+ PDF</string>
+    <string name="dataset_add_txt">+ TXT</string>
+    <string name="dataset_no_sources">No sources yet</string>
+    <string name="dataset_add_sources_hint">Add PDFs or text files to start</string>
+    
+    <!-- Chunks Tab -->
+    <string name="dataset_select_all">Select All</string>
+    <string name="dataset_selected">✓ %d</string>
+    <string name="dataset_regen_questions">Regen Q\'s</string>
+    <string name="dataset_original_label">Original:</string>
+    <string name="dataset_cleaned_label">Cleaned:</string>
+    <string name="dataset_edit_chunk">Edit Chunk #%d</string>
+    <string name="dataset_regen_clean_btn">🔄 Regen Clean</string>
+    <string name="dataset_not_cleaned">(Not cleaned yet)</string>
+    
+    <!-- Process Tab -->
+    <string name="dataset_pipeline_status">📊 Pipeline Status</string>
+    <string name="dataset_status_pending">Pending</string>
+    <string name="dataset_status_cleaned">Cleaned</string>
+    <string name="dataset_status_questions">Q\'s</string>
+    <string name="dataset_status_answers">A\'s</string>
+    <string name="dataset_status_rated">Rated</string>
+    <string name="dataset_run_clean">1. Clean (%d)</string>
+    <string name="dataset_run_questions">2. Questions (%d)</string>
+    <string name="dataset_run_answers">3. Answers (%d)</string>
+    <string name="dataset_run_rating">4. Rate (%d)</string>
+    
+    <!-- Review Tab -->
+    <string name="dataset_filter_all">All</string>
+    <string name="dataset_filter_unrated">Unrated</string>
+    <string name="dataset_filter_score">Score %s</string>
+    <string name="dataset_actions">Actions</string>
+    <string name="dataset_action_regen_answers">Regen Answers</string>
+    <string name="dataset_action_regen_ratings">Regen Ratings</string>
+    <string name="dataset_edit_qa">Edit Q&amp;A</string>
+    <string name="dataset_qa_question">Question</string>
+    <string name="dataset_qa_answer">Answer</string>
+    <string name="dataset_score_justification">Score Justification</string>
+    <string name="dataset_no_justification">No justification available</string>
+    <string name="dataset_context_sent">Context Sent to LLM</string>
+    <string name="dataset_context_raw">📄 Context (sent for answer generation):</string>
+    <string name="dataset_context_original">📋 Original (before cleaning):</string>
+    <string name="dataset_no_context">Context not available</string>
+    
+    <!-- Queue Tab -->
+    <string name="dataset_running">🔄 Running</string>
+    <string name="dataset_pending_jobs">📋 Pending Jobs (%d)</string>
+    <string name="dataset_no_jobs">No pending jobs</string>
+    <string name="dataset_no_jobs_hint">Queue actions from Review or Chunks tabs</string>
+    <string name="dataset_clear_all">Clear All</string>
+    
+    <!-- Settings Tab -->
+    <string name="dataset_project_name">📝 Project Name</string>
+    <string name="dataset_server_settings">🌐 Server Settings</string>
+    <string name="dataset_server_desc">Uses the llama.cpp server started from Dashboard</string>
+    <string name="dataset_server_url">Server URL</string>
+    <string name="dataset_server_default_hint">Default: http://127.0.0.1:8080 (or custom external URL)</string>
+    <string name="dataset_max_tokens">Max Tokens</string>
+    <string name="dataset_cot_label">Chain of Thought (CoT)</string>
+    <string name="dataset_prompts_title">📝 Prompts</string>
+    <string name="dataset_edit_prompt">Edit %s Prompt</string>
+    
+    <!-- Processor Jobs & Stages -->
+    <string name="dataset_job_clean">Clean</string>
+    <string name="dataset_job_questions">Questions</string>
+    <string name="dataset_job_answers">Answers</string>
+    <string name="dataset_job_rating">Rating</string>
+    <string name="dataset_job_regen_answer">Regen Answer</string>
+    <string name="dataset_job_regen_rating">Regen Rating</string>
+    <string name="dataset_job_regen_answers">Regen Answers (%d)</string>
+    <string name="dataset_job_regen_ratings">Regen Ratings (%d)</string>
+    <string name="dataset_job_regen_questions">Regen Questions (%d)</string>
+    <string name="dataset_job_regen_clean">Regen Clean</string>
+    <string name="dataset_stage_cleaning">Cleaning</string>
+    <string name="dataset_stage_questions">Questions</string>
+    <string name="dataset_stage_answers">Answers</string>
+    <string name="dataset_stage_rating">Rating</string>
+    <string name="dataset_stage_done">Done</string>
+    <string name="dataset_stage_error">Error</string>
+    
+    <!-- Dataset Misc -->
+    <string name="dataset_export_success">Exported %d Q&amp;A pairs</string>
+    <string name="dataset_export_failed">Export failed: %s</string>
+    <string name="dataset_processing_notif">Dataset Processing</string>
+    <string name="dataset_job_regen_answers_param">Regen Answers (%d)</string>
+    <string name="dataset_job_regen_ratings_param">Regen Ratings (%d)</string>
+    <string name="dataset_job_regen_questions_param">Regen Questions (%d)</string>
+    <string name="dataset_no_chunks_clean">No pending chunks to clean</string>
+    <string name="dataset_chunk_param">Chunk %d</string>
+    <string name="dataset_error_param">Failed: %s</string>
+    <string name="dataset_server_error_param">Server error: %s</string>
+    <string name="dataset_chunk_q_param">Chunk %1$d, Q%2$d</string>
+
+    <!-- Subtitle Burn Screen -->
+    <string name="subtitle_burn_title">🔤 Subtitle Burn</string>
+    <string name="subtitle_toggle_info">Toggle Info</string>
+    <string name="subtitle_styling_guide_title">📖 Styling Options Guide</string>
+    <string name="subtitle_guide_font_size">• FontSize: Text size in pixels (16-48 recommended)</string>
+    <string name="subtitle_guide_alignment">• Alignment: Position using numpad layout (1-9)</string>
+    <string name="subtitle_guide_align_top">  7=TopLeft, 8=TopCenter, 9=TopRight</string>
+    <string name="subtitle_guide_align_mid">  4=MidLeft, 5=MidCenter, 6=MidRight</string>
+    <string name="subtitle_guide_align_bot">  1=BotLeft, 2=BotCenter, 3=BotRight</string>
+    <string name="subtitle_guide_margin_v">• MarginV: Vertical margin from edge (pixels)</string>
+    <string name="subtitle_guide_margin_l">• MarginL: Left margin (pixels)</string>
+    <string name="subtitle_guide_color">• Color: Subtitle text color</string>
+    <string name="subtitle_guide_font">• Font: Font family for subtitles</string>
+    <string name="subtitle_files_title">📁 Files</string>
+    <string name="subtitle_select_video">Select Video</string>
+    <string name="subtitle_select_subtitle">Select Subtitle (.srt, .ass, .vtt)</string>
+    <string name="subtitle_styling_title">🎨 Styling</string>
+    <string name="subtitle_font_size_label">FontSize</string>
+    <string name="subtitle_alignment_label">Alignment</string>
+    <string name="subtitle_margin_v_label">MarginV</string>
+    <string name="subtitle_margin_l_label">MarginL</string>
+    <string name="subtitle_color_label">Color</string>
+    <string name="subtitle_font_label">Font</string>
+    <string name="subtitle_burn_button">Burn Subtitles</string>
+    <string name="subtitle_saved_path">Saved: %s</string>
+    <string name="subtitle_error_message">Error: %s</string>
+
+    <!-- FastSD Gallery -->
+    <string name="fastsd_ssh_error">Not connected to SSH. Please connect first.</string>
+    <string name="fastsd_load_error">Error loading images: %s</string>
+    <string name="fastsd_generic_error">Error: %s</string>
+    <string name="fastsd_deleted_count">Deleted %d images</string>
+    <string name="fastsd_delete_failed">Failed to delete: %s</string>
+    <string name="fastsd_deleted_single">Deleted %s</string>
+    <string name="fastsd_delete_failed_single">Failed to delete: %s</string>
+    <string name="fastsd_downloading">Downloading image...</string>
+    <string name="fastsd_decode_failed">Failed to decode: %s</string>
+    <string name="fastsd_empty_data">Image data is empty</string>
+    <string name="fastsd_download_failed">Failed to download: %s</string>
+    <string name="fastsd_share_failed">Failed to share: %s</string>
+    <string name="fastsd_selected_count">%d selected</string>
+    <string name="fastsd_loading_text">Loading images...</string>
+    <string name="fastsd_no_images">No images yet</string>
+    <string name="fastsd_no_images_hint">Generated images will appear here.\nStart FastSD and generate some!</string>
+    <string name="fastsd_delete_confirm_title">Delete %d Image(s)?</string>
+    <string name="fastsd_delete_confirm_text">Are you sure you want to delete the selected images? This cannot be undone.</string>
+    <string name="fastsd_delete_single_title">Delete Image?</string>
+    <string name="fastsd_delete_single_text">Are you sure you want to delete %s?</string>
+    <string name="fastsd_selected_content_desc">Selected</string>
+    <string name="fastsd_load_failed">Failed to load image</string>
+    <string name="fastsd_created_label">Created: </string>
+    <string name="fastsd_size_label">Size: </string>
+    <string name="fastsd_resolution_label">Resolution: </string>
+
+    <!-- Termux File Manager -->
+    <string name="file_manager_title">📂 File Manager</string>
+    <string name="file_sort_name_asc">Name ↑</string>
+    <string name="file_sort_name_desc">Name ↓</string>
+    <string name="file_sort_size_asc">Size ↑</string>
+    <string name="file_sort_size_desc">Size ↓</string>
+    <string name="file_sort_time_asc">Date ↑</string>
+    <string name="file_sort_time_desc">Date ↓</string>
+    <string name="file_download_success">Download completed!</string>
+    <string name="file_calculating_size">Calculating...</string>
+    <string name="file_deleted_success">Deleted: %s</string>
+    <string name="file_selected_count">%d selected</string>
+    <string name="file_detecting_tools">Detecting installed tools...</string>
+    <string name="file_no_tools_installed">No tools installed</string>
+    <string name="file_no_tools_hint">Install tools from the Termux screen first</string>
+    <string name="file_root_label">📂 /</string>
+    <string name="file_hf_cache_label">🤗 HF Cache</string>
+    <string name="file_sd_results_label">🎨 SD Results</string>
+    <string name="file_calculating_sizes_status">⏳ Calculating sizes...</string>
+    <string name="file_download_url">Download File from URL</string>
+    <string name="file_select_hint">💡 Long-press to select files for download</string>
+    <string name="file_generic_error">Error: %s</string>
+    <string name="file_empty_folder">📁 Empty folder</string>
+    <string name="file_download_url_title">📥 Download from URL</string>
+    <string name="file_download_url_hint">Enter file URL (wget will download to current folder)</string>
+    <string name="file_url_label">URL</string>
+    <string name="file_target_path">Target: %s</string>
+    <string name="file_delete_confirm_title">🗑️ Delete %s?</string>
+    <string name="file_delete_confirm_text">This will permanently delete %1$s: %2$s</string>
+
+    <!-- Termux WebView -->
+    <string name="webview_back_page">Back in page</string>
+    <string name="webview_exit_status">Exit (keeps running)</string>
+    <string name="webview_close_stop">Close &amp; Stop</string>
+    <string name="webview_loading_title">Loading %s...</string>
+    <string name="webview_connection_failed">Connection Failed</string>
+    <string name="webview_connect_error">Could not connect to server</string>
+    <string name="webview_connect_hint">Make sure the server is running in Termux</string>
+
+    <!-- Generic Actions -->
+    <string name="action_go_back">Go Back</string>
+    <string name="action_reload">Reload</string>
+    <string name="action_downloading_status">Downloading...</string>
+    <string name="action_send">Send</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_new">New</string>
+    <string name="action_restore">Restore</string>
+    <string name="action_more">More</string>
+    <string name="action_hide">Hide</string>
+    <string name="action_show">Show</string>
+    <string name="action_connect">Connect</string>
+    <string name="agent_new">New</string>
+    <string name="agent_refresh">Refresh</string>
+    <string name="error_unknown">Unknown error</string>
+
+    <!-- Termux Tool Descriptions -->
+    <string name="tool_ollama_desc">Ollama - Run 7B, 13B models locally with an OpenAI-compatible API.</string>
+    <string name="tool_open_webui_desc">Open WebUI - Modern ChatGPT-like frontend for Ollama with RAG support.</string>
+    <string name="tool_big_agi_desc">Big-AGI - Professional AI frontend with Beam multi-model comparison.</string>
+    <string name="tool_oobabooga_desc">Oobabooga - Powerful text generation web UI with multiple backends.</string>
+    <string name="tool_fastsdcpu_desc">FastSD CPU - Ultra-fast image generation (SD Turbo) optimized for CPUs.</string>
+    <string name="tool_a1111_desc">A1111 SD WebUI - The industry-standard web UI for Stable Diffusion.</string>
+    <string name="tool_comfyui_desc">ComfyUI - Node-based GUI for SD (best for low RAM and complex workflows).</string>
+    <string name="tool_manubot_desc">Manu-Bot - Autonomous coding agent with multi-tool usage capability.</string>
+    <string name="tool_mcp_desc">MCP Server - Model Context Protocol server for tool and data integration.</string>
+    <string name="tool_kokoro_desc">Kokoro TTS - High-quality offline Text-to-Speech engine.</string>
+    <string name="tool_piper_desc">Piper TTS - Efficient, natural sounding local neural TTS.</string>
+
+    <!-- Distributed Inference -->
+    <string name="dist_title">Distributed Inference</string>
+    <string name="dist_worker_mode">Worker Mode</string>
+    <string name="dist_master_mode">Master Mode</string>
+    <string name="dist_worker_ram_label">Worker RAM (MB)</string>
+    <string name="dist_clear_recalculate">Clear &amp; Recalculate</string>
+    <string name="dist_add_worker_btn">Add Worker</string>
+    <string name="dist_view_network_status">View Network Status</string>
+    <string name="dist_select_model">Select Model</string>
+    <string name="dist_no_models">No LLM models found.</string>
+    <string name="dist_edit_worker">Edit Worker</string>
+    <string name="dist_device_name">Device Name</string>
+    <string name="dist_device_name_optional">Worker Name (optional)</string>
+    <string name="dist_device_name_hint">e.g. Phone 2, Tablet, etc.</string>
+    <string name="dist_ip_address_label">IP Address *</string>
+    <string name="dist_ip_address_hint">192.168.1.xxx</string>
+    <string name="dist_port_label">Port</string>
+    <string name="dist_port_hint">50052</string>
+    <string name="dist_load_proportion">Load Proportion % (optional)</string>
+    <string name="dist_load_proportion_hint">e.g. 30 for 30%</string>
+    <string name="dist_auto_load_desc">Leave blank for auto (based on RAM)</string>
+    <string name="dist_tap_to_select_model">Tap to select model</string>
+    <string name="dist_models_available">%d model(s) available</string>
+    <string name="dist_your_ram_contribution">Your RAM Contribution</string>
+    <string name="dist_offload_all">Offload All to Workers</string>
+    <string name="dist_offload_all_desc">Master keeps 0 layers. All model layers will be sent to workers. Requires enough worker RAM for the entire model.</string>
+    <string name="dist_available_ram">Available: %d MB</string>
+    <string name="dist_model_settings_title">⚙️ Model Settings</string>
+    <string name="dist_context_size">Context Size</string>
+    <string name="dist_tokens">tokens</string>
+    <string name="dist_temperature">Temperature</string>
+    <string name="dist_threads">Threads</string>
+    <string name="dist_batch_size">Batch Size (-b)</string>
+    <string name="dist_network_visibility">Network Visibility</string>
+    <string name="dist_host_public">Host: 0.0.0.0 (accessible from network)</string>
+    <string name="dist_host_local">Host: 127.0.0.1 (local only)</string>
+    <string name="dist_kv_cache_title">🧠 KV Cache</string>
+    <string name="dist_enable_kv_cache">Enable KV Cache</string>
+    <string name="dist_kv_cache_desc">Speeds up repeated tokens in context</string>
+    <string name="dist_flash_attention">Flash Attention</string>
+    <string name="dist_flash_attention_desc">Significantly reduces memory usage and speeds up inference</string>
+    
+    <!-- Advanced Settings -->
+    <string name="dist_advanced_settings_title">⚙️ Advanced Settings</string>
+    <string name="dist_advanced_parallel">Parallel (-np)</string>
+    <string name="dist_advanced_cache_ram">Context Cache RAM (MB)</string>
+    <string name="dist_advanced_custom_flags">Custom Flags</string>
+    <string name="command_template_title">Custom Command Template</string>
+    <string name="command_template_desc">Build the launch command from the current UI settings. Leave it blank to use the standard generated command.</string>
+    <string name="command_template_label">Command Template</string>
+    <string name="command_template_placeholder">{default_args} --no-warmup</string>
+    <string name="command_template_placeholders">Placeholders: {default_args}, {binary}, {model}, {draft_model}, {speculative_args}, {flash_attention}, {kv_cache_args}</string>
+    
+    <!-- Speculative Decoding -->
+    <string name="dist_speculative_title">⚡ Speculative Decoding</string>
+    <string name="dist_speculative_enable">Enable Speculative Decoding</string>
+    <string name="dist_speculative_desc">Uses a small draft model to predict tokens faster</string>
+    <string name="dist_speculative_draft_model">Draft Model</string>
+    <string name="dist_speculative_select_draft">Select draft model</string>
+    <string name="dist_speculative_no_draft">No draft model selected</string>
+    <string name="dist_speculative_clear_draft">Clear</string>
+    <string name="dist_speculative_ram_warning">⚠️ Draft model (%dMB) loads on master device alongside main model</string>
+    <string name="dist_speculative_draft_max">Max draft tokens</string>
+    <string name="dist_speculative_draft_min">Min draft tokens</string>
+    <string name="dist_speculative_draft_p_min">Min acceptance probability</string>
+    <string name="dist_speculative_draft_p_min_desc">Lower = more aggressive drafting</string>
+    <string name="dist_edit_command">Edit Command</string>
+    <string name="dist_discard_command">Discard</string>
+    <string name="dist_show_command">Show Command</string>
+    <string name="dist_command_preview_title">Command Preview</string>
+    <string name="dist_command_preview_desc">The following command will be executed:</string>
+    <string name="dist_command_customize_desc">Customize the command for the current run:</string>
+    <string name="dist_command_label">Command</string>
+    <string name="dist_command_copied">Copied to clipboard</string>
+    <string name="dist_saved_distribution">Saved distribution for:</string>
+    <string name="dist_workers_count">Workers (%d)</string>
+    <string name="dist_no_workers">No workers connected</string>
+    <string name="dist_no_workers_hint">Start Worker mode on another device,\nthen tap \'Add Worker\' to enter their IP:PORT</string>
+    <string name="dist_total_ram">Total RAM: %d MB</string>
+    <string name="dist_model_ram_requirement">Model needs ~%d MB</string>
+    <string name="dist_started_msg">Started with %d worker(s). Check dashboard for status.</string>
+    <string name="dist_starting">Starting...</string>
+    <string name="dist_start_btn">Distribute &amp; Start</string>
+    <string name="dist_error_no_model">Select a model first</string>
+    <string name="dist_error_no_workers">Add and enable at least one worker</string>
+    <string name="dist_no_models_hint">Import or download a GGUF model first.</string>
+    <string name="dist_add_worker_desc">Enter the worker details from the Worker device\'s screen:</string>
+    <string name="dist_ram_hint">4096</string>
+    <string name="dist_add_worker_tip">Look at the Worker device\'s screen for the IP and PORT values</string>
+    <string name="dist_worker_added_toast">Added: %1$s (%2$s:%3$s)</string>
+    <string name="dist_worker_updated_toast">Worker updated</string>
+    <string name="dist_worker_load">%d%% load</string>
+    <string name="dist_auto">Auto</string>
+    <string name="dist_load_distribution_title">📊 Load Distribution</string>
+    <string name="dist_master_load_label">Master: %1$d%% (%2$dMB)</string>
+    <string name="dist_worker_load_set">%1$d%% (set)</string>
+    <string name="dist_worker_load_auto">%1$d%% (auto)</string>
+
+    <!-- Remote Master -->
+    <string name="dist_remote_master">Remote Master Server</string>
+    <string name="dist_remote_enable">Enable Remote Control</string>
+    <string name="dist_remote_password">Connection Password</string>
+    <string name="dist_remote_port">Port</string>
+    <string name="dist_remote_whitelist">IP Whitelist (comma-separated)</string>
+    <string name="dist_remote_whitelist_hint">Leave empty to allow all IPs</string>
+    <string name="dist_remote_warning_all_ips">⚠️ Warning: All IPs can connect if they have the password.</string>
+    <string name="dist_remote_logs">Remote Logs</string>
+    <string name="dist_remote_server_desc">Allow other devices to control the master</string>
+    <string name="dist_remote_client_desc">Connect to another master device to control it</string>
+    <string name="dist_remote_connect">Connect to Master</string>
+    <string name="dist_remote_ip">Master IP Address</string>
+    <string name="dist_remote_connected">Connected</string>
+    <string name="dist_remote_current_model">Current Model</string>
+    <string name="dist_remote_available_models">Available Models</string>
+    <string name="dist_remote_switch">Switch</string>
+    <string name="dist_remote_switching">Switching model…</string>
+    <string name="dist_remote_switch_confirm">Switch to %s on the remote master?</string>
+    <string name="dist_remote_speculative">Speculative Decoding (Remote)</string>
+    <string name="dist_remote_spec_enable">Enable Draft Model</string>
+    <string name="dist_remote_spec_updating">Updating…</string>
+    <string name="dist_remote_error_connect">Connection failed. Check IP and password.</string>
+    <string name="dist_remote_error_empty_password">Password cannot be empty</string>
+    <string name="dist_remote_error_empty_ip">IP cannot be empty</string>
+    <string name="dist_remote_disconnected">Disconnected</string>
+    
+    <string name="dist_remote_settings_title">Remote Settings</string>
+    <string name="dist_remote_context_size">Context Size (Remote)</string>
+    <string name="dist_remote_temperature">Temperature (Remote)</string>
+    <string name="dist_remote_kv_enable">Enable KV Cache</string>
+    <string name="dist_remote_kv_k">KV Type K</string>
+    <string name="dist_remote_kv_v">KV Type V</string>
+    <string name="dist_remote_kv_reuse">Context Reuse</string>
+
+    <string name="dist_remote_download_title">Download Model</string>
+    <string name="dist_remote_download_url">HuggingFace Download URL</string>
+    <string name="dist_remote_download_url_hint">https://huggingface.co/…/resolve/main/model.gguf</string>
+    <string name="dist_remote_download_start">Download</string>
+    <string name="dist_remote_download_progress">Downloading…</string>
+    <string name="dist_remote_download_complete">Complete</string>
+    <string name="dist_remote_download_error">Download failed</string>
+    <string name="dist_remote_download_cancel">Cancel</string>
+    <string name="dist_remote_storage_info">Storage: %1$s free of %2$s</string>
+    <string name="dist_remote_model_size">Size: %s</string>
+    <string name="dist_remote_delete_model">Delete Model</string>
+    <string name="dist_remote_delete_confirm">Delete %s? This cannot be undone.</string>
+    <string name="dist_remote_delete_active">Cannot delete: model is currently active</string>
+    <string name="dist_remote_model_exists">Model already exists</string>
+    <string name="dist_remote_refresh">Refresh</string>
+    <string name="dist_remote_apply_speculative">Apply Speculative Settings</string>
+    <string name="dist_remote_workers_title">Worker Management</string>
+    <string name="dist_remote_add_worker">Add Worker (IP:PORT)</string>
+
+    <!-- Remote Master Tabs -->
+    <string name="dist_remote_tab_control">Control</string>
+    <string name="dist_remote_tab_settings">Settings</string>
+    <string name="dist_remote_tab_models">Models</string>
+    <string name="dist_remote_tab_system">System</string>
+
+    <!-- Remote Master Status -->
+    <string name="dist_remote_status_running">Running</string>
+    <string name="dist_remote_status_stopped">Stopped</string>
+    <string name="dist_remote_status_loading">Loading…</string>
+    <string name="dist_remote_disconnect">Disconnect</string>
+    <string name="dist_remote_connected_to">Connected to %s</string>
+    <string name="dist_remote_no_model_loaded">No model loaded</string>
+    <string name="dist_remote_restart_server">Restart</string>
+    <string name="dist_remote_select_model">Select model to load</string>
+    <string name="dist_remote_ram_usage">RAM: %1$s / %2$s</string>
+    <string name="dist_remote_active_downloads">%d active</string>
+
+    <!-- Remote Server Management & Hardware Logs -->
+    <string name="dist_remote_stop_server">Stop Remote Server</string>
+    <string name="dist_remote_start_restart">Start / Restart Server</string>
+    <string name="dist_remote_stop_confirm">Are you sure you want to stop the remote master server? It will terminate all active generation!</string>
+    <string name="dist_remote_master_ram">Master RAM: %1$d MB / %2$d MB</string>
+    <string name="dist_remote_server_logs_title">Server Logs</string>
+    <string name="dist_remote_view_logs">View Server Logs</string>
+    <string name="dist_remote_clear_logs">Clear Logs</string>
+    <string name="dist_remote_logs_copied">Logs copied to clipboard</string>
+    <string name="dist_remote_command_title">Launch Command</string>
+
+    <string name="dist_nearby_workers_title">Nearby Workers (NSD)</string>
+    <string name="dist_worker_added">Worker added!</string>
+
+    <!-- Kiwix -->
+    <string name="kiwix_back">Back</string>
+    <string name="kiwix_forward">Forward</string>
+    <string name="kiwix_home_btn">Home</string>
+    <string name="kiwix_reload_btn">Reload</string>
+    <string name="kiwix_no_files">No ZIM files installed</string>
+    <string name="kiwix_browse_catalog">Browse Catalog</string>
+    <string name="kiwix_starting_server">Starting Kiwix server...</string>
+    <string name="kiwix_select_zim">Select ZIM</string>
+
+
+    <!-- PDF Summary -->
+    <string name="pdf_ai_summary_title">PDF AI Summary</string>
+    <string name="pdf_no_models_error">No LLM models - download one first</string>
+    <string name="pdf_extract_text_step">Step 1: Extract Text</string>
+    <string name="pdf_generate_summary_step">Step 2: Generate AI Summary</string>
+    <string name="pdf_generate_summary_step_remote">Step 2: Generate Remote AI Summary</string>
+    <string name="pdf_extracting_progress">Extracting text from PDF…</string>
+    <string name="pdf_extract_success_chars">Extracted %1$d characters</string>
+    <string name="pdf_extract_success_pages">Extracted %1$d characters across %2$d pages (%3$d text-layer, %4$d OCR, %5$d empty).</string>
+    <string name="pdf_extract_failed">Failed to extract text: %1$s</string>
+    <string name="pdf_text_extracted_title">Text extracted</string>
+    <string name="pdf_text_extracted_stats">%1$d characters, about %2$d words, %3$d projected chunks</string>
+    <string name="pdf_summary_complete">Summary complete.</string>
+    <string name="pdf_summary_result_label">AI Summary</string>
+    <string name="pdf_multi_chunk_title">Multi-chunk processing</string>
+    <string name="pdf_partial_results_title">Partial chunk summaries</string>
+    <string name="pdf_partial_results_item">Partial Summary</string>
+    <string name="pdf_chunk_count_exact">Projected chunks: %1$d</string>
+    <string name="pdf_chunk_count_estimated">Projected chunks (estimated): %1$d</string>
+    <string name="pdf_partial_results_desc">The run failed after one retry. These completed chunk summaries are kept for inspection.</string>
+    <string name="pdf_partial_results_desc_remote">The remote summary run failed after one retry. These completed chunk summaries are kept for inspection.</string>
+    <string name="pdf_partial_chunk_heading">### Chunk %1$d:</string>
+    <string name="pdf_notification_summarizing">Summarizing: %1$s</string>
+    <string name="pdf_notification_complete">Summary complete!</string>
+    <string name="pdf_summary_note_title">Summary: %1$s</string>
+    <string name="pdf_llm_binary_missing">LLM binary not found.</string>
+    <string name="pdf_no_extractable_text">No extractable text was found in this PDF.</string>
+    <string name="pdf_phase_processing">Generating summary…</string>
+    <string name="pdf_phase_chunk_progress">Summarizing chunk %1$d of %2$d…</string>
+    <string name="pdf_phase_combining_all">Combining summaries…</string>
+    <string name="pdf_phase_unify_batch_progress">Combining summaries batch %1$d of %2$d…</string>
+    <string name="pdf_phase_retrying">Retrying: %1$s</string>
+    <string name="pdf_error_summary_failed">Failed to generate summary.</string>
+    <string name="pdf_error_blank_output">The model returned an empty summary.</string>
+    <string name="pdf_error_llama_exit_code">The model process exited with code %1$d.</string>
+    <string name="pdf_error_llama_exit_with_detail">The model process exited with code %1$d: %2$s</string>
+    <string name="pdf_error_timeout_minutes">The model call timed out after %1$d minutes.</string>
+    <string name="pdf_error_chunk_failed_after_retry">Chunk %1$d of %2$d failed after retry: %3$s</string>
+    <string name="pdf_error_unification_failed_after_retry">Combining summaries failed after retry: %1$s</string>
+    <string name="pdf_error_unification_batch_failed_after_retry">Combine batch %1$d of %2$d failed after retry: %3$s</string>
+    <string name="pdf_error_no_chunk_summaries">No chunk summaries were produced.</string>
+    <string name="action_enabled">Enabled</string>
+    <string name="action_disabled">Disabled</string>
+
+    <!-- Models & Sharing -->
+    <string name="model_share_title">Share Models</string>
+
+    <!-- UI Components -->
+    <string name="approval_deny_all">Deny All</string>
+    <string name="approval_approve_all">Approve All</string>
+
+    <!-- General UI & PDF -->
+    <string name="pdf_parameters">Parameters</string>
+    <string name="pdf_max_tokens">Max Tokens</string>
+    <string name="pdf_select_pdf">Select PDF</string>
+    <string name="dist_ram_to_share">RAM to Share</string>
+    <string name="dist_total_avail_ram">Available: %1$d MB / Total: %2$d MB</string>
+    <string name="dist_threads_count">Threads: %d</string>
+    <string name="dist_enable_local_cache">Enable Local Cache</string>
+    <string name="dist_local_cache_desc">Cache layers locally for faster reconnection</string>
+    <string name="dist_your_ip_label">Your IP Address</string>
+    <string name="dist_not_connected">Not connected to network</string>
+    <string name="dist_scan_to_connect">📲 Scan to Connect</string>
+    <string name="dist_worker_tip_master">Enter this address in Master\'s \'Add Worker\' dialog</string>
+    <string name="dist_master_connected">Master Connected!</string>
+    <string name="dist_waiting_for_master">Waiting for Master...</string>
+    <string name="dist_processing_layers">Processing layers from master device</string>
+    <string name="dist_sharing_ram">Sharing %d MB RAM</string>
+    <string name="dist_start_worker">Start Worker</string>
+    <string name="dist_stop_worker">Stop Worker</string>
+    <string name="dist_worker_active">Worker Active</string>
+    <string name="dist_ready_to_start">Ready to Start</string>
+    <string name="dist_receiving_layers">Receiving model layers...</string>
+    <string name="dist_waiting_for_master_connect">Waiting for master to connect</string>
+    <string name="dist_configure_worker_ram">Configure RAM and start worker</string>
+    <string name="whisper_models_desc">Larger models = better accuracy, slower speed</string>
+    <string name="model_share_instructions">Scan QR or open URL to download models</string>
+    <string name="model_share_active_downloads">%d active download(s)</string>
+    <string name="model_share_desc">Share your AI models\nwith other devices</string>
+    <string name="dist_start_server">Start Server</string>
+    <string name="dist_stop_server">Stop Server</string>
+    <string name="model_share_available_title">Available Models</string>
+    <string name="model_share_count">%d models</string>
+    <string name="model_share_empty">No models downloaded yet</string>
+    <string name="model_share_how_to">How to download</string>
+    <string name="model_share_steps">1. Both devices must be on the same WiFi\n2. Start the server above\n3. On the other device, scan QR or open URL\n4. Click on a model to download</string>
+    <string name="agent_action_stop">Stop</string>
+    <string name="agent_action_cancel">Cancel</string>
+    <string name="kiwix_loading_count">Loading %d ZIM file(s)</string>
+    <string name="dist_header_title">🌐 Distributed Inference</string>
+    <string name="dist_header_desc">Connect multiple phones to run large AI models together!\n\nEach device contributes RAM to load different layers of the model.</string>
+    <string name="dist_role_master_title">Be the MASTER</string>
+    <string name="dist_role_master_desc">Host the model file and coordinate inference across connected workers.</string>
+    <string name="dist_role_master_btn">Configure Master</string>
+    <string name="dist_role_worker_title">Be a WORKER</string>
+    <string name="dist_role_worker_desc">Help process model layers for a master device. Choose how much RAM to share.</string>
+    <string name="dist_role_worker_btn">Start Worker</string>
+    <string name="dist_wifi_warning">All devices must be on the same WiFi network. Performance depends on network speed.</string>
+    <string name="dist_rpc_warning">RPC is unencrypted. Only use on trusted local networks.</string>
+    <string name="approval_title">📋 Pending Approvals (%d)</string>
+    <string name="approval_no_pending">No pending approvals</string>
+    <string name="approval_new_file">📄 NEW</string>
+    <string name="approval_modify_file">✏️ MODIFY</string>
+    <string name="approval_hide_content">Hide Content</string>
+    <string name="approval_view_content">View Content (%d chars)</string>
+    <string name="approval_original_label">Original:</string>
+    <string name="approval_new_label">New:</string>
+    <string name="approval_deny_btn">Deny</string>
+    <string name="approval_approve_btn">Approve</string>
+
+    <!-- Model Manager Extra -->
+    <string name="models_error_toast">Error: %s</string>
+    <string name="models_tip_all_files">Tip: Grant \'All files access\' in Settings to use models without copying</string>
+    <string name="models_linked_success">Model linked from external storage (no copy needed)</string>
+    <string name="desc_view">View</string>
+    <string name="desc_download">Download</string>
+    <string name="desc_downloaded">Downloaded</string>
+    <string name="desc_delete">Delete</string>
+    <string name="desc_available">Available</string>
+    <string name="desc_qr_code">QR Code for %s</string>
+    <string name="pdf_text_extracted">✅ Text Extracted</string>
+    <string name="pdf_extracted_info">%1$d characters, ~%2$d words</string>
+    <string name="pdf_summarizing_ai">Summarizing with AI...</string>
+    <string name="pdf_chunk_progress">Chunk %1$d/%2$d...</string>
+
+    <!-- Whisper Extra -->
+    <string name="whisper_lang_en">EN</string>
+    <string name="whisper_quant_q">Q</string>
+    <string name="whisper_downloading_progress">Downloading %d%%</string>
+
+    <!-- PDF Summary Extra -->
+    <string name="pdf_summary_saved">Summary saved to Notes!</string>
+
+    <!-- Tama System -->
+    <string name="tama_export_success">Pet exported successfully!</string>
+    <string name="tama_export_failed">Export failed: %s</string>
+    <string name="tama_import_success">Pet imported successfully!</string>
+    <string name="tama_import_invalid">Import failed: Invalid data</string>
+    <string name="tama_import_failed">Import failed: %s</string>
+    <string name="tama_full_toast">%s is already full! 🍖</string>
+    <string name="tama_woke_up">%s woke up! ☀️</string>
+    <string name="tama_returned_home">Returned home! 🏠</string>
+    <string name="tama_welcome_new">Welcome, %s! 🥚</string>
+    <string name="tama_hatch_failed">Hatch failed: %s</string>
+    <string name="tama_deleted">Pet deleted.</string>
+    <string name="tama_discovered">🌟 Discovered %1$s! %2$s</string>
+    <string name="tama_bought_apple">Bought an apple! 🍎</string>
+    <string name="tama_is_studying">%s is studying! 📚</string>
+    <string name="tama_is_working">%s started working! 💼</string>
+    <string name="tama_ate_food">%1$s ate %2$s! 🍖</string>
+    <string name="tama_danger_zone">🚨 DANGER ZONE</string>
+    <string name="tama_reset_warning">Are you sure you want to delete %s? This action CANNOT be undone.</string>
+    <string name="tama_final_warning">🛑 FINAL WARNING</string>
+    <string name="tama_reset_final_msg">REALLY delete %s? All stats, money, and items will be lost forever.</string>
+    <string name="tama_no_pet_yet">No pet yet!</string>
+    <string name="tama_unknown_place">Unknown Place</string>
+    <string name="tama_unknown_warning">Unknown place, it could be dangerous, are you sure you wanna go there?</string>
+    <string name="tama_you_are_here">📍 You are here!</string>
+    <string name="tama_rest_home">💤 Rest at home to recover energy</string>
+    <string name="tama_items_available">🛍️ Items available:</string>
+    <string name="tama_apple_price">  🍎 Apple - 10 coins</string>
+    <string name="tama_bread_price">  🍞 Bread - 15 coins</string>
+    <string name="tama_cake_price">  🎂 Cake - 25 coins</string>
+    <string name="tama_study_gain">📚 Study to gain intelligence!</string>
+    <string name="tama_current_edu">📖 Current education: %d</string>
+    <string name="tama_avail_jobs">💼 Available jobs:</string>
+    <string name="tama_job_clerk">  📋 Clerk - 10💰/hr (need 0 edu)</string>
+    <string name="tama_job_teacher">  👨‍🏫 Teacher - 25💰/hr (need 50 edu)</string>
+    <string name="tama_park_relax">🌳 Relax and recover happiness!</string>
+    <string name="tama_hospital_heal">🏥 Heal sickness and restore health</string>
+    <string name="tama_travel_cost">⚡ Travel cost: %d energy</string>
+    <string name="tama_not_enough_energy">❌ Not enough energy!</string>
+    <string name="tama_status_title">📊 Status: %s</string>
+    <string name="tama_menu_title">⚙️ Tama Menu</string>
+    <string name="tama_shop_title">🛒 Shop</string>
+    <string name="tama_money_label">💰 Money: %d</string>
+    <string name="tama_feed_title">🍖 Feed %s</string>
+    <string name="tama_hunger_label">Hunger: %d/100</string>
+    <string name="tama_always_avail">Always Available:</string>
+    <string name="tama_from_inventory">From Inventory:</string>
+    <string name="tama_visit_shop">💡 Visit a Shop to buy more food!</string>
+    <string name="tama_btn_travel">🚶 Travel</string>
+    <string name="tama_btn_explore">🚶 Explore</string>
+    <string name="tama_btn_work">💼 Work</string>
+    <string name="tama_btn_study">📖 Study</string>
+
+    <!-- General Defaults -->
+    <string name="nav_title_server">Server</string>
+    <string name="event_purchased_upgrade">Purchased the %s upgrade!</string>
+    <string name="share_transcribe">🎤 Transcribe</string>
+    <string name="share_workflow">⚙️ Transcribe + Summary Workflow</string>
+    <string name="share_upscaler">🎬 Video Upscaler</string>
+    <string name="share_img2img">🎨 SD img2img</string>
+    <string name="share_upscale_sd">📐 SD Upscale</string>
+    <string name="tama_btn_buy_apple">Buy Apple (10💰)</string>
+    <string name="action_ok">OK</string>
+
+    <!-- Network Visualization Screen -->
+    <string name="net_title">NETWORK_STATUS</string>
+    <string name="net_back">Back</string>
+    <string name="net_system_status">SYSTEM STATUS</string>
+    <string name="net_inference_server">INFERENCE_SERVER:</string>
+    <string name="net_status_online">[ONLINE]</string>
+    <string name="net_status_loading">[LOADING]</string>
+    <string name="net_status_init">[INIT...]</string>
+    <string name="net_status_error">[ERROR]</string>
+    <string name="net_status_offline">[OFFLINE]</string>
+    <string name="net_mode">MODE: %s</string>
+    <string name="net_processing">▓▓▓ PROCESSING ▓▓▓</string>
+    <string name="net_topology">NETWORK TOPOLOGY</string>
+    <string name="net_master_node">[MASTER] 👑 LOCAL_NODE</string>
+    <string name="net_master_stats">RAM: %1$dMB | LAYERS: %2$d | LOAD: %3$d%%</string>
+    <string name="net_no_workers">[NO_WORKERS_CONNECTED]</string>
+    <string name="net_worker_label">[WORKER_%1$d] 📱 %2$s</string>
+    <string name="net_worker_stats">RAM: %1$dMB | LAYERS: ~%2$d | LOAD: %3$s</string>
+    <string name="net_model_metrics">MODEL METRICS</string>
+    <string name="net_total_layers">TOTAL_LAYERS: %d</string>
+    <string name="net_model_size">MODEL_SIZE:   %dMB</string>
+    <string name="net_local_layers">LOCAL_LAYERS: %d</string>
+    <string name="net_rpc_layers">RPC_LAYERS:   %d</string>
+    <string name="net_layer_distribution">LAYER_DISTRIBUTION:</string>
+    <string name="net_local_label">LOCAL</string>
+    <string name="net_rpc_label">RPC</string>
+    <string name="net_transfer">TRANSFER</string>
+    <string name="net_syncing">SYNCING: [%1$s%2$s] %3$d%%</string>
+    <string name="net_memory_allocation">MEMORY ALLOCATION</string>
+    <string name="net_total_cluster_ram">TOTAL_CLUSTER_RAM: %dMB</string>
+    <string name="net_master_allocation">MASTER_ALLOCATION: %dMB</string>
+    <string name="net_worker_allocation">WORKER_%1$d_ALLOC:   %2$dMB</string>
+    <string name="net_controls">CONTROLS</string>
+    <string name="net_terminate_server">> TERMINATE_SERVER</string>
+    <string name="net_stop_rpc">> STOP_RPC_WORKER</string>
+    <string name="net_clear_workers">> CLEAR_WORKERS</string>
+
+    <!-- Layer Distribution (MasterMode) -->
+    <string name="dist_layer_distribution">📊 Layer Distribution</string>
+    <string name="dist_remember_layer_split">Remember Layer Split</string>
+    <string name="dist_layer_split_desc">Keeps same layer assignment for worker cache</string>
+    <string name="dist_cache_type_k">Cache Type K</string>
+    <string name="dist_cache_type_v">Cache Type V</string>
+
+    <!-- Tama Farm Screen -->
+    <string name="tama_farm_title">The Farm</string>
+
+    <!-- Tama Event Logs -->
+    <string name="tama_event_well_upgrade">Purchased the Well upgrade!</string>
+    <string name="tama_event_composter_upgrade">Purchased the Composter upgrade!</string>
+    <string name="tama_event_collected_fertilizer">Collected %d fertilizer!</string>
+    <string name="tama_event_planted">Planted %s</string>
+    <string name="tama_event_tilled">Tilled a farm tile with hoe</string>
+    <string name="tama_event_used_well_water">Used 1 unit of water from the well</string>
+    <string name="tama_event_used_bottled_water">Used 1 unit of bottled water</string>
+    <string name="tama_event_poured_water">Poured water on the crops</string>
+    <string name="tama_event_applied_fertilizer">Applied fertilizer! Growth time halved.</string>
+    <string name="tama_event_revived_plant">Revived a decayed plant with fertilizer!</string>
+    <string name="tama_event_cleared_decayed">Cleared decayed %s for fertilizer</string>
+    <string name="tama_event_harvested">Harvested a fresh %s!</string>
+    <string name="tama_event_hatched">A new egg appeared! It\'s %1$s the %2$s!</string>
+    <string name="tama_event_evolved">%1$s evolved to %2$s!</string>
+    <string name="tama_event_neglected">%s feels very neglected…</string>
+    <string name="tama_event_stayed_up_mad">%s stayed up all night and is MAD! (Miscare +1) 😠</string>
+    <string name="tama_event_sleepy">I\'m sleepy… put me to bed! 🥱</string>
+    <string name="tama_event_welcome_back">Welcome back! (%d min)</string>
+    <string name="tama_event_fed">%1$s was fed! Hunger: %2$d → %3$d</string>
+    <string name="tama_event_ate_food">%1$s ate %2$s!</string>
+    <string name="tama_event_cleaned">%1$s took a bath! Hygiene: %2$d → %3$d</string>
+    <string name="tama_event_played">%s had fun playing!</string>
+    <string name="tama_event_slept">%s went to bed… 💤</string>
+    <string name="tama_event_woke_up">%1$s woke up after %2$d minutes! Energy +%3$d</string>
+    <string name="tama_event_started_activity">%1$s started %2$s!</string>
+    <string name="tama_event_earned">Earned %d from work</string>
+    <string name="tama_event_studied">Gained %d education</string>
+    <string name="tama_event_relaxed">Relaxed at park</string>
+    <string name="tama_event_discovered">Discovered %1$s! %2$s</string>
+    <string name="tama_event_traveled">%1$s traveled to %2$s</string>
+    <string name="tama_event_bought">Bought %1$d %2$s for %3$d 🪙</string>
+    <string name="tama_event_sold">Sold %1$d %2$s for %3$d 🪙</string>
+    <string name="tama_event_imported">Imported pet data successfully! ✨</string>
+    <string name="tama_event_tool_broke">Your %s broke! 🏚️</string>
+
+    <!-- Dynamic Feature Modules -->
+    <string name="feature_download_title">Download AI Components</string>
+    <string name="feature_download_description">The app requires additional AI models and components to function properly. Please download them now.</string>
+    <string name="feature_downloading">Downloading features…</string>
+    <string name="feature_downloading_module">Installing %s…</string>
+    <string name="feature_download_all">Download All</string>
+    <string name="feature_download_skip">Later</string>
+    <string name="feature_download_size_warning">⚠️ This will download approximately 550 MB of data. Wi-Fi recommended.</string>
+    <string name="feature_download_required">This feature requires additional components</string>
+    <string name="feature_download_required_desc">Download %s to use this feature?</string>
+    
+    <!-- Feature Names and Descriptions -->
+    <string name="feature_video_title">Video Processing</string>
+    <string name="feature_video_desc">FFmpeg for audio/video extraction</string>
+    <string name="feature_whisper_title">Audio Transcription</string>
+    <string name="feature_whisper_desc">Whisper AI for speech-to-text</string>
+    <string name="feature_upscaler_title">AI Models &amp; Tools</string>
+    <string name="feature_upscaler_desc">Required AI models and support files</string>
+    <string name="feature_imagegen_title">Image Generation</string>
+    <string name="feature_imagegen_desc">Stable Diffusion for AI art</string>
+    <string name="feature_kiwix_title">Offline Wikipedia</string>
+    <string name="feature_kiwix_desc">Kiwix for offline ZIM files</string>
+    
+    <!-- Asset Pack Status -->
+    <string name="feature_status_pending">Preparing download…</string>
+    <string name="feature_status_extracting">Extracting binaries…</string>
+    <string name="feature_status_extracting_desc">Setting up native libraries</string>
+    <string name="feature_status_completed">Download complete!</string>
+    <string name="feature_status_failed">Download failed</string>
+    <string name="feature_base_libs">Core AI Libraries</string>
+    <string name="feature_download_required_force">Core components are missing. You must download them to use the app.</string>
+    <string name="title_nativelibs">Native Libraries</string>
+    <string name="title_feature_llm">Large Language Model</string>
+    <string name="title_feature_kiwix">Offline Wiki Reader</string>
+    <string name="title_feature_media">Media Processing Tools</string>
+    <string name="title_feature_upscaler">Video Upscaler Models</string>
+    <string name="deployment_checking">Checking components...</string>
+    <string name="deployment_downloading">Downloading additional components...</string>
+    <string name="deployment_failed">Setup failed. Please restart app.</string>
+    <string name="deployment_explanation">Setting up local AI components for privacy…</string>
+    <string name="deployment_adjusting">Making adjustments for your system...</string>
+    <string name="ollama_server_active">Active server</string>
+    <string name="ollama_pull_model_title">Pull Model</string>
+    <string name="ollama_pull_model_name">Model name (e.g. tinyllama)</string>
+    <string name="ollama_modelfile_editor_title">Modelfile Editor</string>
+    <string name="ollama_new_model_name">New model name</string>
+    <string name="ollama_modelfile_content">Modelfile content</string>
+    <string name="ollama_create_mode_label">Creation Mode</string>
+    <string name="ollama_create_mode_remote_api">Remote API</string>
+    <string name="ollama_create_mode_local_cli">Local CLI</string>
+    <string name="ollama_create_mode_remote_desc">Use the selected Ollama server via /api/create. Use Ollama model names or explicit `hf.co/...` references here. Raw Hugging Face resolve URLs are not accepted.</string>
+    <string name="ollama_create_mode_local_desc">Use the local Termux/SSH Ollama CLI. This mode preserves the full edited Modelfile and can use local GGUF paths, but raw Hugging Face resolve URLs must still be replaced with an explicit `hf.co/...` reference or a local file path.</string>
+    <string name="ollama_modelfile_remote_unsupported">Remote API mode cannot safely use these directives: %1$s. Switch to Local CLI to preserve the full Modelfile.</string>
+    <string name="ollama_modelfile_remote_unsupported_source">Remote API mode cannot use this FROM source: %1$s. %2$s</string>
+    <string name="ollama_modelfile_local_source_unsupported">Local CLI mode cannot use this FROM source yet: %1$s. %2$s</string>
+    <string name="ollama_modelfile_hf_url_normalized">Detected a raw Hugging Face GGUF URL. Replace it with the explicit Ollama-compatible reference `%1$s` before creating the model.</string>
+    <string name="ollama_local_cli_requires_ssh">Local CLI mode requires an active Termux SSH connection on this device.</string>
+    <string name="ollama_invalid_model_name">Use a model name without spaces or control characters. Allowed characters: letters, numbers, `.`, `_`, `-`, `/`, and an optional `:tag`.</string>
+    <string name="ollama_pull_to_get_started">Pull a model to get started</string>
+    <string name="ollama_family_format">Family: %1$s • Format: %2$s</string>
+    <string name="ollama_options">Options</string>
+    <string name="ollama_view_modelfile">View Modelfile</string>
+    <string name="ollama_dismiss_status">Dismiss status</string>
+    <string name="ollama_error_connect">Failed to connect: %1$s</string>
+    <string name="ollama_error_add_server">Failed to add server: %1$s</string>
+    <string name="ollama_error_delete_model">Failed to delete model: %1$s</string>
+    <string name="ollama_error_create_model">Create failed: %1$s</string>
+    <string name="ollama_error_model_info">Failed to get model info: %1$s</string>
+    <string name="ollama_status_failed_prefix">Failed:</string>
+    <string name="agent_workspace_error_unavailable">Workspace directory is unavailable: %1$s</string>
+    <string name="agent_workspace_error_list_failed">Failed to list directory: %1$s</string>
+    <!-- Tama Screen -->
+    <string name="tama_new_pet_title">New Pet!</string>
+    <string name="tama_egg_appeared">An egg has appeared! Give it a name:</string>
+    <string name="tama_hatch_btn">Hatch!</string>
+    <string name="tama_name_label">Name</string>
+    <string name="agent_runtime_recovering_jobs">Recovering AI jobs…</string>
+    <string name="ollama_runtime_pulling">Pulling</string>
+    <string name="ollama_runtime_creating">Creating</string>
+    <string name="ollama_runtime_creating_local">Creating locally</string>
+    <string name="ollama_runtime_success">Completed</string>
+    <string name="ollama_runtime_cancelled">Cancelled</string>
 </resources>

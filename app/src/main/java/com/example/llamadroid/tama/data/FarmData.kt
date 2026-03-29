@@ -1,0 +1,93 @@
+package com.example.llamadroid.tama.data
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Represents a single tile in the 3x3 farm grid.
+ */
+@Serializable
+data class FarmTile(
+    val id: Int, // 0-8 for a 3x3 grid
+    val status: TileStatus = TileStatus.SOIL,
+    val crop: PlantedCrop? = null,
+    val lastWateredTime: Long? = null
+)
+
+enum class TileStatus {
+    SOIL,       // Initial state
+    FARMLAND,   // After using a hoe
+    WET_FARMLAND // After watering
+}
+
+/**
+ * Data for a crop planted on a tile.
+ */
+@Serializable
+data class PlantedCrop(
+    val type: String, // e.g., "carrot", "wheat"
+    val stage: Int = 0, // 0: Seed, 1: Stage 1, 2: Stage 2, 3: Final
+    val plantedTime: Long,
+    val lastStageUpdateTime: Long,
+    val isFertilized: Boolean = false,
+    val isDecayed: Boolean = false
+)
+
+/**
+ * Static definitions for crop types and their properties.
+ */
+object CropDefinitions {
+    data class CropInfo(
+        val name: String,
+        val seedPrice: Int,
+        val sellPrice: Int,
+        val stageTimes: List<Long>, // Time in milliseconds for each stage
+        val yieldModifier: Float
+    )
+
+    private const val HOUR = 3600000L
+
+    val CROPS = mapOf(
+        "wheat" to CropInfo("Wheat", 10, 25, listOf(1 * HOUR, 2 * HOUR, 3 * HOUR), 1.0f),
+        "rice" to CropInfo("Rice", 12, 30, listOf(1 * HOUR, 2 * HOUR, 3 * HOUR), 1.1f),
+        "carrot" to CropInfo("Carrot", 15, 40, listOf(1 * HOUR, 2 * HOUR, 3 * HOUR), 1.2f),
+        "tomato" to CropInfo("Tomato", 20, 55, listOf(1 * HOUR, 2 * HOUR, 3 * HOUR), 1.3f),
+        "corn" to CropInfo("Corn", 25, 70, listOf(1 * HOUR, 2 * HOUR, 3 * HOUR), 1.4f),
+        "strawberry" to CropInfo("Strawberry", 30, 85, listOf(1 * HOUR, 2 * HOUR, 3 * HOUR), 1.5f),
+        "daisy" to CropInfo("Daisy", 15, 35, listOf(45 * 60000L, 90 * 60000L, 2 * HOUR), 1.0f),
+        "sunflower" to CropInfo("Sunflower", 25, 65, listOf(45 * 60000L, 90 * 60000L, 2 * HOUR), 1.2f),
+        "rose" to CropInfo("Rose", 40, 120, listOf(2 * HOUR, 4 * HOUR, 6 * HOUR), 2.0f),
+        "tullip" to CropInfo("Tullip", 35, 100, listOf(2 * HOUR, 4 * HOUR, 6 * HOUR), 1.8f),
+        "melon" to CropInfo("Melon", 50, 150, listOf(3 * HOUR, 6 * HOUR, 9 * HOUR), 2.5f),
+        "pumpkin" to CropInfo("Pumpkin", 45, 140, listOf(3 * HOUR, 6 * HOUR, 9 * HOUR), 2.2f)
+    )
+}
+
+/**
+ * Enhanced inventory item.
+ */
+@Serializable
+data class InventoryItem(
+    val id: String,
+    val name: String,
+    val type: ItemType,
+    val quantity: Int = 1,
+    val durability: Int? = null, // For tools
+    val maxDurability: Int? = null
+)
+
+@Serializable
+enum class ItemType(val emoji: String) {
+    FOOD("🍖"),
+    TOY("🎮"),
+    MEDICINE("💊"),
+    SEED("🌱"),
+    CROP("🌾"),
+    DECORATION("🖼️"),
+    WEAPON("⚔️"),
+    ARMOR("🛡️"),
+    ACCESSORY("💍"),
+    QUEST_ITEM("📜"),
+    TREASURE("💎"),
+    TOOL("🛠️"),
+    MATERIAL("📦")
+}

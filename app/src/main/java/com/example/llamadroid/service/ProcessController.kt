@@ -21,15 +21,14 @@ class ProcessController {
     var stoppedIntentionally = false
         private set
     
-    suspend fun start(binaryPath: String, config: LlamaConfig, filesDir: File) = withContext(Dispatchers.IO) {
-        stoppedIntentionally = false
-        if (process?.isAlive == true) stop()
-        
+
+    fun getCommand(binaryPath: String, config: LlamaConfig): List<String> {
         val args = mutableListOf(
             binaryPath,
             "-m", config.modelPath,
             "-c", config.contextSize.toString(),
             "-t", config.threads.toString(),
+            "-b", config.batchSize.toString(),
             "--port", config.port.toString(),
             "--host", config.host
         )
@@ -38,7 +37,6 @@ class ProcessController {
         if (config.mmprojPath != null) {
             args.add("--mmproj")
             args.add(config.mmprojPath)
-            DebugLog.log("ProcessController: Vision model with mmproj: ${config.mmprojPath}")
         }
         
         if (config.isEmbedding) {
@@ -59,7 +57,6 @@ class ProcessController {
                 args.add("--cache-reuse")
                 args.add(config.kvCacheReuse.toString())
             }
-            DebugLog.log("ProcessController: KV cache enabled - K=${config.kvCacheTypeK}, V=${config.kvCacheTypeV}, reuse=${config.kvCacheReuse}")
         }
         
         // Add RPC workers for distributed inference
@@ -72,10 +69,10 @@ class ProcessController {
             args.add("off")
             
             // Use -ngl to specify how many layers to offload to RPC workers
-            if (config.nGpuLayers > 0) {
-                args.add("-ngl")
-                args.add(config.nGpuLayers.toString())
-            }
+            // MUST always be sent in RPC mode - without it, llama-server defaults to 'auto'
+            // which offloads ALL layers, potentially crashing low-RAM workers
+            args.add("-ngl")
+            args.add(config.nGpuLayers.toString())
             
             // Use -ts to split the offloaded layers among multiple workers
             // Only needed when there are 2+ workers
@@ -83,22 +80,202 @@ class ProcessController {
                 args.add("-ts")
                 args.add(config.tensorSplit)
             }
-            
-            DebugLog.log("ProcessController: Distributed mode - workers: $rpcArg, ngl: ${config.nGpuLayers}" +
-                if (config.rpcWorkers.size > 1 && !config.tensorSplit.isNullOrEmpty()) 
-                    ", tensor-split: ${config.tensorSplit}" else "")
         }
+        
+        // Add --no-mmap flag if memory mapping is disabled
+        if (config.noMmap) {
+            args.add("--no-mmap")
+        }
+        
+        // Speculative decoding with draft model
+        if (config.draftModelPath != null) {
+            args.add("--model-draft")
+            args.add(config.draftModelPath)
+        }
+        
+        
+        // Draft parameters for draft model
+        if (config.draftModelPath != null) {
+            args.add("--draft-max")
+            args.add(config.draftMax.toString())
+            args.add("--draft-min")
+            args.add(config.draftMin.toString())
+            // p-min only applies to draft model mode
+            args.add("--draft-p-min")
+            args.add(String.format(java.util.Locale.US, "%.2f", config.draftPMin))
+        }
+
+        // Advanced Settings
+        if (config.parallel != null) {
+            args.add("--parallel")
+            args.add(config.parallel.toString())
+        }
+        if (config.cacheRam != null) {
+            args.add("--cache-ram")
+            args.add(config.cacheRam.toString())
+        }
+        
+        args.add("--flash-attn")
+        args.add(if (config.flashAttention) "on" else "off")
+
+        if (!config.customFlags.isNullOrBlank()) {
+            // Split custom flags by space, ignoring excessive spaces.
+            val flags = config.customFlags.trim().split("\\s+".toRegex())
+            args.addAll(flags)
+        }
+
+        return args
+    }
+
+    fun splitCommandLine(command: String): List<String> {
+        val tokens = mutableListOf<String>()
+        val current = StringBuilder()
+        var inSingleQuotes = false
+        var inDoubleQuotes = false
+        var escaping = false
+
+        command.forEach { ch ->
+            when {
+                escaping -> {
+                    current.append(ch)
+                    escaping = false
+                }
+                ch == '\\' && !inSingleQuotes -> escaping = true
+                ch == '\'' && !inDoubleQuotes -> inSingleQuotes = !inSingleQuotes
+                ch == '"' && !inSingleQuotes -> inDoubleQuotes = !inDoubleQuotes
+                ch.isWhitespace() && !inSingleQuotes && !inDoubleQuotes -> {
+                    if (current.isNotEmpty()) {
+                        tokens += current.toString()
+                        current.clear()
+                    }
+                }
+                else -> current.append(ch)
+            }
+        }
+
+        if (current.isNotEmpty()) {
+            tokens += current.toString()
+        }
+
+        return tokens
+    }
+
+    fun buildCommandString(args: List<String>): String =
+        args.joinToString(" ") { shellEscape(it) }
+
+    fun renderCommandTemplate(
+        template: String,
+        binaryPath: String,
+        config: LlamaConfig
+    ): List<String> {
+        if (template.isBlank()) return getCommand(binaryPath, config)
+
+        val defaultArgs = getCommand(binaryPath, config)
+        val substituted = substituteTemplateValues(template, binaryPath, config, defaultArgs)
+        val renderedArgs = splitCommandLine(substituted).filter { it.isNotBlank() }
+        if (renderedArgs.isEmpty()) return defaultArgs
+
+        val hasExplicitBinary = template.contains("{binary}") ||
+            renderedArgs.firstOrNull() == binaryPath ||
+            renderedArgs.firstOrNull()?.startsWith("-") == false
+
+        return if (hasExplicitBinary) renderedArgs else listOf(binaryPath) + renderedArgs
+    }
+
+    private fun substituteTemplateValues(
+        template: String,
+        binaryPath: String,
+        config: LlamaConfig,
+        defaultArgs: List<String>
+    ): String {
+        val customFlagsArgs = splitCommandLine(config.customFlags.orEmpty())
+        val speculativeArgs = if (config.draftModelPath != null) {
+            listOf(
+                "--model-draft", config.draftModelPath,
+                "--draft-max", config.draftMax.toString(),
+                "--draft-min", config.draftMin.toString(),
+                "--draft-p-min", String.format(java.util.Locale.US, "%.2f", config.draftPMin)
+            )
+        } else {
+            emptyList()
+        }
+        val kvCacheArgs = if (config.kvCacheEnabled) {
+            buildList {
+                add("--cache-type-k")
+                add(config.kvCacheTypeK)
+                add("--cache-type-v")
+                add(config.kvCacheTypeV)
+                if (config.kvCacheReuse > 0) {
+                    add("--cache-reuse")
+                    add(config.kvCacheReuse.toString())
+                }
+            }
+        } else {
+            emptyList()
+        }
+
+        val values = linkedMapOf(
+            "{binary}" to binaryPath,
+            "{model}" to config.modelPath,
+            "{draft_model}" to (config.draftModelPath ?: ""),
+            "{mmproj}" to (config.mmprojPath ?: ""),
+            "{threads}" to config.threads.toString(),
+            "{batch_size}" to config.batchSize.toString(),
+            "{context_size}" to config.contextSize.toString(),
+            "{temperature}" to String.format(java.util.Locale.US, "%.2f", config.temperature),
+            "{host}" to config.host,
+            "{port}" to config.port.toString(),
+            "{flash_attention}" to if (config.flashAttention) "on" else "off",
+            "{parallel}" to (config.parallel?.toString() ?: ""),
+            "{cache_ram}" to (config.cacheRam?.toString() ?: ""),
+            "{kv_cache_type_k}" to config.kvCacheTypeK,
+            "{kv_cache_type_v}" to config.kvCacheTypeV,
+            "{kv_cache_reuse}" to config.kvCacheReuse.toString(),
+            "{rpc_workers}" to config.rpcWorkers.joinToString(","),
+            "{n_gpu_layers}" to config.nGpuLayers.toString(),
+            "{tensor_split}" to (config.tensorSplit ?: ""),
+            "{custom_flags}" to buildCommandString(customFlagsArgs),
+            "{default_args}" to buildCommandString(defaultArgs.drop(1)),
+            "{speculative_args}" to buildCommandString(speculativeArgs),
+            "{kv_cache_args}" to buildCommandString(kvCacheArgs)
+        )
+
+        var rendered = template
+        values.forEach { (placeholder, value) ->
+            rendered = rendered.replace(placeholder, value)
+        }
+        return rendered.trim()
+    }
+
+    private fun shellEscape(arg: String): String {
+        if (arg.isEmpty()) return "''"
+        val safeChars = "-_./:=,@+%".toSet()
+        if (arg.all { it.isLetterOrDigit() || it in safeChars }) return arg
+        return "'" + arg.replace("'", "'\"'\"'") + "'"
+    }
+
+    suspend fun start(
+        binaryPath: String, 
+        config: LlamaConfig, 
+        filesDir: File, 
+        customArgs: List<String>? = null,
+        onLog: ((String) -> Unit)? = null
+    ) = withContext(Dispatchers.IO) {
+        stoppedIntentionally = false
+        if (process?.isAlive == true) stop()
+        
+        val args = customArgs ?: getCommand(binaryPath, config)
         
         try {
             DebugLog.log("ProcessController: Starting binary: $binaryPath")
-            DebugLog.log("ProcessController: Args: ${args.joinToString(" ")}")
+            DebugLog.log("ProcessController: Args: ${buildCommandString(args)}")
             
             // Create a lib directory with symlinks for versioned libraries
             val libDir = File(filesDir, "lib")
             libDir.mkdirs()
             
             val nativeLibDir = File(binaryPath).parentFile
-            setupLibrarySymlinks(nativeLibDir, libDir)
+            setupLibrarySymlinks(nativeLibDir, libDir, binaryPath)
             
             val pb = ProcessBuilder(args)
             pb.redirectErrorStream(true)
@@ -123,6 +300,7 @@ class ProcessController {
             process = pb.start()
             
             // Start log consumer
+            LlamaService.Companion.clearServerLogs()
             val reader = BufferedReader(InputStreamReader(process!!.inputStream))
             var line: String?
             var modelLoaded = false
@@ -130,6 +308,12 @@ class ProcessController {
                 _logs.value = line ?: ""
                 Log.d("LlamaServer", line ?: "")
                 DebugLog.log("Server: ${line ?: ""}")
+                
+                // Invoke callback
+                line?.let { 
+                    onLog?.invoke(it) 
+                    LlamaService.Companion.addServerLog(it)
+                }
                 
                 // Parse loading progress from server output
                 val currentLine = line ?: ""
@@ -170,56 +354,94 @@ class ProcessController {
     /**
      * Create symlinks for versioned library names (.so.0 -> .so)
      */
-    private fun setupLibrarySymlinks(sourceDir: File?, targetDir: File) {
+    /**
+     * Create symlinks for versioned library names (.so.0 -> .so)
+     * Uses Java NIO Files.createSymbolicLink where possible, falls back to copy.
+     */
+    private fun setupLibrarySymlinks(sourceDir: File?, targetDir: File, binaryPath: String) {
         if (sourceDir == null) return
         
+        // Infer tier from binary path (e.g. libllama_server_dotprod.so -> dotprod)
+        val binaryName = File(binaryPath).name
+        val tier = when {
+            binaryName.contains("_armv9") -> "_armv9"
+            binaryName.contains("_dotprod") -> "_dotprod"
+            binaryName.contains("_baseline") -> "_baseline"
+            else -> ""
+        }
+        
+        DebugLog.log("ProcessController: Inferred tier '$tier' from $binaryName")
+        
+        // Map of Link Name -> Source Candidate Names
         val librariesToLink = listOf(
-            "libmtmd.so" to "libmtmd.so.0",
-            "libllama.so" to "libllama.so.0",
-            "libggml.so" to "libggml.so.0",
-            "libggml-cpu.so" to "libggml-cpu.so.0",
-            "libggml-base.so" to "libggml-base.so.0"
+            // Tiered libraries
+            "libmtmd.so" to listOf("libmtmd${tier}.so", "libmtmd.so"),
+            "libmtmd.so.0" to listOf("libmtmd${tier}.so", "libmtmd.so"),
+            
+            // Standard shared libraries (usually renaming .so.0.so -> .so.0)
+            "libllama.so" to listOf("libllama.so", "libllama.so.0.so"),
+            "libllama.so.0" to listOf("libllama.so.0", "libllama.so", "libllama.so.0.so"),
+            
+            "libggml.so" to listOf("libggml.so", "libggml.so.0.so"),
+            "libggml.so.0" to listOf("libggml.so.0", "libggml.so", "libggml.so.0.so"),
+            
+            "libggml-cpu.so" to listOf("libggml-cpu.so", "libggml-cpu.so.0.so"),
+            "libggml-cpu.so.0" to listOf("libggml-cpu.so.0", "libggml-cpu.so", "libggml-cpu.so.0.so"),
+            
+            "libggml-base.so" to listOf("libggml-base.so", "libggml-base.so.0.so"),
+            "libggml-base.so.0" to listOf("libggml-base.so.0", "libggml-base.so", "libggml-base.so.0.so")
         )
         
-        for ((sourceName, linkName) in librariesToLink) {
-            val sourceFile = File(sourceDir, sourceName)
+        for ((linkName, sourceCandidates) in librariesToLink) {
+            var sourceFile: File? = null
+            
+            // Find first existing source candidate
+            for (candidateName in sourceCandidates) {
+                val candidate = File(sourceDir, candidateName)
+                if (candidate.exists()) {
+                    sourceFile = candidate
+                    break
+                }
+            }
+            
             val linkFile = File(targetDir, linkName)
             
-            if (sourceFile.exists()) {
+            if (sourceFile != null) {
                 try {
                     // Delete existing link/file
                     if (linkFile.exists()) {
                         linkFile.delete()
                     }
                     
-                    // Create symlink using Runtime.exec (Android doesn't have Files.createSymbolicLink in older APIs)
-                    val result = Runtime.getRuntime().exec(arrayOf("ln", "-sf", sourceFile.absolutePath, linkFile.absolutePath)).waitFor()
-                    
-                    if (result == 0 && linkFile.exists()) {
-                        DebugLog.log("ProcessController: Created symlink ${linkFile.name} -> ${sourceFile.name}")
-                    } else {
-                        // Fallback: copy the file if symlink fails
-                        DebugLog.log("ProcessController: Symlink failed, copying ${sourceName} to ${linkName}")
+                    // Try Java NIO symlink first
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            java.nio.file.Files.createSymbolicLink(
+                                linkFile.toPath(),
+                                sourceFile.toPath()
+                            )
+                            DebugLog.log("ProcessController: Created symlink ${linkFile.name} -> ${sourceFile.name}")
+                        } else {
+                           throw UnsupportedOperationException("Symlinks require Android O+")
+                        }
+                    } catch (e: Exception) {
+                        // symlink failed (likely permission denied or OS too old), fallback to copy
+                        // DebugLog.log("ProcessController: Symlink failed (${e.message}), falling back to copy")
                         sourceFile.copyTo(linkFile, overwrite = true)
+                        DebugLog.log("ProcessController: Copied ${sourceFile.name} to ${linkName}")
                     }
                 } catch (e: Exception) {
-                    DebugLog.log("ProcessController: Error creating link for $sourceName: ${e.message}")
-                    // Try copying as fallback
-                    try {
-                        sourceFile.copyTo(linkFile, overwrite = true)
-                    } catch (copyError: Exception) {
-                        DebugLog.log("ProcessController: Copy also failed: ${copyError.message}")
-                    }
+                    DebugLog.log("ProcessController: Error linking/copying $linkName: ${e.message}")
                 }
             } else {
-                DebugLog.log("ProcessController: Source library not found: ${sourceFile.absolutePath}")
+                 DebugLog.log("ProcessController: Source library not found for $linkName (tried: $sourceCandidates)")
             }
         }
     }
     
     fun stop() {
         stoppedIntentionally = true
-        process?.destroy()
+        com.example.llamadroid.util.ProcessUtils.stopProcessSync(process)
         process = null
     }
     

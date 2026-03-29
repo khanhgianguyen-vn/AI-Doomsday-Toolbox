@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import com.example.llamadroid.util.CpuFeatures
 import com.example.llamadroid.util.DebugLog
+import com.example.llamadroid.util.DynamicFeatureManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -38,9 +39,17 @@ class BinaryRepository(private val context: Context) {
             "whisper-cli",
             "llama-cli",
             "llama_server",
+            "llama-bench",
             "mtmd",
-            "sd"
+            "sd",
+            "kiwix-serve",
+            "kiwix-manage"
         )
+        
+        // Preference keys
+        private const val PREFS_NAME = "llamadroid_settings"
+        private const val KEY_PREFERRED_TIER = "preferred_cpu_tier"
+
         
         // Required shared libraries (not tiered, always same version)
         val SHARED_LIBS = listOf(
@@ -62,6 +71,15 @@ class BinaryRepository(private val context: Context) {
      * Get the current CPU tier (cached).
      */
     fun getTier(): String {
+        // Check for user override
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val override = prefs.getString(KEY_PREFERRED_TIER, "auto")
+        
+        if (override != null && override != "auto") {
+            Log.i(TAG, "Using forced CPU tier: $override")
+            return override
+        }
+
         if (cachedTier == null) {
             cachedTier = CpuFeatures.getTier()
             Log.i(TAG, "Detected CPU tier: $cachedTier")
@@ -75,8 +93,29 @@ class BinaryRepository(private val context: Context) {
      * @param name Binary name without "lib" prefix (e.g., "ffmpeg", "llama-cli")
      * @return File path to the binary, or null if not found
      */
+    /**
+     * Get path to a tiered binary, with fallback to lower tiers.
+     * 
+     * @param name Binary name without "lib" prefix (e.g., "ffmpeg", "llama-cli")
+     * @return File path to the binary, or null if not found
+     */
+    /**
+     * Get path to a tiered binary, with fallback to lower tiers.
+     * 
+     * @param name Binary name without "lib" prefix (e.g., "ffmpeg", "llama-cli")
+     * @return File path to the binary, or null if not found
+     */
     fun getTieredBinary(name: String): File? {
+        // Ensure native libs module is installed
+        if (!DynamicFeatureManager.isNativeLibsReady(context)) {
+            Log.w(TAG, "Native libs module not installed yet")
+            return null
+        }
+
         val tier = getTier()
+        
+        // 1. Check nativeLibraryDir (System installed) - EXECUTE DIRECTLY FROM HERE
+        // Android 10+ restricts W^X, so we must execute from read-only system paths if possible.
         val nativeLibDir = context.applicationInfo.nativeLibraryDir
         
         // Try tiers from best to worst (fallback chain)
@@ -86,6 +125,7 @@ class BinaryRepository(private val context: Context) {
             else -> listOf("baseline")
         }
         
+        // Strategy 1: Check main APK native lib dir (where splits are merged/symlinked on some OS versions)
         for (tryTier in tiersToTry) {
             val libName = "lib${name}_${tryTier}.so"
             val file = File(nativeLibDir, libName)
@@ -96,18 +136,86 @@ class BinaryRepository(private val context: Context) {
             }
         }
         
-        // Fallback: try non-tiered version (legacy)
-        val legacyName = "lib${name}.so"
-        val legacyFile = File(nativeLibDir, legacyName)
-        if (legacyFile.exists()) {
-            DebugLog.log("$TAG: Found legacy $name at ${legacyFile.absolutePath}")
-            return legacyFile
+        // Strategy 2: Check Feature Module Contexts (Split APKs)
+        // On some devices, splits have their own nativeLibraryDir. We must execute from THERE.
+        val currentTier = getTier()
+        val featurePackages = listOf(
+            "com.example.llamadroid.feature.llm.$currentTier",
+            "com.example.llamadroid.feature.media.$currentTier",
+            "com.example.llamadroid.feature.kiwix.$currentTier",
+            "com.example.llamadroid.feature.upscaler"
+        )
+
+        for (pkgName in featurePackages) {
+            try {
+                val featureContext = context.createPackageContext(pkgName, 0)
+                val featureLibDir = File(featureContext.applicationInfo.nativeLibraryDir)
+                
+                if (featureLibDir.exists()) {
+                    for (tryTier in tiersToTry) {
+                        val libName = "lib${name}_${tryTier}.so"
+                        val sourceFile = File(featureLibDir, libName)
+                        
+                        if (sourceFile.exists()) {
+                            // EXECUTE DIRECTLY from feature lib dir. Do NOT copy.
+                            DebugLog.log("$TAG: Found $name in feature dir at ${sourceFile.absolutePath}")
+                            return sourceFile
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore package not found
+            }
         }
         
+        // Strategy 3: Check Legacy Split Directories (Backup for older Android versions)
+        try {
+            val splitDirs = listOf(
+                "feature_llm_$currentTier",
+                "feature_kiwix_$currentTier", 
+                "feature_media_$currentTier"
+            )
+
+            for (splitName in splitDirs) {
+                val splitDir = File(context.filesDir.parent, "split_$splitName")
+                if (splitDir.exists()) {
+                    val abis = listOf(CpuFeatures.getArch(), "arm64", "arm64-v8a")
+                    val searchDirs = abis.map { File(splitDir, "lib/$it") }
+
+                    for (dir in searchDirs) {
+                        if (dir.exists()) {
+                            for (tryTier in tiersToTry) {
+                                val libName = "lib${name}_${tryTier}.so"
+                                val file = File(dir, libName)
+                                if (file.exists()) {
+                                    DebugLog.log("$TAG: Found $name in split dir at ${file.absolutePath}")
+                                    return file
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to check split dir", e)
+        }
+        
+        // Strategy 4: Fallback to deployed 'bin' dir (User uploaded or legacy extration)
+        // Only use this if system execution failed, as it might trigger Permission Denied on Android 10+
+        val deployedBinDir = File(context.filesDir, "bin")
+        for (tryTier in tiersToTry) {
+            val libName = "lib${name}_${tryTier}.so"
+            val file = File(deployedBinDir, libName)
+            if (file.exists()) {
+                 DebugLog.log("$TAG: Found $name in deployed dir at ${file.absolutePath} (May fail with Permission Denied)")
+                return file
+            }
+        }
+
         Log.w(TAG, "Binary not found: $name (tried tiers: $tiersToTry)")
         return null
     }
-    
+
     /**
      * Get the llama-server executable (tiered).
      */
@@ -129,11 +237,28 @@ class BinaryRepository(private val context: Context) {
      * Get the library directory path - needed for LD_LIBRARY_PATH
      */
     fun getLibraryDir(): String {
-        val customBinDir = File(context.filesDir, "binaries")
+        val paths = mutableListOf<String>()
+        val customBinDir = File(context.filesDir, "binaries") // User uploaded
         if (customBinDir.exists() && customBinDir.listFiles()?.isNotEmpty() == true) {
-            return customBinDir.absolutePath
+            paths.add(customBinDir.absolutePath)
         }
-        return context.applicationInfo.nativeLibraryDir
+        
+        // Add system native lib dir (Preferred for system libraries)
+        paths.add(context.applicationInfo.nativeLibraryDir)
+        
+        // Add centralized asset binaries directory (Fallback)
+        val assetBinDir = com.example.llamadroid.util.AssetPackManagerUtil.getBinariesDir(context)
+        if (assetBinDir.exists()) {
+            paths.add(assetBinDir.absolutePath)
+        }
+
+        // Add deployed bin dir (Primary execution env)
+        val deployedBinDir = File(context.filesDir, "bin")
+        if (deployedBinDir.exists()) {
+            paths.add(0, deployedBinDir.absolutePath) // Prepend to prefer it
+        }
+        
+        return paths.joinToString(":")
     }
     
     /**
@@ -170,6 +295,11 @@ class BinaryRepository(private val context: Context) {
      * Get stable-diffusion binary (tiered).
      */
     fun getSdBinary(): File? = getTieredBinary("sd")
+    
+    /**
+     * Get llama-bench binary (tiered) for benchmarking.
+     */
+    fun getLlamaBenchBinary(): File? = getTieredBinary("llama-bench")
     
     /**
      * Get kiwix-serve binary (for serving ZIM files).
@@ -278,5 +408,306 @@ class BinaryRepository(private val context: Context) {
             customBinDir.deleteRecursively()
             DebugLog.log("$TAG: Deleted custom binaries")
         }
+    }
+
+        /**
+     * EXTRACT only the NEEDED binaries to filesDir/bin.
+     * Selects the best tier for the current device and ignores others.
+     * Prioritizes Native Library Directory (OS extracted) for reliability.
+     */
+    suspend fun deployAllBinaries(): Boolean = withContext(Dispatchers.IO) {
+        if (!DynamicFeatureManager.isNativeLibsReady(context)) return@withContext false
+
+        val deployedBinDir = File(context.filesDir, "bin")
+        if (!deployedBinDir.exists()) deployedBinDir.mkdirs()
+        
+        val deviceTier = getTier()
+        // Tiers preference: Device Tier -> ... -> Baseline
+        val tiersToTry = when (deviceTier) {
+            "armv9" -> listOf("armv9", "dotprod", "baseline")
+            "dotprod" -> listOf("dotprod", "baseline")
+            else -> listOf("baseline")
+        }
+
+        Log.i(TAG, "Deploying binaries for tier: $deviceTier (fallback: $tiersToTry)")
+
+        // Track active binaries
+        val activeBinaries = mutableSetOf<String>()
+
+        // 1. Try Native Library Dir (OS Extracted) - PRIORITY for useLegacyPackaging=true
+        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+        if (nativeDir.exists()) {
+             Log.d(TAG, "Scanning nativeLibraryDir: ${nativeDir.absolutePath}")
+             val deployed = scanAndCopy(nativeDir, deployedBinDir, tiersToTry)
+             activeBinaries.addAll(deployed)
+        }
+
+        // 2. Try Feature Contexts (for split installs)
+        val fromFeatures = legacyDeploy(deployedBinDir, tiersToTry)
+        activeBinaries.addAll(fromFeatures)
+
+        // 3. Fallback: APK Extraction (If nothing found or partial)
+        if (activeBinaries.isEmpty() || !areCriticalBinariesPresent(activeBinaries)) {
+            Log.w(TAG, "Binaries missing from native/legacy paths. Attempting APK extraction...")
+            val splitDirs = context.applicationInfo.splitSourceDirs
+            val apkPaths = (splitDirs ?: emptyArray()).toMutableList()
+            if (context.applicationInfo.sourceDir != null) {
+                apkPaths.add(context.applicationInfo.sourceDir)
+            }
+            
+            apkPaths.forEach { apkPath ->
+                try {
+                    val deployed = extractFromApk(File(apkPath), deployedBinDir, tiersToTry)
+                    if (deployed.isNotEmpty()) {
+                        activeBinaries.addAll(deployed)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to extract from $apkPath", e)
+                }
+            }
+        }
+        
+        // 4. Cleanup
+        if (activeBinaries.isNotEmpty()) {
+            deployedBinDir.listFiles()?.forEach { file ->
+                if (file.extension == "so") {
+                    if (!activeBinaries.contains(file.name)) {
+                         // Check if it's a custom binary? (Usually in 'binaries' dir, not 'bin')
+                         // But be safe and delete tiered mismatches.
+                        if (file.delete()) {
+                            Log.v(TAG, "Deleted unused/stale binary: ${file.name}")
+                        }
+                    }
+                }
+            }
+        }
+        
+        Log.i(TAG, "Smart binary deployment complete. Active: $activeBinaries")
+        return@withContext activeBinaries.isNotEmpty()
+    }
+    
+    // Check if critical binaries are present
+    private fun areCriticalBinariesPresent(binaries: Set<String>): Boolean {
+        // Just check for a few key ones to decide if we need fallback
+        return binaries.any { it.startsWith("libllama") } && 
+               binaries.any { it.startsWith("libffmpeg") }
+    }
+
+    private fun scanAndCopy(sourceDir: File, destDir: File, tiers: List<String>): List<String> {
+        val deployedFiles = mutableListOf<String>()
+        val files = sourceDir.listFiles()?.filter { it.extension == "so" } ?: emptyList()
+        if (files.isEmpty()) return emptyList()
+
+        // Group by binary name
+        val fileGroups = files.groupBy { file ->
+            val filename = file.name
+            var key = filename
+            if (filename.startsWith("lib") && filename.endsWith(".so")) {
+                val bareName = filename.substring(3, filename.length - 3)
+                val parts = bareName.split("_")
+                if (parts.size > 1) {
+                    val potentialTier = parts.last()
+                    if (potentialTier in listOf("baseline", "dotprod", "armv9")) {
+                        key = bareName.substringBeforeLast("_")
+                    }
+                }
+            }
+            key
+        }
+
+        fileGroups.forEach { (key, groupFiles) ->
+            var bestFile: File? = null
+            val isTiered = groupFiles.any { f -> 
+                val n = f.name
+                n.contains("_baseline.so") || n.contains("_dotprod.so") || n.contains("_armv9.so")
+            }
+            
+            if (isTiered) {
+                for (tier in tiers) {
+                    val match = groupFiles.find { it.name.endsWith("_$tier.so") }
+                    if (match != null) {
+                        bestFile = match
+                        break
+                    }
+                }
+            } else {
+                bestFile = groupFiles.firstOrNull()
+            }
+            
+            if (bestFile != null) {
+                val destFile = File(destDir, bestFile!!.name)
+                try {
+                    // Only copy if size differs or missing (simple check)
+                    // Or if we want to ensure executable bit?
+                    // Files in nativeLibraryDir are not writable/executable by us usually?
+                    // We copy to filesDir to make them executable if needed (though shared libs usually don't need +x unless executed directly)
+                    // Binaries like ffmpeg DO need +x.
+                    if (!destFile.exists() || destFile.length() != bestFile!!.length()) {
+                        bestFile!!.copyTo(destFile, overwrite = true)
+                        destFile.setExecutable(true)
+                        Log.v(TAG, "Copied ${bestFile!!.name} from ${sourceDir.absolutePath}")
+                    }
+                    deployedFiles.add(bestFile!!.name)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to copy ${bestFile!!.name}", e)
+                }
+            }
+        }
+        return deployedFiles
+    }
+
+    /**
+     * Extract binaries from APK and return list of filenames deployed.
+     */
+    private fun extractFromApk(apkFile: File, destDir: File, tiers: List<String>): List<String> {
+        val deployedFiles = mutableListOf<String>()
+        val zip = java.util.zip.ZipFile(apkFile)
+        try {
+            val entries = zip.entries()
+            val soEntries = mutableListOf<java.util.zip.ZipEntry>()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (entry.name.endsWith(".so")) {
+                    soEntries.add(entry)
+                }
+            }
+
+            // Group by binary name
+            val fileGroups = soEntries.groupBy { entry ->
+                val filename = File(entry.name).name 
+                var key = filename
+                
+                if (filename.startsWith("lib") && filename.endsWith(".so")) {
+                    val bareName = filename.substring(3, filename.length - 3)
+                    val parts = bareName.split("_")
+                    if (parts.size > 1) {
+                        val potentialTier = parts.last()
+                         if (potentialTier in listOf("baseline", "dotprod", "armv9")) {
+                            key = bareName.substringBeforeLast("_")
+                        }
+                    }
+                }
+                key
+            }
+
+            fileGroups.forEach { (key, groupEntries) ->
+                var bestEntry: java.util.zip.ZipEntry? = null
+                val isTiered = groupEntries.any { e ->
+                    val n = File(e.name).name
+                    n.contains("_baseline.so") || n.contains("_dotprod.so") || n.contains("_armv9.so")
+                }
+
+                if (isTiered) {
+                     for (tier in tiers) {
+                        val match = groupEntries.find { File(it.name).name.endsWith("_$tier.so") }
+                        if (match != null) {
+                            bestEntry = match
+                            break
+                        }
+                    }
+                } else {
+                    bestEntry = groupEntries.firstOrNull()
+                }
+
+                if (bestEntry != null) {
+                     val filename = File(bestEntry!!.name).name
+                     val destFile = File(destDir, filename)
+                     
+                     if (!destFile.exists() || destFile.length() != bestEntry!!.size) {
+                         zip.getInputStream(bestEntry).use { input ->
+                             FileOutputStream(destFile).use { output ->
+                                 input.copyTo(output)
+                             }
+                         }
+                         destFile.setExecutable(true)
+                         Log.v(TAG, "Extracted $filename")
+                     }
+                     deployedFiles.add(filename)
+                }
+            }
+
+        } finally {
+            zip.close()
+        }
+        return deployedFiles
+    }
+
+    /**
+     * Fallback deploy using PackageContext (if APK extraction fails).
+     */
+    private fun legacyDeploy(destDir: File, tiers: List<String>): List<String> {
+         val deployedFiles = mutableListOf<String>()
+         
+         val currentTier = getTier()
+         val featurePackages = listOf(
+            "com.example.llamadroid.feature.llm.$currentTier",
+            "com.example.llamadroid.feature.media.$currentTier",
+            "com.example.llamadroid.feature.kiwix.$currentTier",
+            "com.example.llamadroid.feature.upscaler"
+        )
+        
+        featurePackages.forEach { pkgName ->
+             try {
+                val featureContext = context.createPackageContext(pkgName, 0)
+                val featureLibDir = File(featureContext.applicationInfo.nativeLibraryDir)
+                
+                if (featureLibDir.exists() && featureLibDir.isDirectory) {
+                    val files = featureLibDir.listFiles()?.filter { it.extension == "so" } ?: emptyList()
+                    
+                    // Grouping Logic (Same as APK)
+                    val fileGroups = files.groupBy { file ->
+                        val name = file.name
+                        var key = name
+                        if (name.startsWith("lib") && name.endsWith(".so")) {
+                            val bareName = name.substring(3, name.length - 3)
+                            val parts = bareName.split("_")
+                            if (parts.size > 1) {
+                                val potentialTier = parts.last()
+                                if (potentialTier in listOf("baseline", "dotprod", "armv9")) {
+                                    key = bareName.substringBeforeLast("_")
+                                }
+                            }
+                        }
+                        key
+                    }
+                    
+                    fileGroups.forEach { (key, groupFiles) ->
+                         var bestFile: File? = null
+                         val isTiered = groupFiles.any { f -> 
+                            val n = f.name
+                            n.contains("_baseline.so") || n.contains("_dotprod.so") || n.contains("_armv9.so")
+                        }
+                        
+                        if (isTiered) {
+                            for (tier in tiers) {
+                                val match = groupFiles.find { it.name.endsWith("_$tier.so") }
+                                if (match != null) {
+                                    bestFile = match
+                                    break
+                                }
+                            }
+                        } else {
+                            bestFile = groupFiles.firstOrNull()
+                        }
+                        
+                        if (bestFile != null) {
+                            val destFile = File(destDir, bestFile!!.name)
+                            try {
+                                if (!destFile.exists() || destFile.length() != bestFile!!.length()) {
+                                    bestFile!!.copyTo(destFile, overwrite = true)
+                                    destFile.setExecutable(true)
+                                }
+                                deployedFiles.add(bestFile!!.name)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Legacy copy failed for ${bestFile!!.name}", e)
+                            }
+                        }
+                    }
+                }
+             } catch (e: Exception) {
+                 // Ignore
+             }
+        }
+        return deployedFiles
     }
 }

@@ -101,6 +101,9 @@ class VideoUpscalerService : Service() {
     /**
      * Extract upscaler models from assets to internal storage
      */
+    /**
+     * Extract upscaler models from assets/asset packs to internal storage
+     */
     private suspend fun extractModelsFromAssets() = withContext(Dispatchers.IO) {
         if (modelsDir.exists() && (modelsDir.listFiles()?.isNotEmpty() == true)) {
             DebugLog.log("[UPSCALER] Models already extracted")
@@ -110,24 +113,68 @@ class VideoUpscalerService : Service() {
         modelsDir.mkdirs()
         
         try {
-            val assetManager = assets
-            val modelDirs = assetManager.list("upscaler_models") ?: return@withContext
+            // First check asset pack
+            val pack = com.example.llamadroid.util.AssetPackManagerUtil.AssetPack.UPSCALER
+            val packDir = com.example.llamadroid.util.AssetPackManagerUtil.getExtractedPath(applicationContext, pack)
             
-            for (modelDir in modelDirs) {
-                val targetDir = File(modelsDir, modelDir)
-                targetDir.mkdirs()
-                
-                val files = assetManager.list("upscaler_models/$modelDir") ?: continue
-                for (file in files) {
-                    val inputStream = assetManager.open("upscaler_models/$modelDir/$file")
-                    val outputFile = File(targetDir, file)
-                    outputFile.outputStream().use { output ->
-                        inputStream.copyTo(output)
-                    }
-                    inputStream.close()
+            DebugLog.log("[UPSCALER] Checking for models in asset pack: $packDir")
+
+            if (packDir != null) {
+                // Determine location of upscaler_models in pack
+                // AssetPackManagerUtil returns path containing assets
+                val sourceDir = File(packDir, "upscaler_models")
+                if (sourceDir.exists()) {
+                    DebugLog.log("[UPSCALER] Found models in asset pack at ${sourceDir.absolutePath}")
+                    // Copy recursively
+                    sourceDir.copyRecursively(modelsDir, overwrite = true)
+                    DebugLog.log("[UPSCALER] Models extracted from asset pack successfully")
+                    return@withContext
+                } else {
+                     DebugLog.log("[UPSCALER] upscaler_models not found in pack at ${sourceDir.absolutePath}")
                 }
+            } else {
+                DebugLog.log("[UPSCALER] Asset pack path is null")
             }
-            DebugLog.log("[UPSCALER] Models extracted successfully to ${modelsDir.absolutePath}")
+            
+            // Check if AssetPackManagerUtil has already extracted them to binaries dir
+            val binDir = com.example.llamadroid.util.AssetPackManagerUtil.getBinariesDir(applicationContext)
+            val binModelsDir = File(binDir, "upscaler_models")
+            if (binModelsDir.exists()) {
+                DebugLog.log("[UPSCALER] Found models in asset_binaries at ${binModelsDir.absolutePath}")
+                 binModelsDir.copyRecursively(modelsDir, overwrite = true)
+                 DebugLog.log("[UPSCALER] Models copied from asset_binaries successfully")
+                 return@withContext
+            } else {
+                DebugLog.log("[UPSCALER] Models not found in asset_binaries: ${binModelsDir.absolutePath}")
+            }
+
+            // Fallback to bundled assets (if any)
+            val assetManager = assets
+            val modelDirs = assetManager.list("upscaler_models")
+            
+            if (!modelDirs.isNullOrEmpty()) {
+                for (modelDir in modelDirs) {
+                    val targetDir = File(modelsDir, modelDir)
+                    targetDir.mkdirs()
+                    
+                    val files = assetManager.list("upscaler_models/$modelDir") ?: continue
+                    for (file in files) {
+                        try {
+                            val inputStream = assetManager.open("upscaler_models/$modelDir/$file")
+                            val outputFile = File(targetDir, file)
+                            outputFile.outputStream().use { output ->
+                                inputStream.copyTo(output)
+                            }
+                            inputStream.close()
+                        } catch (e: Exception) {
+                            // Skip directories or errors
+                        }
+                    }
+                }
+                DebugLog.log("[UPSCALER] Models extracted from bundled assets")
+            } else {
+                 DebugLog.log("[UPSCALER] No models found in bundled assets")
+            }
         } catch (e: Exception) {
             DebugLog.log("[UPSCALER] Failed to extract models: ${e.message}")
         }
@@ -397,7 +444,10 @@ class VideoUpscalerService : Service() {
         totalFrames: Int
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val binary = File(applicationInfo.nativeLibraryDir, config.engine.binaryName)
+            val binaryName = config.engine.binaryName.removePrefix("lib").removeSuffix(".so")
+            val binary = BinaryRepository(applicationContext).getTieredBinary(binaryName) 
+                ?: File(applicationInfo.nativeLibraryDir, config.engine.binaryName)
+            
             if (!binary.exists()) {
                 return@withContext Result.failure(Exception("${config.engine.name} binary not found"))
             }
@@ -428,8 +478,35 @@ class VideoUpscalerService : Service() {
             
             currentProcess = processBuilder.start()
             
-            // Monitor progress by counting output files
+            // Monitor output and progress
             val startTime = System.currentTimeMillis()
+            
+            // Read output in a separate thread to prevent blocking
+            val outputJob = scope.launch(Dispatchers.IO) {
+                val reader = BufferedReader(InputStreamReader(currentProcess!!.inputStream))
+                var line: String?
+                while (currentProcess?.isAlive == true || reader.ready()) {
+                    try {
+                        line = reader.readLine()
+                        if (line != null) {
+                            DebugLog.log("[UPSCALER_BIN] $line")
+                            // Parse progress if available (realsr-ncnn usually prints percentage)
+                            // But we are also counting files, so we can just log it for now
+                            
+                            // If it's an error message
+                            if (line.contains("error", ignoreCase = true) || line.contains("failed", ignoreCase = true)) {
+                                DebugLog.log("[UPSCALER_ERR] Potential error: $line")
+                            }
+                        } else {
+                            delay(100)
+                        }
+                    } catch (e: Exception) {
+                        break
+                    }
+                }
+            }
+
+            // Monitor file progress
             scope.launch {
                 while (currentProcess?.isAlive == true && !isCancelled) {
                     val outputCount = outputDir.listFiles()?.count { it.extension == "jpg" } ?: 0
@@ -458,13 +535,12 @@ class VideoUpscalerService : Service() {
                 }
             }
             
-            // Wait for process
-            val reader = BufferedReader(InputStreamReader(currentProcess!!.inputStream))
-            while (reader.readLine() != null) { /* consume */ }
-            
             val exitCode = currentProcess!!.waitFor()
+            outputJob.cancelAndJoin()
             currentProcess = null
             
+            DebugLog.log("[UPSCALER] Binary exit code: $exitCode")
+
             if (exitCode != 0 && !isCancelled) {
                 return@withContext Result.failure(Exception("Upscaling failed with exit code $exitCode"))
             }
@@ -570,11 +646,7 @@ data class VideoInfo(
         }
     
     val sizeFormatted: String
-        get() = when {
-            sizeBytes >= 1_000_000_000L -> String.format("%.2f GB", sizeBytes / 1_000_000_000.0)
-            sizeBytes >= 1_000_000L -> String.format("%.1f MB", sizeBytes / 1_000_000.0)
-            else -> String.format("%.0f KB", sizeBytes / 1_000.0)
-        }
+        get() = com.example.llamadroid.util.FormatUtils.Technical.formatBytes(sizeBytes)
     
     val resolution: String get() = "${width}x${height}"
 }

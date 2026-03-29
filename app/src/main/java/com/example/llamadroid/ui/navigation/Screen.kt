@@ -27,4 +27,41 @@ sealed class Screen(val route: String) {
     object WorkerMode : Screen("distributed_worker")     // Worker configuration
     object MasterMode : Screen("distributed_master")     // Master with worker list
     object NetworkVisualization : Screen("distributed_network") // Network visualization
+    // Settings screens
+    object Benchmark : Screen("benchmark")               // Thread benchmark tool
+    object Dataset : Screen("dataset")                   // Dataset creation tool (project list)
+    object DatasetProject : Screen("dataset_project/{projectId}") {
+        fun createRoute(projectId: Long): String = "dataset_project/$projectId"
+    }
+    object Termux : Screen("termux")                     // Termux SSH integration
+    object TermuxWebView : Screen("termux_webview/{url}/{title}/{toolId}") {
+        fun createRoute(url: String, title: String, toolId: String = "none"): String {
+            val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
+            val encodedTitle = java.net.URLEncoder.encode(title, "UTF-8")
+            return "termux_webview/$encodedUrl/$encodedTitle/$toolId"
+        }
+    }
+    object TermuxFileManager : Screen("termux_file_manager")  // File manager for Termux tools
+    object FastsdGallery : Screen("fastsd_gallery")           // FastSD CPU generated images gallery
+    // AI Agent screens
+    object Agent : Screen("agent")                             // AI coding agent chat
+    object AgentWorkspace : Screen("agent_workspace")          // Agent workspace file manager
+    // Tama virtual pet
+    object Tama : Screen("tama")                               // Virtual pet companion
+    object TamaChat : Screen("tama_chat")                     // AI Chat with pet
+    object Farm : Screen("farm")                               // Farming grid
+    object Store : Screen("store")                             // Farm supply store
+    object SubtitleBurn : Screen("subtitle_burn")              // Subtitle burning tool
+    object Dungeon : Screen("dungeon")                         // Dungeon selection
+    object Adventure : Screen("adventure/{dungeonType}") {     // Text adventure
+        fun createRoute(dungeonType: String): String = "adventure/$dungeonType"
+    }
+    object OllamaManager : Screen("ollama_manager")            // Ollama server/model manager
+    
+    // Native Llama Client
+    object LlamaServerList : Screen("llama_server_list")       // Server management (entry point)
+    object LlamaChatList : Screen("llama_chat_list")           // Chat history
+    object LlamaChat : Screen("llama_chat/{chatId}/{serverId}") { // Chat interface
+        fun createRoute(chatId: Long, serverId: Long): String = "llama_chat/$chatId/$serverId"
+    }
 }

@@ -1,0 +1,223 @@
+package com.example.llamadroid.tama.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import com.example.llamadroid.tama.adventure.DungeonType
+import com.example.llamadroid.tama.db.TamaDatabase
+import com.example.llamadroid.ui.navigation.Screen
+import com.example.llamadroid.data.SettingsRepository
+import kotlinx.coroutines.launch
+
+// Dark fantasy color scheme
+private val DungeonDark = Color(0xFF1A0F0F)
+private val DungeonAccent = Color(0xFF8B0000)
+private val DungeonGold = Color(0xFFDAA520)
+private val DungeonMist = Color(0xFF2F2F2F)
+
+/**
+ * Dungeon selection screen - shows available dungeons for text adventures.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DungeonScreen(
+    navController: NavController,
+    database: TamaDatabase,
+    settingsRepository: SettingsRepository
+) {
+    val scope = rememberCoroutineScope()
+    var completedDungeonCount by remember { mutableStateOf(0) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    
+    // Load dungeon progress
+    LaunchedEffect(Unit) {
+        scope.launch {
+            val pet = database.tamaDao().getActivePet()
+            if (pet != null) {
+                val progress = database.tamaDao().getDungeonProgress(pet.id)
+                completedDungeonCount = progress?.completedDungeonCount ?: 0
+            }
+        }
+    }
+    
+    val unlockedDungeons = DungeonType.getUnlockedDungeons(completedDungeonCount)
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { 
+                    Text(
+                        "⚔️ DUNGEONS",
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = DungeonDark,
+                    titleContentColor = DungeonGold
+                )
+            )
+        },
+        containerColor = DungeonDark
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+            // Header
+            Text(
+                text = "Choose your fate...",
+                color = DungeonGold.copy(alpha = 0.7f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            // Dungeon list
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(DungeonType.entries.toList()) { dungeon ->
+                    val isUnlocked = dungeon in unlockedDungeons
+                    DungeonCard(
+                        dungeon = dungeon,
+                        isUnlocked = isUnlocked,
+                        onClick = {
+                            if (isUnlocked) {
+                                navController.navigate(Screen.Adventure.createRoute(dungeon.name))
+                            }
+                        }
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            // Progress indicator
+            Text(
+                text = "Dungeons completed: $completedDungeonCount/${DungeonType.entries.size - 1}",
+                color = Color.Gray,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+    
+    // Settings dialog
+    if (showSettingsDialog) {
+        AdventureSettingsDialog(
+            onDismiss = { showSettingsDialog = false },
+            settingsRepository = settingsRepository
+        )
+    }
+}
+
+@Composable
+fun DungeonCard(
+    dungeon: DungeonType,
+    isUnlocked: Boolean,
+    onClick: () -> Unit
+) {
+    val cardColor = if (isUnlocked) {
+        Brush.horizontalGradient(
+            colors = listOf(DungeonMist, DungeonDark)
+        )
+    } else {
+        Brush.horizontalGradient(
+            colors = listOf(Color.DarkGray.copy(alpha = 0.3f), Color.Black.copy(alpha = 0.5f))
+        )
+    }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = isUnlocked) { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(cardColor)
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Emoji
+                Text(
+                    text = dungeon.emoji,
+                    fontSize = 32.sp,
+                    modifier = Modifier.padding(end = 16.dp)
+                )
+                
+                // Info
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = dungeon.displayName,
+                        color = if (isUnlocked) DungeonGold else Color.Gray,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    
+                    Text(
+                        text = if (dungeon.isRandom) "Random theme each time" 
+                               else "Unlock order: ${dungeon.unlockOrder}",
+                        color = if (isUnlocked) Color.LightGray else Color.Gray,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp
+                    )
+                    
+
+                }
+                
+                // Lock indicator
+                if (!isUnlocked) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+    }
+}

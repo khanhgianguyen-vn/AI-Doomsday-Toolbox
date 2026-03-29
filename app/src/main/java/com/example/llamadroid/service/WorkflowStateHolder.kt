@@ -39,6 +39,24 @@ object WorkflowStateHolder {
     
     private val _summaryText = MutableStateFlow("")
     val summaryText: StateFlow<String> = _summaryText.asStateFlow()
+
+    private val _partialSummaries = MutableStateFlow<List<String>>(emptyList())
+    val partialSummaries: StateFlow<List<String>> = _partialSummaries.asStateFlow()
+
+    private val _currentChunk = MutableStateFlow(0)
+    val currentChunk: StateFlow<Int> = _currentChunk.asStateFlow()
+
+    private val _totalChunks = MutableStateFlow(0)
+    val totalChunks: StateFlow<Int> = _totalChunks.asStateFlow()
+
+    private val _projectedChunkCount = MutableStateFlow(0)
+    val projectedChunkCount: StateFlow<Int> = _projectedChunkCount.asStateFlow()
+
+    private val _metadataMessage = MutableStateFlow<String?>(null)
+    val metadataMessage: StateFlow<String?> = _metadataMessage.asStateFlow()
+
+    private val _cancelled = MutableStateFlow(false)
+    val cancelled: StateFlow<Boolean> = _cancelled.asStateFlow()
     
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
@@ -86,6 +104,30 @@ object WorkflowStateHolder {
     fun setSummaryText(text: String) {
         _summaryText.value = text
     }
+
+    fun setPartialSummaries(value: List<String>) {
+        _partialSummaries.value = value
+    }
+
+    fun setCurrentChunk(value: Int) {
+        _currentChunk.value = value
+    }
+
+    fun setTotalChunks(value: Int) {
+        _totalChunks.value = value
+    }
+
+    fun setProjectedChunkCount(value: Int) {
+        _projectedChunkCount.value = value
+    }
+
+    fun setMetadataMessage(value: String?) {
+        _metadataMessage.value = value
+    }
+
+    fun setCancelled(value: Boolean) {
+        _cancelled.value = value
+    }
     
     fun setError(error: String?) {
         _error.value = error
@@ -112,6 +154,12 @@ object WorkflowStateHolder {
         _progress.value = 0f
         _transcriptionText.value = ""
         _summaryText.value = ""
+        _partialSummaries.value = emptyList()
+        _currentChunk.value = 0
+        _totalChunks.value = 0
+        _projectedChunkCount.value = 0
+        _metadataMessage.value = null
+        _cancelled.value = false
         _error.value = null
         _showRecordingDialog.value = false
         _isRecording.value = false
@@ -122,8 +170,11 @@ object WorkflowStateHolder {
         _isRunning.value = false
         _transcriptionText.value = transcript
         _summaryText.value = summary
+        _partialSummaries.value = emptyList()
+        _currentChunk.value = 0
         _progress.value = 1f
         _step.value = "Complete!"
+        _cancelled.value = false
     }
 }
 
@@ -253,6 +304,158 @@ object PDFStateHolder {
         _progress.value = 0f
         _result.value = null
         _error.value = null
+    }
+}
+
+object PdfSummaryStateHolder {
+    private val _selectedPdfUri = MutableStateFlow<String?>(null)
+    val selectedPdfUri: StateFlow<String?> = _selectedPdfUri.asStateFlow()
+
+    private val _selectedPdfName = MutableStateFlow<String?>(null)
+    val selectedPdfName: StateFlow<String?> = _selectedPdfName.asStateFlow()
+
+    private val _extractedText = MutableStateFlow("")
+    val extractedText: StateFlow<String> = _extractedText.asStateFlow()
+
+    private val _extractionDetails = MutableStateFlow<String?>(null)
+    val extractionDetails: StateFlow<String?> = _extractionDetails.asStateFlow()
+
+    private val _projectedChunkCount = MutableStateFlow(0)
+    val projectedChunkCount: StateFlow<Int> = _projectedChunkCount.asStateFlow()
+
+    private val _isExtracting = MutableStateFlow(false)
+    val isExtracting: StateFlow<Boolean> = _isExtracting.asStateFlow()
+
+    private val _isSummarizing = MutableStateFlow(false)
+    val isSummarizing: StateFlow<Boolean> = _isSummarizing.asStateFlow()
+
+    private val _progressMessage = MutableStateFlow("")
+    val progressMessage: StateFlow<String> = _progressMessage.asStateFlow()
+
+    private val _currentChunk = MutableStateFlow(0)
+    val currentChunk: StateFlow<Int> = _currentChunk.asStateFlow()
+
+    private val _totalChunks = MutableStateFlow(0)
+    val totalChunks: StateFlow<Int> = _totalChunks.asStateFlow()
+
+    private val _partialSummaries = MutableStateFlow<List<String>>(emptyList())
+    val partialSummaries: StateFlow<List<String>> = _partialSummaries.asStateFlow()
+
+    private val _summary = MutableStateFlow("")
+    val summary: StateFlow<String> = _summary.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _metadataMessage = MutableStateFlow<String?>(null)
+    val metadataMessage: StateFlow<String?> = _metadataMessage.asStateFlow()
+
+    private val _cancelled = MutableStateFlow(false)
+    val cancelled: StateFlow<Boolean> = _cancelled.asStateFlow()
+
+    fun setSelectedPdfUri(value: String?) { _selectedPdfUri.value = value }
+    fun setSelectedPdfName(value: String?) { _selectedPdfName.value = value }
+    fun setExtractedText(value: String) { _extractedText.value = value }
+    fun setExtractionDetails(value: String?) { _extractionDetails.value = value }
+    fun setProjectedChunkCount(value: Int) { _projectedChunkCount.value = value }
+    fun setIsExtracting(value: Boolean) { _isExtracting.value = value }
+    fun setIsSummarizing(value: Boolean) { _isSummarizing.value = value }
+    fun setProgressMessage(value: String) { _progressMessage.value = value }
+    fun setCurrentChunk(value: Int) { _currentChunk.value = value }
+    fun setTotalChunks(value: Int) { _totalChunks.value = value }
+    fun setPartialSummaries(value: List<String>) { _partialSummaries.value = value }
+    fun setSummary(value: String) { _summary.value = value }
+    fun setError(value: String?) { _error.value = value }
+    fun setMetadataMessage(value: String?) { _metadataMessage.value = value }
+    fun setCancelled(value: Boolean) { _cancelled.value = value }
+
+    fun reset() {
+        _selectedPdfUri.value = null
+        _selectedPdfName.value = null
+        _extractedText.value = ""
+        _extractionDetails.value = null
+        _projectedChunkCount.value = 0
+        _isExtracting.value = false
+        _isSummarizing.value = false
+        _progressMessage.value = ""
+        _currentChunk.value = 0
+        _totalChunks.value = 0
+        _partialSummaries.value = emptyList()
+        _summary.value = ""
+        _error.value = null
+        _metadataMessage.value = null
+        _cancelled.value = false
+    }
+}
+
+object VideoSummaryStateHolder {
+    private val _selectedSourceUri = MutableStateFlow<String?>(null)
+    val selectedSourceUri: StateFlow<String?> = _selectedSourceUri.asStateFlow()
+
+    private val _selectedSourceName = MutableStateFlow<String?>(null)
+    val selectedSourceName: StateFlow<String?> = _selectedSourceName.asStateFlow()
+
+    private val _transcript = MutableStateFlow("")
+    val transcript: StateFlow<String> = _transcript.asStateFlow()
+
+    private val _summary = MutableStateFlow("")
+    val summary: StateFlow<String> = _summary.asStateFlow()
+
+    private val _partialSummaries = MutableStateFlow<List<String>>(emptyList())
+    val partialSummaries: StateFlow<List<String>> = _partialSummaries.asStateFlow()
+
+    private val _currentChunk = MutableStateFlow(0)
+    val currentChunk: StateFlow<Int> = _currentChunk.asStateFlow()
+
+    private val _totalChunks = MutableStateFlow(0)
+    val totalChunks: StateFlow<Int> = _totalChunks.asStateFlow()
+
+    private val _projectedChunkCount = MutableStateFlow(0)
+    val projectedChunkCount: StateFlow<Int> = _projectedChunkCount.asStateFlow()
+
+    private val _isRunning = MutableStateFlow(false)
+    val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+
+    private val _progress = MutableStateFlow("")
+    val progress: StateFlow<String> = _progress.asStateFlow()
+
+    private val _progressFraction = MutableStateFlow(0f)
+    val progressFraction: StateFlow<Float> = _progressFraction.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _cancelled = MutableStateFlow(false)
+    val cancelled: StateFlow<Boolean> = _cancelled.asStateFlow()
+
+    fun setSelectedSourceUri(value: String?) { _selectedSourceUri.value = value }
+    fun setSelectedSourceName(value: String?) { _selectedSourceName.value = value }
+    fun setTranscript(value: String) { _transcript.value = value }
+    fun setSummary(value: String) { _summary.value = value }
+    fun setPartialSummaries(value: List<String>) { _partialSummaries.value = value }
+    fun setCurrentChunk(value: Int) { _currentChunk.value = value }
+    fun setTotalChunks(value: Int) { _totalChunks.value = value }
+    fun setProjectedChunkCount(value: Int) { _projectedChunkCount.value = value }
+    fun setIsRunning(value: Boolean) { _isRunning.value = value }
+    fun setProgress(value: String) { _progress.value = value }
+    fun setProgressFraction(value: Float) { _progressFraction.value = value }
+    fun setError(value: String?) { _error.value = value }
+    fun setCancelled(value: Boolean) { _cancelled.value = value }
+
+    fun reset() {
+        _selectedSourceUri.value = null
+        _selectedSourceName.value = null
+        _transcript.value = ""
+        _summary.value = ""
+        _partialSummaries.value = emptyList()
+        _currentChunk.value = 0
+        _totalChunks.value = 0
+        _projectedChunkCount.value = 0
+        _isRunning.value = false
+        _progress.value = ""
+        _progressFraction.value = 0f
+        _error.value = null
+        _cancelled.value = false
     }
 }
 

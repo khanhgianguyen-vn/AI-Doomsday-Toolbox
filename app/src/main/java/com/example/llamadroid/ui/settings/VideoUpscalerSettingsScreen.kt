@@ -13,6 +13,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
 
 /**
@@ -31,10 +33,10 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Video Upscaler Settings") },
+                title = { Text(stringResource(R.string.video_upscaler_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 }
             )
@@ -59,7 +61,7 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("📥 Load Threads", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.video_upscaler_load_threads), fontWeight = FontWeight.Bold)
                             Text("$loadThreads", color = MaterialTheme.colorScheme.primary)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -70,7 +72,7 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
                             steps = 2
                         )
                         Text(
-                            "Threads for loading video frames",
+                            stringResource(R.string.video_upscaler_load_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -90,7 +92,7 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("⚙️ Process Threads", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.video_upscaler_proc_threads), fontWeight = FontWeight.Bold)
                             Text("$procThreads", color = MaterialTheme.colorScheme.primary)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -101,7 +103,7 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
                             steps = 2
                         )
                         Text(
-                            "Threads for GPU/CPU upscaling",
+                            stringResource(R.string.video_upscaler_proc_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -121,7 +123,7 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("💾 Save Threads", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.video_upscaler_save_threads), fontWeight = FontWeight.Bold)
                             Text("$saveThreads", color = MaterialTheme.colorScheme.primary)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -132,7 +134,7 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
                             steps = 2
                         )
                         Text(
-                            "Threads for saving upscaled frames",
+                            stringResource(R.string.video_upscaler_save_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -151,16 +153,13 @@ fun VideoUpscalerSettingsScreen(navController: NavController) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            "ℹ️ Thread Optimization",
+                            stringResource(R.string.video_upscaler_opt_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "• Load/Save threads handle disk I/O\n" +
-                            "• Process threads handle the actual upscaling\n" +
-                            "• Lower values = less memory, slower processing\n" +
-                            "• Higher values = more memory, faster processing",
+                            stringResource(R.string.video_upscaler_opt_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

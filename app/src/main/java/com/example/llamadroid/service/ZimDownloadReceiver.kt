@@ -94,9 +94,14 @@ class ZimDownloadReceiver : BroadcastReceiver() {
                     
                     DebugLog.log("[ZIM] Download successful, URI=$localUri")
                     
-                    // Handle the completed download
+                    // Handle the completed download with goAsync to ensure it finishes
+                    val pendingResult = goAsync()
                     CoroutineScope(Dispatchers.IO).launch {
-                        handleCompletedDownload(context, pending, localUri)
+                        try {
+                            handleCompletedDownload(context, pending, localUri)
+                        } finally {
+                            pendingResult.finish()
+                        }
                     }
                 } else {
                     DebugLog.log("[ZIM] Download failed with status=$status")

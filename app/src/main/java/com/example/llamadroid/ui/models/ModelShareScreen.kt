@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +37,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.example.llamadroid.util.FormatUtils
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,10 +110,10 @@ fun ModelShareScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Share Models") },
+                title = { Text(stringResource(R.string.model_share_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.kiwix_back))
                     }
                 }
             )
@@ -167,7 +170,7 @@ fun ModelShareScreen(navController: NavController) {
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             Text(
-                                text = "Scan QR or open URL to download models",
+                                text = stringResource(R.string.model_share_instructions),
                                 style = MaterialTheme.typography.bodySmall,
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -184,7 +187,7 @@ fun ModelShareScreen(navController: NavController) {
                                         strokeWidth = 2.dp
                                     )
                                     Text(
-                                        text = "$activeDownloads active download(s)",
+                                        text = stringResource(R.string.model_share_active_downloads, activeDownloads),
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
@@ -200,7 +203,7 @@ fun ModelShareScreen(navController: NavController) {
                             Spacer(modifier = Modifier.height(12.dp))
                             
                             Text(
-                                text = "Share your AI models\nwith other devices",
+                                text = stringResource(R.string.model_share_desc),
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center
                             )
@@ -230,7 +233,7 @@ fun ModelShareScreen(navController: NavController) {
                                 contentDescription = null
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isRunning) "Stop Server" else "Start Server")
+                            Text(if (isRunning) stringResource(R.string.dist_stop_server) else stringResource(R.string.dist_start_server))
                         }
                     }
                 }
@@ -244,12 +247,12 @@ fun ModelShareScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Available Models",
+                        text = stringResource(R.string.model_share_available_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${models.size} models",
+                        text = stringResource(R.string.model_share_count, models.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -279,7 +282,7 @@ fun ModelShareScreen(navController: NavController) {
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "No models downloaded yet",
+                                text = stringResource(R.string.model_share_empty),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -304,13 +307,13 @@ fun ModelShareScreen(navController: NavController) {
                         modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "💡 How to download",
+                            text = "💡 " + stringResource(R.string.model_share_how_to),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "1. Both devices must be on the same WiFi\n2. Start the server above\n3. On the other device, scan QR or open URL\n4. Click on a model to download",
+                            text = stringResource(R.string.model_share_steps),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -348,7 +351,7 @@ private fun ModelShareItem(model: ModelEntity) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = sizeStr,
+                        text = sizeStr as String,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

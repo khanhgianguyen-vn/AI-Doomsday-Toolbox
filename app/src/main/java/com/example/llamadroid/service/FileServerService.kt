@@ -21,6 +21,7 @@ import java.net.URLEncoder
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.concurrent.thread
+import com.example.llamadroid.util.AIConstants
 import com.example.llamadroid.util.FormatUtils
 import com.example.llamadroid.util.WakeLockManager
 
@@ -32,7 +33,7 @@ class FileServerService : Service() {
     
     companion object {
         private const val TAG = "FileServerService"
-        const val DEFAULT_PORT = 9111
+        const val DEFAULT_PORT = AIConstants.Ports.FILE_SERVER
     }
     
     private val binder = LocalBinder()

@@ -139,7 +139,8 @@ class DownloadService : Service() {
                             sizeBytes = destFile.length(),
                             type = pending.type,
                             repoId = pending.repoId,
-                            isDownloaded = true
+                            isDownloaded = true,
+                            isVision = pending.isVision
                         )
                         db.modelDao().insertModel(entity)
                         DebugLog.log("DownloadService: Saved $filename to DB as ${pending.type}")

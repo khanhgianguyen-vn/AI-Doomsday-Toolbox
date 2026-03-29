@@ -2,11 +2,322 @@ package com.example.llamadroid.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.llamadroid.util.AIConstants
+import com.example.llamadroid.util.PromptUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class SettingsRepository(context: Context) {
+data class RemoteSummarySettingsSnapshot(
+    val backend: String,
+    val ollamaUrl: String,
+    val llamaServerUrl: String,
+    val ollamaModel: String?,
+    val thinkingEnabled: Boolean,
+    val llamaServerModelLabel: String?,
+    val llamaServerContextTokens: Int,
+    val llamaServerContextLabel: String?,
+    val chunkContext: Int,
+    val chunkMaxTokens: Int,
+    val mergeContext: Int,
+    val mergeMaxTokens: Int,
+    val temperature: Float,
+    val timeoutMinutes: Int,
+    val targetLanguage: String,
+    val summaryPrompt: String?,
+    val mergePrompt: String?
+)
+
+class SettingsRepository(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("llamadroid_settings", Context.MODE_PRIVATE)
+
+    inner class RemoteSummarySettingsGroup(
+        private val keyPrefix: String,
+        private val defaultSummaryPrompt: String?,
+        private val defaultMergePrompt: String?,
+        private val defaultOllamaUrl: String = AIConstants.Urls.OLLAMA_DEFAULT,
+        private val defaultLlamaServerUrl: String = PDF_LLAMA_SERVER_DEFAULT_URL,
+        private val fallbackChunkContextKey: String? = null,
+        private val fallbackChunkMaxTokensKey: String? = null,
+        private val fallbackTemperatureKey: String? = null,
+        private val fallbackTimeoutKey: String? = null,
+        private val fallbackThinkingEnabledKey: String? = null,
+        private val fallbackSummaryPromptKey: String? = null,
+        private val fallbackMergePromptKey: String? = null,
+        private val fallbackTargetLanguageKey: String? = null
+    ) {
+        private fun stringFlow(suffix: String, default: String? = null, fallbackKey: String? = null): MutableStateFlow<String?> {
+            val key = "${keyPrefix}_$suffix"
+            val value = when {
+                prefs.contains(key) -> prefs.getString(key, default)
+                fallbackKey != null -> prefs.getString(fallbackKey, default)
+                else -> prefs.getString(key, default)
+            }
+            return MutableStateFlow(value)
+        }
+
+        private fun intFlow(
+            suffix: String,
+            default: Int,
+            range: IntRange,
+            fallbackKey: String? = null
+        ): MutableStateFlow<Int> {
+            val key = "${keyPrefix}_$suffix"
+            val value = when {
+                prefs.contains(key) -> prefs.getInt(key, default)
+                fallbackKey != null -> prefs.getInt(fallbackKey, default)
+                else -> prefs.getInt(key, default)
+            }.coerceIn(range)
+            return MutableStateFlow(value)
+        }
+
+        private fun intMinOnlyFlow(
+            suffix: String,
+            default: Int,
+            minValue: Int,
+            fallbackKey: String? = null
+        ): MutableStateFlow<Int> {
+            val key = "${keyPrefix}_$suffix"
+            val value = when {
+                prefs.contains(key) -> prefs.getInt(key, default)
+                fallbackKey != null -> prefs.getInt(fallbackKey, default)
+                else -> prefs.getInt(key, default)
+            }.coerceAtLeast(minValue)
+            return MutableStateFlow(value)
+        }
+
+        private fun floatFlow(
+            suffix: String,
+            default: Float,
+            min: Float,
+            max: Float,
+            fallbackKey: String? = null
+        ): MutableStateFlow<Float> {
+            val key = "${keyPrefix}_$suffix"
+            val value = when {
+                prefs.contains(key) -> prefs.getFloat(key, default)
+                fallbackKey != null -> prefs.getFloat(fallbackKey, default)
+                else -> prefs.getFloat(key, default)
+            }.coerceIn(min, max)
+            return MutableStateFlow(value)
+        }
+
+        private fun boolFlow(suffix: String, default: Boolean, fallbackKey: String? = null): MutableStateFlow<Boolean> {
+            val key = "${keyPrefix}_$suffix"
+            val value = when {
+                prefs.contains(key) -> prefs.getBoolean(key, default)
+                fallbackKey != null -> prefs.getBoolean(fallbackKey, default)
+                else -> prefs.getBoolean(key, default)
+            }
+            return MutableStateFlow(value)
+        }
+
+        private fun putStringValue(suffix: String, value: String?) {
+            prefs.edit().putString("${keyPrefix}_$suffix", value).apply()
+        }
+
+        private fun putIntValue(suffix: String, value: Int) {
+            prefs.edit().putInt("${keyPrefix}_$suffix", value).apply()
+        }
+
+        private fun putFloatValue(suffix: String, value: Float) {
+            prefs.edit().putFloat("${keyPrefix}_$suffix", value).apply()
+        }
+
+        private fun putBooleanValue(suffix: String, value: Boolean) {
+            prefs.edit().putBoolean("${keyPrefix}_$suffix", value).apply()
+        }
+
+        private val _backend = stringFlow("backend", PDF_BACKEND_OLLAMA).let {
+            MutableStateFlow((it.value ?: PDF_BACKEND_OLLAMA).let { backend ->
+                if (backend == PDF_BACKEND_LLAMA_SERVER) PDF_BACKEND_LLAMA_SERVER else PDF_BACKEND_OLLAMA
+            })
+        }
+        val backend = _backend.asStateFlow()
+        fun setBackend(value: String) {
+            val normalized = if (value == PDF_BACKEND_LLAMA_SERVER) PDF_BACKEND_LLAMA_SERVER else PDF_BACKEND_OLLAMA
+            putStringValue("backend", normalized)
+            _backend.value = normalized
+        }
+
+        private val _ollamaUrl = stringFlow("ollama_url", defaultOllamaUrl).let {
+            MutableStateFlow(it.value ?: defaultOllamaUrl)
+        }
+        val ollamaUrl = _ollamaUrl.asStateFlow()
+        fun setOllamaUrl(value: String) {
+            putStringValue("ollama_url", value)
+            _ollamaUrl.value = value
+        }
+
+        private val _llamaServerUrl = stringFlow("llama_server_url", defaultLlamaServerUrl).let {
+            MutableStateFlow(it.value ?: defaultLlamaServerUrl)
+        }
+        val llamaServerUrl = _llamaServerUrl.asStateFlow()
+        fun setLlamaServerUrl(value: String) {
+            putStringValue("llama_server_url", value)
+            _llamaServerUrl.value = value
+        }
+
+        private val _ollamaModel = stringFlow("ollama_model")
+        val ollamaModel = _ollamaModel.asStateFlow()
+        fun setOllamaModel(value: String?) {
+            putStringValue("ollama_model", value)
+            _ollamaModel.value = value
+        }
+
+        private val _thinkingEnabled = boolFlow("thinking_enabled", false, fallbackThinkingEnabledKey)
+        val thinkingEnabled = _thinkingEnabled.asStateFlow()
+        fun setThinkingEnabled(value: Boolean) {
+            putBooleanValue("thinking_enabled", value)
+            _thinkingEnabled.value = value
+        }
+
+        private val _llamaServerModelLabel = stringFlow("llama_server_model_label")
+        val llamaServerModelLabel = _llamaServerModelLabel.asStateFlow()
+        fun setLlamaServerModelLabel(value: String?) {
+            putStringValue("llama_server_model_label", value)
+            _llamaServerModelLabel.value = value
+        }
+
+        private val _llamaServerContextTokens = intFlow("llama_server_context_tokens", -1, -1..SUMMARY_CONTEXT_RANGE.last)
+        val llamaServerContextTokens = _llamaServerContextTokens.asStateFlow()
+        fun setLlamaServerContextTokens(value: Int?) {
+            val normalized = value ?: -1
+            putIntValue("llama_server_context_tokens", normalized)
+            _llamaServerContextTokens.value = normalized
+        }
+
+        private val _llamaServerContextLabel = stringFlow("llama_server_context_label")
+        val llamaServerContextLabel = _llamaServerContextLabel.asStateFlow()
+        fun setLlamaServerContextLabel(value: String?) {
+            putStringValue("llama_server_context_label", value)
+            _llamaServerContextLabel.value = value
+        }
+
+        private val _chunkContext = intMinOnlyFlow(
+            suffix = "chunk_context",
+            default = AIConstants.Defaults.CONTEXT_SIZE_PDF,
+            minValue = SUMMARY_CONTEXT_MIN,
+            fallbackKey = fallbackChunkContextKey
+        )
+        val chunkContext = _chunkContext.asStateFlow()
+        fun setChunkContext(value: Int) {
+            val clamped = value.coerceAtLeast(SUMMARY_CONTEXT_MIN)
+            putIntValue("chunk_context", clamped)
+            _chunkContext.value = clamped
+        }
+
+        private val _chunkMaxTokens = intMinOnlyFlow(
+            suffix = "chunk_max_tokens",
+            default = AIConstants.Defaults.MAX_TOKENS_PDF,
+            minValue = SUMMARY_MAX_TOKENS_MIN,
+            fallbackKey = fallbackChunkMaxTokensKey
+        )
+        val chunkMaxTokens = _chunkMaxTokens.asStateFlow()
+        fun setChunkMaxTokens(value: Int) {
+            val clamped = value.coerceAtLeast(SUMMARY_MAX_TOKENS_MIN)
+            putIntValue("chunk_max_tokens", clamped)
+            _chunkMaxTokens.value = clamped
+        }
+
+        private val _mergeContext = intMinOnlyFlow(
+            suffix = "merge_context",
+            default = _chunkContext.value,
+            minValue = SUMMARY_CONTEXT_MIN
+        )
+        val mergeContext = _mergeContext.asStateFlow()
+        fun setMergeContext(value: Int) {
+            val clamped = value.coerceAtLeast(SUMMARY_CONTEXT_MIN)
+            putIntValue("merge_context", clamped)
+            _mergeContext.value = clamped
+        }
+
+        private val _mergeMaxTokens = intMinOnlyFlow(
+            suffix = "merge_max_tokens",
+            default = _chunkMaxTokens.value,
+            minValue = SUMMARY_MAX_TOKENS_MIN
+        )
+        val mergeMaxTokens = _mergeMaxTokens.asStateFlow()
+        fun setMergeMaxTokens(value: Int) {
+            val clamped = value.coerceAtLeast(SUMMARY_MAX_TOKENS_MIN)
+            putIntValue("merge_max_tokens", clamped)
+            _mergeMaxTokens.value = clamped
+        }
+
+        private val _temperature = floatFlow(
+            suffix = "temperature",
+            default = AIConstants.Defaults.TEMPERATURE_PDF,
+            min = SUMMARY_TEMPERATURE_MIN,
+            max = SUMMARY_TEMPERATURE_MAX,
+            fallbackKey = fallbackTemperatureKey
+        )
+        val temperature = _temperature.asStateFlow()
+        fun setTemperature(value: Float) {
+            val clamped = value.coerceIn(SUMMARY_TEMPERATURE_MIN, SUMMARY_TEMPERATURE_MAX)
+            putFloatValue("temperature", clamped)
+            _temperature.value = clamped
+        }
+
+        private val _timeoutMinutes = intFlow(
+            suffix = "timeout_minutes",
+            default = SUMMARY_TIMEOUT_DISABLED,
+            range = SUMMARY_TIMEOUT_MINUTES_RANGE,
+            fallbackKey = fallbackTimeoutKey
+        )
+        val timeoutMinutes = _timeoutMinutes.asStateFlow()
+        fun setTimeoutMinutes(value: Int) {
+            val clamped = value.coerceIn(SUMMARY_TIMEOUT_MINUTES_RANGE)
+            putIntValue("timeout_minutes", clamped)
+            _timeoutMinutes.value = clamped
+        }
+
+        private val _targetLanguage = stringFlow(
+            suffix = "target_language",
+            default = DEFAULT_SUMMARY_TARGET_LANGUAGE,
+            fallbackKey = fallbackTargetLanguageKey
+        ).let { MutableStateFlow((it.value ?: DEFAULT_SUMMARY_TARGET_LANGUAGE).ifBlank { DEFAULT_SUMMARY_TARGET_LANGUAGE }) }
+        val targetLanguage = _targetLanguage.asStateFlow()
+        fun setTargetLanguage(value: String) {
+            val normalized = value.ifBlank { DEFAULT_SUMMARY_TARGET_LANGUAGE }
+            putStringValue("target_language", normalized)
+            _targetLanguage.value = normalized
+        }
+
+        private val _summaryPrompt = stringFlow("prompt", defaultSummaryPrompt, fallbackSummaryPromptKey)
+        val summaryPrompt = _summaryPrompt.asStateFlow()
+        fun setSummaryPrompt(value: String?) {
+            putStringValue("prompt", value)
+            _summaryPrompt.value = value
+        }
+
+        private val _mergePrompt = stringFlow("merge_prompt", defaultMergePrompt, fallbackMergePromptKey)
+        val mergePrompt = _mergePrompt.asStateFlow()
+        fun setMergePrompt(value: String?) {
+            putStringValue("merge_prompt", value)
+            _mergePrompt.value = value
+        }
+
+        fun snapshot(): RemoteSummarySettingsSnapshot {
+            return RemoteSummarySettingsSnapshot(
+                backend = backend.value,
+                ollamaUrl = ollamaUrl.value,
+                llamaServerUrl = llamaServerUrl.value,
+                ollamaModel = ollamaModel.value,
+                thinkingEnabled = thinkingEnabled.value,
+                llamaServerModelLabel = llamaServerModelLabel.value,
+                llamaServerContextTokens = llamaServerContextTokens.value,
+                llamaServerContextLabel = llamaServerContextLabel.value,
+                chunkContext = chunkContext.value,
+                chunkMaxTokens = chunkMaxTokens.value,
+                mergeContext = mergeContext.value,
+                mergeMaxTokens = mergeMaxTokens.value,
+                temperature = temperature.value,
+                timeoutMinutes = timeoutMinutes.value,
+                targetLanguage = targetLanguage.value,
+                summaryPrompt = summaryPrompt.value ?: defaultSummaryPrompt,
+                mergePrompt = mergePrompt.value ?: defaultMergePrompt
+            )
+        }
+    }
     
     // Selected LLM Model Path
     private val _selectedModelPath = MutableStateFlow(prefs.getString("selected_model_path", null))
@@ -27,7 +338,7 @@ class SettingsRepository(context: Context) {
     }
     
     // Context Size
-    private val _contextSize = MutableStateFlow(prefs.getInt("context_size", 8192))
+    private val _contextSize = MutableStateFlow(prefs.getInt("context_size", AIConstants.Defaults.CONTEXT_SIZE_LLM))
     val contextSize = _contextSize.asStateFlow()
     
     fun setContextSize(size: Int) {
@@ -51,6 +362,49 @@ class SettingsRepository(context: Context) {
     fun setTemperature(temp: Float) {
         prefs.edit().putFloat("temperature", temp).apply()
         _temperature.value = temp
+    }
+
+    // Auto Mode (Auto-approve plans and file writes)
+    private val _autoMode = MutableStateFlow(prefs.getBoolean("agent_auto_mode", false))
+    val autoMode = _autoMode.asStateFlow()
+
+    fun setAutoMode(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_auto_mode", enabled).apply()
+        _autoMode.value = enabled
+    }
+    
+    // Command Auto-Accept (Auto-approve run_command specifically)
+    private val _commandAutoAccept = MutableStateFlow(prefs.getBoolean("agent_command_auto_accept", false))
+    val commandAutoAccept = _commandAutoAccept.asStateFlow()
+    
+    fun setCommandAutoAccept(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_command_auto_accept", enabled).apply()
+        _commandAutoAccept.value = enabled
+    }
+    
+    // Agent backend: "ollama" or "llama-server"
+    private val _agentBackend = MutableStateFlow(prefs.getString("agent_backend", "ollama") ?: "ollama")
+    val agentBackend = _agentBackend.asStateFlow()
+    fun setAgentBackend(backend: String) {
+        prefs.edit().putString("agent_backend", backend).apply()
+        _agentBackend.value = backend
+    }
+    
+    // llama-server URL (used when backend is "llama-server")
+    private val _llamaServerUrl = MutableStateFlow(prefs.getString("llama_server_url", "http://localhost:8080") ?: "http://localhost:8080")
+    val llamaServerUrl = _llamaServerUrl.asStateFlow()
+    fun setLlamaServerUrl(url: String) {
+        prefs.edit().putString("llama_server_url", url).apply()
+        _llamaServerUrl.value = url
+    }
+
+    // Show Extra Output (thinking, tool calls, etc.)
+    private val _showExtraOutput = MutableStateFlow(prefs.getBoolean("agent_show_extra_output", true))
+    val showExtraOutput = _showExtraOutput.asStateFlow()
+
+    fun setShowExtraOutput(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_show_extra_output", enabled).apply()
+        _showExtraOutput.value = enabled
     }
     
     // Remote Access (allow connections from other devices)
@@ -97,6 +451,72 @@ class SettingsRepository(context: Context) {
         prefs.edit().putString("output_folder_uri", uri).apply()
         _outputFolderUri.value = uri
     }
+    
+    // Ollama URL (API endpoint)
+    private val _ollamaUrl = MutableStateFlow(prefs.getString("ollama_url", AIConstants.Urls.OLLAMA_DEFAULT) ?: AIConstants.Urls.OLLAMA_DEFAULT)
+    val ollamaUrl = _ollamaUrl.asStateFlow()
+    
+    fun setOllamaUrl(url: String) {
+        prefs.edit().putString("ollama_url", url).apply()
+        _ollamaUrl.value = url
+    }
+    
+    // Ollama use_mmap option (memory mapping for model loading)
+    private val _ollamaMmap = MutableStateFlow(prefs.getBoolean("ollama_mmap", false))
+    val ollamaMmap = _ollamaMmap.asStateFlow()
+    
+    fun setOllamaMmap(enabled: Boolean) {
+        prefs.edit().putBoolean("ollama_mmap", enabled).apply()
+        _ollamaMmap.value = enabled
+    }
+    
+    // Custom Flags for Llama.cpp (General Selector)
+    private val _customFlags = MutableStateFlow(prefs.getString("custom_flags", "") ?: "")
+    val customFlags = _customFlags.asStateFlow()
+    
+    fun setCustomFlags(flags: String) {
+        prefs.edit().putString("custom_flags", flags).apply()
+        _customFlags.value = flags
+    }
+    
+    // Track currently loaded Custom Command (ID) in General Selector
+    private val _loadedCommandId = MutableStateFlow(prefs.getLong("loaded_command_id", -1L))
+    val loadedCommandId = _loadedCommandId.asStateFlow()
+    
+    fun setLoadedCommandId(id: Long) {
+        prefs.edit().putLong("loaded_command_id", id).apply()
+        _loadedCommandId.value = id
+    }
+
+    // Custom command template for the general llama.cpp launcher.
+    private val _customCommandTemplate = MutableStateFlow(
+        prefs.getString("custom_command_template", "") ?: ""
+    )
+    val customCommandTemplate = _customCommandTemplate.asStateFlow()
+
+    fun setCustomCommandTemplate(template: String) {
+        prefs.edit().putString("custom_command_template", template).apply()
+        _customCommandTemplate.value = template
+    }
+    
+    // Ollama num_thread option (number of threads for inference)
+    private val _ollamaThreads = MutableStateFlow(prefs.getInt("ollama_threads", 4))
+    val ollamaThreads = _ollamaThreads.asStateFlow()
+    
+    fun setOllamaThreads(count: Int) {
+        prefs.edit().putInt("ollama_threads", count).apply()
+        _ollamaThreads.value = count
+    }
+    
+    // Ollama num_ctx option (context length in tokens)
+    private val _ollamaNumCtx = MutableStateFlow(prefs.getInt("ollama_num_ctx", AIConstants.Defaults.CONTEXT_SIZE_OLLAMA))
+    val ollamaNumCtx = _ollamaNumCtx.asStateFlow()
+    
+    fun setOllamaNumCtx(count: Int) {
+        prefs.edit().putInt("ollama_num_ctx", count).apply()
+        _ollamaNumCtx.value = count
+    }
+
     
     // ========== Stable Diffusion Thread Settings ==========
     
@@ -180,6 +600,44 @@ class SettingsRepository(context: Context) {
     }
     
     // ========== PDF Summary Settings ==========
+
+    val pdfSummarySettings = RemoteSummarySettingsGroup(
+        keyPrefix = "pdf_summary",
+        defaultSummaryPrompt = null,
+        defaultMergePrompt = null,
+        defaultLlamaServerUrl = PDF_LLAMA_SERVER_DEFAULT_URL,
+        fallbackChunkContextKey = "pdf_context_size",
+        fallbackChunkMaxTokensKey = "pdf_max_tokens",
+        fallbackTemperatureKey = "pdf_temperature",
+        fallbackTimeoutKey = "pdf_summary_timeout_minutes",
+        fallbackThinkingEnabledKey = "pdf_summary_thinking_enabled",
+        fallbackSummaryPromptKey = "pdf_summary_prompt",
+        fallbackMergePromptKey = "pdf_unification_prompt"
+    )
+
+    val pdfSummaryBackend = pdfSummarySettings.backend
+    fun setPdfSummaryBackend(backend: String) = pdfSummarySettings.setBackend(backend)
+
+    val pdfSummaryOllamaUrl = pdfSummarySettings.ollamaUrl
+    fun setPdfSummaryOllamaUrl(url: String) = pdfSummarySettings.setOllamaUrl(url)
+
+    val pdfSummaryLlamaServerUrl = pdfSummarySettings.llamaServerUrl
+    fun setPdfSummaryLlamaServerUrl(url: String) = pdfSummarySettings.setLlamaServerUrl(url)
+
+    val pdfSummaryOllamaModel = pdfSummarySettings.ollamaModel
+    fun setPdfSummaryOllamaModel(model: String?) = pdfSummarySettings.setOllamaModel(model)
+
+    val pdfSummaryThinkingEnabled = pdfSummarySettings.thinkingEnabled
+    fun setPdfSummaryThinkingEnabled(enabled: Boolean) = pdfSummarySettings.setThinkingEnabled(enabled)
+
+    val pdfSummaryLlamaServerModelLabel = pdfSummarySettings.llamaServerModelLabel
+    fun setPdfSummaryLlamaServerModelLabel(label: String?) = pdfSummarySettings.setLlamaServerModelLabel(label)
+
+    val pdfSummaryLlamaServerContextTokens = pdfSummarySettings.llamaServerContextTokens
+    fun setPdfSummaryLlamaServerContextTokens(tokens: Int?) = pdfSummarySettings.setLlamaServerContextTokens(tokens)
+
+    val pdfSummaryLlamaServerContextLabel = pdfSummarySettings.llamaServerContextLabel
+    fun setPdfSummaryLlamaServerContextLabel(label: String?) = pdfSummarySettings.setLlamaServerContextLabel(label)
     
     // PDF Summary model path (separate from chat model)
     private val _pdfModelPath = MutableStateFlow(prefs.getString("pdf_model_path", null))
@@ -190,52 +648,48 @@ class SettingsRepository(context: Context) {
     }
     
     // PDF Summary context size
-    private val _pdfContextSize = MutableStateFlow(prefs.getInt("pdf_context_size", 4096))
-    val pdfContextSize = _pdfContextSize.asStateFlow()
-    fun setPdfContextSize(size: Int) {
-        prefs.edit().putInt("pdf_context_size", size).apply()
-        _pdfContextSize.value = size
-    }
+    val pdfContextSize = pdfSummarySettings.chunkContext
+    fun setPdfContextSize(size: Int) = pdfSummarySettings.setChunkContext(size)
     
     // PDF Summary threads
-    private val _pdfThreads = MutableStateFlow(prefs.getInt("pdf_threads", 4))
+    private val _pdfThreads = MutableStateFlow(
+        prefs.getInt("pdf_threads", AIConstants.Defaults.THREAD_COUNT)
+            .coerceIn(PDF_THREADS_RANGE)
+    )
     val pdfThreads = _pdfThreads.asStateFlow()
     fun setPdfThreads(count: Int) {
-        prefs.edit().putInt("pdf_threads", count).apply()
-        _pdfThreads.value = count
+        val clamped = count.coerceIn(PDF_THREADS_RANGE)
+        prefs.edit().putInt("pdf_threads", clamped).apply()
+        _pdfThreads.value = clamped
     }
     
     // PDF Summary temperature
-    private val _pdfTemperature = MutableStateFlow(prefs.getFloat("pdf_temperature", 0.3f))
-    val pdfTemperature = _pdfTemperature.asStateFlow()
-    fun setPdfTemperature(temp: Float) {
-        prefs.edit().putFloat("pdf_temperature", temp).apply()
-        _pdfTemperature.value = temp
-    }
+    val pdfTemperature = pdfSummarySettings.temperature
+    fun setPdfTemperature(temp: Float) = pdfSummarySettings.setTemperature(temp)
     
     // PDF Summary max tokens
-    private val _pdfMaxTokens = MutableStateFlow(prefs.getInt("pdf_max_tokens", 1024))
-    val pdfMaxTokens = _pdfMaxTokens.asStateFlow()
-    fun setPdfMaxTokens(tokens: Int) {
-        prefs.edit().putInt("pdf_max_tokens", tokens).apply()
-        _pdfMaxTokens.value = tokens
-    }
+    val pdfMaxTokens = pdfSummarySettings.chunkMaxTokens
+    fun setPdfMaxTokens(tokens: Int) = pdfSummarySettings.setChunkMaxTokens(tokens)
+
+    val pdfMergeContextSize = pdfSummarySettings.mergeContext
+    fun setPdfMergeContextSize(size: Int) = pdfSummarySettings.setMergeContext(size)
+
+    val pdfMergeMaxTokens = pdfSummarySettings.mergeMaxTokens
+    fun setPdfMergeMaxTokens(tokens: Int) = pdfSummarySettings.setMergeMaxTokens(tokens)
+
+    val pdfSummaryTimeoutMinutes = pdfSummarySettings.timeoutMinutes
+    fun setPdfSummaryTimeoutMinutes(minutes: Int) = pdfSummarySettings.setTimeoutMinutes(minutes)
+
+    val pdfSummaryTargetLanguage = pdfSummarySettings.targetLanguage
+    fun setPdfSummaryTargetLanguage(value: String) = pdfSummarySettings.setTargetLanguage(value)
     
     // PDF Summary system prompt (for summarizing each chunk)
-    private val _pdfSummaryPrompt = MutableStateFlow(prefs.getString("pdf_summary_prompt", null))
-    val pdfSummaryPrompt = _pdfSummaryPrompt.asStateFlow()
-    fun setPdfSummaryPrompt(prompt: String?) {
-        prefs.edit().putString("pdf_summary_prompt", prompt).apply()
-        _pdfSummaryPrompt.value = prompt
-    }
+    val pdfSummaryPrompt = pdfSummarySettings.summaryPrompt
+    fun setPdfSummaryPrompt(prompt: String?) = pdfSummarySettings.setSummaryPrompt(prompt)
     
     // PDF Unification system prompt (for combining summaries)
-    private val _pdfUnificationPrompt = MutableStateFlow(prefs.getString("pdf_unification_prompt", null))
-    val pdfUnificationPrompt = _pdfUnificationPrompt.asStateFlow()
-    fun setPdfUnificationPrompt(prompt: String?) {
-        prefs.edit().putString("pdf_unification_prompt", prompt).apply()
-        _pdfUnificationPrompt.value = prompt
-    }
+    val pdfUnificationPrompt = pdfSummarySettings.mergePrompt
+    fun setPdfUnificationPrompt(prompt: String?) = pdfSummarySettings.setMergePrompt(prompt)
     
     // Welcome screen completion flag
     private val _hasCompletedWelcome = MutableStateFlow(prefs.getBoolean("has_completed_welcome", false))
@@ -313,6 +767,56 @@ class SettingsRepository(context: Context) {
         _serverKvCacheReuse.value = tokens
     }
     
+    // ========== Speculative Decoding Settings ==========
+    
+    // Enable speculative decoding globally
+    private val _speculativeEnabled = MutableStateFlow(prefs.getBoolean("speculative_enabled", false))
+    val speculativeEnabled = _speculativeEnabled.asStateFlow()
+    fun setSpeculativeEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("speculative_enabled", enabled).apply()
+        _speculativeEnabled.value = enabled
+    }
+    
+    // Draft model path for global setting
+    private val _draftModelPath = MutableStateFlow(prefs.getString("draft_model_path", null))
+    val draftModelPath = _draftModelPath.asStateFlow()
+    fun setDraftModelPath(path: String?) {
+        prefs.edit().putString("draft_model_path", path).apply()
+        _draftModelPath.value = path
+    }
+    
+    // Draft max tokens
+    private val _draftMaxTokens = MutableStateFlow(prefs.getInt("draft_max_tokens", 16))
+    val draftMaxTokens = _draftMaxTokens.asStateFlow()
+    fun setDraftMaxTokens(max: Int) {
+        prefs.edit().putInt("draft_max_tokens", max).apply()
+        _draftMaxTokens.value = max
+    }
+    
+    // Draft min tokens
+    private val _draftMinTokens = MutableStateFlow(prefs.getInt("draft_min_tokens", 0))
+    val draftMinTokens = _draftMinTokens.asStateFlow()
+    fun setDraftMinTokens(min: Int) {
+        prefs.edit().putInt("draft_min_tokens", min).apply()
+        _draftMinTokens.value = min
+    }
+    
+    // Draft p-min threshold
+    private val _draftPMin = MutableStateFlow(prefs.getFloat("draft_p_min", 0.75f))
+    val draftPMin = _draftPMin.asStateFlow()
+    fun setDraftPMin(pMin: Float) {
+        prefs.edit().putFloat("draft_p_min", pMin).apply()
+        _draftPMin.value = pMin
+    }
+    
+    // Flash Attention global flag
+    private val _flashAttentionEnabled = MutableStateFlow(prefs.getBoolean("flash_attention_enabled", false))
+    val flashAttentionEnabled = _flashAttentionEnabled.asStateFlow()
+    fun setFlashAttentionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("flash_attention_enabled", enabled).apply()
+        _flashAttentionEnabled.value = enabled
+    }
+    
     // PDF AI (llama-cli) KV Cache settings
     private val _pdfKvCacheEnabled = MutableStateFlow(prefs.getBoolean("pdf_kv_cache_enabled", false))
     val pdfKvCacheEnabled = _pdfKvCacheEnabled.asStateFlow()
@@ -365,7 +869,7 @@ class SettingsRepository(context: Context) {
         _fileServerFolderUri.value = uri
     }
     
-    private val _fileServerPort = MutableStateFlow(prefs.getInt("file_server_port", 9111))
+    private val _fileServerPort = MutableStateFlow(prefs.getInt("file_server_port", AIConstants.Ports.FILE_SERVER))
     val fileServerPort = _fileServerPort.asStateFlow()
     fun setFileServerPort(port: Int) {
         prefs.edit().putInt("file_server_port", port).apply()
@@ -478,7 +982,85 @@ class SettingsRepository(context: Context) {
         setLastLayerDistribution(null)
         setLastDistributionModelPath(null)
     }
-    
+
+    // ========== Video Summary Settings ==========
+
+    val videoSummarySettings = RemoteSummarySettingsGroup(
+        keyPrefix = "video_summary",
+        defaultSummaryPrompt = DEFAULT_TRANSCRIPT_SUMMARY_PROMPT,
+        defaultMergePrompt = DEFAULT_TRANSCRIPT_MERGE_PROMPT,
+        defaultLlamaServerUrl = PDF_LLAMA_SERVER_DEFAULT_URL
+    )
+
+    val videoSummaryBackend = videoSummarySettings.backend
+    fun setVideoSummaryBackend(backend: String) = videoSummarySettings.setBackend(backend)
+
+    val videoSummaryOllamaUrl = videoSummarySettings.ollamaUrl
+    fun setVideoSummaryOllamaUrl(url: String) = videoSummarySettings.setOllamaUrl(url)
+
+    val videoSummaryLlamaServerUrl = videoSummarySettings.llamaServerUrl
+    fun setVideoSummaryLlamaServerUrl(url: String) = videoSummarySettings.setLlamaServerUrl(url)
+
+    val videoSummaryOllamaModel = videoSummarySettings.ollamaModel
+    fun setVideoSummaryOllamaModel(model: String?) = videoSummarySettings.setOllamaModel(model)
+
+    val videoSummaryThinkingEnabled = videoSummarySettings.thinkingEnabled
+    fun setVideoSummaryThinkingEnabled(enabled: Boolean) = videoSummarySettings.setThinkingEnabled(enabled)
+
+    val videoSummaryLlamaServerModelLabel = videoSummarySettings.llamaServerModelLabel
+    fun setVideoSummaryLlamaServerModelLabel(label: String?) = videoSummarySettings.setLlamaServerModelLabel(label)
+
+    val videoSummaryLlamaServerContextTokens = videoSummarySettings.llamaServerContextTokens
+    fun setVideoSummaryLlamaServerContextTokens(tokens: Int?) = videoSummarySettings.setLlamaServerContextTokens(tokens)
+
+    val videoSummaryLlamaServerContextLabel = videoSummarySettings.llamaServerContextLabel
+    fun setVideoSummaryLlamaServerContextLabel(label: String?) = videoSummarySettings.setLlamaServerContextLabel(label)
+
+    val videoSummaryChunkContext = videoSummarySettings.chunkContext
+    fun setVideoSummaryChunkContext(size: Int) = videoSummarySettings.setChunkContext(size)
+
+    val videoSummaryChunkMaxTokens = videoSummarySettings.chunkMaxTokens
+    fun setVideoSummaryChunkMaxTokens(tokens: Int) = videoSummarySettings.setChunkMaxTokens(tokens)
+
+    val videoSummaryMergeContext = videoSummarySettings.mergeContext
+    fun setVideoSummaryMergeContext(size: Int) = videoSummarySettings.setMergeContext(size)
+
+    val videoSummaryMergeMaxTokens = videoSummarySettings.mergeMaxTokens
+    fun setVideoSummaryMergeMaxTokens(tokens: Int) = videoSummarySettings.setMergeMaxTokens(tokens)
+
+    val videoSummaryTemperature = videoSummarySettings.temperature
+    fun setVideoSummaryTemperature(temp: Float) = videoSummarySettings.setTemperature(temp)
+
+    val videoSummaryTimeoutMinutes = videoSummarySettings.timeoutMinutes
+    fun setVideoSummaryTimeoutMinutes(minutes: Int) = videoSummarySettings.setTimeoutMinutes(minutes)
+
+    val videoSummaryTargetLanguage = videoSummarySettings.targetLanguage
+    fun setVideoSummaryTargetLanguage(value: String) = videoSummarySettings.setTargetLanguage(value)
+
+    val videoSummaryPrompt = videoSummarySettings.summaryPrompt
+    fun setVideoSummaryPrompt(prompt: String?) = videoSummarySettings.setSummaryPrompt(prompt)
+
+    val videoSummaryMergePrompt = videoSummarySettings.mergePrompt
+    fun setVideoSummaryMergePrompt(prompt: String?) = videoSummarySettings.setMergePrompt(prompt)
+
+    private val _videoSummaryWhisperThreads = MutableStateFlow(prefs.getInt("video_summary_whisper_threads", 4))
+    val videoSummaryWhisperThreads = _videoSummaryWhisperThreads.asStateFlow()
+
+    fun setVideoSummaryWhisperThreads(count: Int) {
+        prefs.edit().putInt("video_summary_whisper_threads", count).apply()
+        _videoSummaryWhisperThreads.value = count
+    }
+
+    private val _videoSummaryWhisperLanguage = MutableStateFlow(
+        prefs.getString("video_summary_whisper_language", "auto") ?: "auto"
+    )
+    val videoSummaryWhisperLanguage = _videoSummaryWhisperLanguage.asStateFlow()
+
+    fun setVideoSummaryWhisperLanguage(lang: String) {
+        prefs.edit().putString("video_summary_whisper_language", lang).apply()
+        _videoSummaryWhisperLanguage.value = lang
+    }
+
     // ========== Workflow Settings (Transcribe+Summary) ==========
     
     private val _workflowWhisperModelPath = MutableStateFlow(prefs.getString("workflow_whisper_model", null))
@@ -520,28 +1102,738 @@ class SettingsRepository(context: Context) {
         prefs.edit().putString("workflow_whisper_language", lang).apply()
         _workflowWhisperLanguage.value = lang
     }
+
+    val workflowSummarySettings = RemoteSummarySettingsGroup(
+        keyPrefix = "workflow_summary",
+        defaultSummaryPrompt = DEFAULT_TRANSCRIPT_SUMMARY_PROMPT,
+        defaultMergePrompt = DEFAULT_TRANSCRIPT_MERGE_PROMPT,
+        defaultLlamaServerUrl = PDF_LLAMA_SERVER_DEFAULT_URL,
+        fallbackChunkContextKey = "workflow_context",
+        fallbackChunkMaxTokensKey = "workflow_max_tokens",
+        fallbackTemperatureKey = "workflow_temperature"
+    )
+
+    val workflowSummaryBackend = workflowSummarySettings.backend
+    fun setWorkflowSummaryBackend(backend: String) = workflowSummarySettings.setBackend(backend)
+
+    val workflowSummaryOllamaUrl = workflowSummarySettings.ollamaUrl
+    fun setWorkflowSummaryOllamaUrl(url: String) = workflowSummarySettings.setOllamaUrl(url)
+
+    val workflowSummaryLlamaServerUrl = workflowSummarySettings.llamaServerUrl
+    fun setWorkflowSummaryLlamaServerUrl(url: String) = workflowSummarySettings.setLlamaServerUrl(url)
+
+    val workflowSummaryOllamaModel = workflowSummarySettings.ollamaModel
+    fun setWorkflowSummaryOllamaModel(model: String?) = workflowSummarySettings.setOllamaModel(model)
+
+    val workflowSummaryThinkingEnabled = workflowSummarySettings.thinkingEnabled
+    fun setWorkflowSummaryThinkingEnabled(enabled: Boolean) = workflowSummarySettings.setThinkingEnabled(enabled)
+
+    val workflowSummaryLlamaServerModelLabel = workflowSummarySettings.llamaServerModelLabel
+    fun setWorkflowSummaryLlamaServerModelLabel(label: String?) = workflowSummarySettings.setLlamaServerModelLabel(label)
+
+    val workflowSummaryLlamaServerContextTokens = workflowSummarySettings.llamaServerContextTokens
+    fun setWorkflowSummaryLlamaServerContextTokens(tokens: Int?) = workflowSummarySettings.setLlamaServerContextTokens(tokens)
+
+    val workflowSummaryLlamaServerContextLabel = workflowSummarySettings.llamaServerContextLabel
+    fun setWorkflowSummaryLlamaServerContextLabel(label: String?) = workflowSummarySettings.setLlamaServerContextLabel(label)
+
+    val workflowContext = workflowSummarySettings.chunkContext
+    fun setWorkflowContext(size: Int) = workflowSummarySettings.setChunkContext(size)
+
+    val workflowTemperature = workflowSummarySettings.temperature
+    fun setWorkflowTemperature(temp: Float) = workflowSummarySettings.setTemperature(temp)
+
+    val workflowMaxTokens = workflowSummarySettings.chunkMaxTokens
+    fun setWorkflowMaxTokens(tokens: Int) = workflowSummarySettings.setChunkMaxTokens(tokens)
+
+    val workflowMergeContext = workflowSummarySettings.mergeContext
+    fun setWorkflowMergeContext(size: Int) = workflowSummarySettings.setMergeContext(size)
+
+    val workflowMergeMaxTokens = workflowSummarySettings.mergeMaxTokens
+    fun setWorkflowMergeMaxTokens(tokens: Int) = workflowSummarySettings.setMergeMaxTokens(tokens)
+
+    val workflowSummaryTimeoutMinutes = workflowSummarySettings.timeoutMinutes
+    fun setWorkflowSummaryTimeoutMinutes(minutes: Int) = workflowSummarySettings.setTimeoutMinutes(minutes)
+
+    val workflowSummaryTargetLanguage = workflowSummarySettings.targetLanguage
+    fun setWorkflowSummaryTargetLanguage(value: String) = workflowSummarySettings.setTargetLanguage(value)
+
+    val workflowSummaryPrompt = workflowSummarySettings.summaryPrompt
+    fun setWorkflowSummaryPrompt(prompt: String?) = workflowSummarySettings.setSummaryPrompt(prompt)
+
+    val workflowSummaryMergePrompt = workflowSummarySettings.mergePrompt
+    fun setWorkflowSummaryMergePrompt(prompt: String?) = workflowSummarySettings.setMergePrompt(prompt)
     
-    private val _workflowContext = MutableStateFlow(prefs.getInt("workflow_context", 2048))
-    val workflowContext = _workflowContext.asStateFlow()
+    // ========== Low Memory Mode (disable mmap for large models) ==========
     
-    fun setWorkflowContext(size: Int) {
-        prefs.edit().putInt("workflow_context", size).apply()
-        _workflowContext.value = size
+    /**
+     * When enabled, passes --no-mmap to llama.cpp, loading the entire model into RAM.
+     * This is SLOWER to start but can help on devices with limited virtual memory.
+     * Most users should keep this OFF since mmap allows running larger models by paging.
+     */
+    private val _lowMemoryMode = MutableStateFlow(prefs.getBoolean("low_memory_mode", false))
+    val lowMemoryMode = _lowMemoryMode.asStateFlow()
+    
+    fun setLowMemoryMode(enabled: Boolean) {
+        prefs.edit().putBoolean("low_memory_mode", enabled).apply()
+        _lowMemoryMode.value = enabled
     }
     
-    private val _workflowTemperature = MutableStateFlow(prefs.getFloat("workflow_temperature", 0.7f))
-    val workflowTemperature = _workflowTemperature.asStateFlow()
+    // ========== Termux Tool Network Visibility Settings ==========
+    // When enabled (true), tools bind to 0.0.0.0 (accessible from network)
+    // When disabled (false/default), tools bind to 127.0.0.1 (localhost only)
     
-    fun setWorkflowTemperature(temp: Float) {
-        prefs.edit().putFloat("workflow_temperature", temp).apply()
-        _workflowTemperature.value = temp
+    private val _ollamaNetworkVisible = MutableStateFlow(prefs.getBoolean("ollama_network_visible", false))
+    val ollamaNetworkVisible = _ollamaNetworkVisible.asStateFlow()
+    fun setOllamaNetworkVisible(enabled: Boolean) {
+        prefs.edit().putBoolean("ollama_network_visible", enabled).apply()
+        _ollamaNetworkVisible.value = enabled
     }
     
-    private val _workflowMaxTokens = MutableStateFlow(prefs.getInt("workflow_max_tokens", 300))
-    val workflowMaxTokens = _workflowMaxTokens.asStateFlow()
-    
-    fun setWorkflowMaxTokens(tokens: Int) {
-        prefs.edit().putInt("workflow_max_tokens", tokens).apply()
-        _workflowMaxTokens.value = tokens
+    private val _openWebUINetworkVisible = MutableStateFlow(prefs.getBoolean("open_webui_network_visible", false))
+    val openWebUINetworkVisible = _openWebUINetworkVisible.asStateFlow()
+    fun setOpenWebUINetworkVisible(enabled: Boolean) {
+        prefs.edit().putBoolean("open_webui_network_visible", enabled).apply()
+        _openWebUINetworkVisible.value = enabled
     }
+    
+    private val _bigAGINetworkVisible = MutableStateFlow(prefs.getBoolean("big_agi_network_visible", false))
+    val bigAGINetworkVisible = _bigAGINetworkVisible.asStateFlow()
+    fun setBigAGINetworkVisible(enabled: Boolean) {
+        prefs.edit().putBoolean("big_agi_network_visible", enabled).apply()
+        _bigAGINetworkVisible.value = enabled
+    }
+    
+    private val _oobaboogaNetworkVisible = MutableStateFlow(prefs.getBoolean("oobabooga_network_visible", false))
+    val oobaboogaNetworkVisible = _oobaboogaNetworkVisible.asStateFlow()
+    fun setOobaboogaNetworkVisible(enabled: Boolean) {
+        prefs.edit().putBoolean("oobabooga_network_visible", enabled).apply()
+        _oobaboogaNetworkVisible.value = enabled
+    }
+    
+    private val _fastsdcpuNetworkVisible = MutableStateFlow(prefs.getBoolean("fastsdcpu_network_visible", false))
+    val fastsdcpuNetworkVisible = _fastsdcpuNetworkVisible.asStateFlow()
+    fun setFastsdcpuNetworkVisible(enabled: Boolean) {
+        prefs.edit().putBoolean("fastsdcpu_network_visible", enabled).apply()
+        _fastsdcpuNetworkVisible.value = enabled
+    }
+    
+    private val _a1111NetworkVisible = MutableStateFlow(prefs.getBoolean("a1111_network_visible", false))
+    val a1111NetworkVisible = _a1111NetworkVisible.asStateFlow()
+    fun setA1111NetworkVisible(enabled: Boolean) {
+        prefs.edit().putBoolean("a1111_network_visible", enabled).apply()
+        _a1111NetworkVisible.value = enabled
+    }
+    
+    /**
+     * Get network visibility for a tool by ID
+     */
+    fun getToolNetworkVisible(toolId: String): Boolean {
+        return when (toolId) {
+            "ollama" -> _ollamaNetworkVisible.value
+            "open_webui" -> _openWebUINetworkVisible.value
+            "big_agi" -> _bigAGINetworkVisible.value
+            "oobabooga" -> _oobaboogaNetworkVisible.value
+            "fastsdcpu" -> _fastsdcpuNetworkVisible.value
+            "a1111" -> _a1111NetworkVisible.value
+            else -> false
+        }
+    }
+    
+    /**
+     * Set network visibility for a tool by ID
+     */
+    fun setToolNetworkVisible(toolId: String, enabled: Boolean) {
+        when (toolId) {
+            "ollama" -> setOllamaNetworkVisible(enabled)
+            "open_webui" -> setOpenWebUINetworkVisible(enabled)
+            "big_agi" -> setBigAGINetworkVisible(enabled)
+            "oobabooga" -> setOobaboogaNetworkVisible(enabled)
+            "fastsdcpu" -> setFastsdcpuNetworkVisible(enabled)
+            "a1111" -> setA1111NetworkVisible(enabled)
+        }
+    }
+    
+    // ========== AI Agent Per-Role Model Settings ==========
+    
+    // Orchestrator agent model (main agent that delegates)
+    private val _agentOrchestratorModel = MutableStateFlow(prefs.getString("agent_orchestrator_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val agentOrchestratorModel = _agentOrchestratorModel.asStateFlow()
+    fun setAgentOrchestratorModel(model: String) {
+        prefs.edit().putString("agent_orchestrator_model", model).apply()
+        _agentOrchestratorModel.value = model
+    }
+    
+    // Coder agent model (writes/edits code)
+    private val _agentCoderModel = MutableStateFlow(prefs.getString("agent_coder_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val agentCoderModel = _agentCoderModel.asStateFlow()
+    fun setAgentCoderModel(model: String) {
+        prefs.edit().putString("agent_coder_model", model).apply()
+        _agentCoderModel.value = model
+    }
+    
+    // Reviewer agent model (reviews code)
+    private val _agentReviewerModel = MutableStateFlow(prefs.getString("agent_reviewer_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val agentReviewerModel = _agentReviewerModel.asStateFlow()
+    fun setAgentReviewerModel(model: String) {
+        prefs.edit().putString("agent_reviewer_model", model).apply()
+        _agentReviewerModel.value = model
+    }
+    
+    // Executor agent model (runs commands)
+    private val _agentExecutorModel = MutableStateFlow(prefs.getString("agent_executor_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val agentExecutorModel = _agentExecutorModel.asStateFlow()
+    fun setAgentExecutorModel(model: String) {
+        prefs.edit().putString("agent_executor_model", model).apply()
+        _agentExecutorModel.value = model
+    }
+    
+    // Summarizer agent model
+    private val _agentSummarizerModel = MutableStateFlow(prefs.getString("agent_summarizer_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val agentSummarizerModel = _agentSummarizerModel.asStateFlow()
+    fun setAgentSummarizerModel(model: String) {
+        prefs.edit().putString("agent_summarizer_model", model).apply()
+        _agentSummarizerModel.value = model
+    }
+
+    // Summarizer Thinking
+    private val _agentSummarizerThinkingEnabled = MutableStateFlow(prefs.getBoolean("agent_summarizer_thinking_enabled", true))
+    val agentSummarizerThinkingEnabled = _agentSummarizerThinkingEnabled.asStateFlow()
+    fun setAgentSummarizerThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_summarizer_thinking_enabled", enabled).apply()
+        _agentSummarizerThinkingEnabled.value = enabled
+    }
+    
+    /**
+     * Get model for a specific agent role
+     */
+    fun getAgentModelForRole(role: String): String {
+        return when (role.uppercase()) {
+            "ORCHESTRATOR" -> _agentOrchestratorModel.value
+            "CODER" -> _agentCoderModel.value
+            "REVIEWER" -> _agentReviewerModel.value
+            "EXECUTOR" -> _agentExecutorModel.value
+            "SUMMARIZER" -> _agentSummarizerModel.value
+            else -> _agentOrchestratorModel.value
+        }
+    }
+    
+    /**
+     * Set model for a specific agent role
+     */
+    fun setAgentModelForRole(role: String, model: String) {
+        when (role.uppercase()) {
+            "ORCHESTRATOR" -> setAgentOrchestratorModel(model)
+            "CODER" -> setAgentCoderModel(model)
+            "REVIEWER" -> setAgentReviewerModel(model)
+            "EXECUTOR" -> setAgentExecutorModel(model)
+            "SUMMARIZER" -> setAgentSummarizerModel(model)
+        }
+    }
+
+    /**
+     * Get thinking enabled for a specific agent role
+     */
+    fun getAgentThinkingEnabledForRole(role: String): Boolean {
+        return when (role.uppercase()) {
+            "ORCHESTRATOR" -> _agentOrchestratorThinkingEnabled.value
+            "CODER" -> _agentCoderThinkingEnabled.value
+            "REVIEWER" -> _agentReviewerThinkingEnabled.value
+            "EXECUTOR" -> _agentExecutorThinkingEnabled.value
+            "SUMMARIZER" -> _agentSummarizerThinkingEnabled.value
+            "WEB_SEARCH" -> _agentWebSearchThinkingEnabled.value
+            "KIWIX" -> _agentKiwixThinkingEnabled.value
+            else -> _agentOrchestratorThinkingEnabled.value
+        }
+    }
+
+    /**
+     * Set thinking enabled for a specific agent role
+     */
+    fun setAgentThinkingEnabledForRole(role: String, enabled: Boolean) {
+        when (role.uppercase()) {
+            "ORCHESTRATOR" -> setAgentOrchestratorThinkingEnabled(enabled)
+            "CODER" -> setAgentCoderThinkingEnabled(enabled)
+            "REVIEWER" -> setAgentReviewerThinkingEnabled(enabled)
+            "EXECUTOR" -> setAgentExecutorThinkingEnabled(enabled)
+            "SUMMARIZER" -> setAgentSummarizerThinkingEnabled(enabled)
+            "WEB_SEARCH" -> setAgentWebSearchThinkingEnabled(enabled)
+            "KIWIX" -> setAgentKiwixThinkingEnabled(enabled)
+        }
+    }
+    
+    // Last active conversation ID for AI Agent
+    private val _lastAgentConversationId = MutableStateFlow(prefs.getLong("last_agent_conversation_id", -1L))
+    val lastAgentConversationId = _lastAgentConversationId.asStateFlow()
+    fun setLastAgentConversationId(id: Long) {
+        prefs.edit().putLong("last_agent_conversation_id", id).apply()
+        _lastAgentConversationId.value = id
+    }
+    
+    // ========== AI Agent Web Search Settings ==========
+    
+    // Web Search Enabled
+    private val _agentWebSearchEnabled = MutableStateFlow(prefs.getBoolean("agent_web_search_enabled", true))
+    val agentWebSearchEnabled = _agentWebSearchEnabled.asStateFlow()
+    fun setAgentWebSearchEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_web_search_enabled", enabled).apply()
+        _agentWebSearchEnabled.value = enabled
+    }
+    
+    // Web Search summarizer model
+    private val _agentWebSearchModel = MutableStateFlow(prefs.getString("agent_web_search_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val agentWebSearchModel = _agentWebSearchModel.asStateFlow()
+    fun setAgentWebSearchModel(model: String) {
+        prefs.edit().putString("agent_web_search_model", model).apply()
+        _agentWebSearchModel.value = model
+    }
+    
+    // Max results to fetch and summarize (1-8)
+    private val _agentWebSearchMaxResults = MutableStateFlow(prefs.getInt("agent_web_search_max_results", 3))
+    val agentWebSearchMaxResults = _agentWebSearchMaxResults.asStateFlow()
+    fun setAgentWebSearchMaxResults(count: Int) {
+        prefs.edit().putInt("agent_web_search_max_results", count.coerceAtLeast(1)).apply()
+        _agentWebSearchMaxResults.value = count.coerceAtLeast(1)
+    }
+    
+    // Max content chars to send to summarizer per page
+    private val _agentWebSearchMaxChars = MutableStateFlow(prefs.getInt("agent_web_search_max_chars", 2000))
+    val agentWebSearchMaxChars = _agentWebSearchMaxChars.asStateFlow()
+    fun setAgentWebSearchMaxChars(chars: Int) {
+        prefs.edit().putInt("agent_web_search_max_chars", chars.coerceAtLeast(100)).apply()
+        _agentWebSearchMaxChars.value = chars.coerceAtLeast(100)
+    }
+    
+    // Context size for web search summarizer LLM
+    private val _agentWebSearchNumCtx = MutableStateFlow(prefs.getInt("agent_web_search_num_ctx", 16384))
+    val agentWebSearchNumCtx = _agentWebSearchNumCtx.asStateFlow()
+    fun setAgentWebSearchNumCtx(size: Int) {
+        prefs.edit().putInt("agent_web_search_num_ctx", size).apply()
+        _agentWebSearchNumCtx.value = size
+    }
+
+    // Web Search Thinking
+    private val _agentWebSearchThinkingEnabled = MutableStateFlow(prefs.getBoolean("agent_web_search_thinking_enabled", true))
+    val agentWebSearchThinkingEnabled = _agentWebSearchThinkingEnabled.asStateFlow()
+    fun setAgentWebSearchThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_web_search_thinking_enabled", enabled).apply()
+        _agentWebSearchThinkingEnabled.value = enabled
+    }
+    
+    // ========== AI Agent Kiwix Search Settings ==========
+    
+    // Kiwix Search Enabled
+    private val _agentKiwixEnabled = MutableStateFlow(prefs.getBoolean("agent_kiwix_enabled", false))
+    val agentKiwixEnabled = _agentKiwixEnabled.asStateFlow()
+    fun setAgentKiwixEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_kiwix_enabled", enabled).apply()
+        _agentKiwixEnabled.value = enabled
+    }
+    
+    // Kiwix Server URL
+    private val _agentKiwixUrl = MutableStateFlow(prefs.getString("agent_kiwix_url", "http://127.0.0.1:8888") ?: "http://127.0.0.1:8888")
+    val agentKiwixUrl = _agentKiwixUrl.asStateFlow()
+    fun setAgentKiwixUrl(url: String) {
+        prefs.edit().putString("agent_kiwix_url", url).apply()
+        _agentKiwixUrl.value = url
+    }
+    
+    // Kiwix Search summarizer model
+    private val _agentKiwixModel = MutableStateFlow(prefs.getString("agent_kiwix_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val agentKiwixModel = _agentKiwixModel.asStateFlow()
+    fun setAgentKiwixModel(model: String) {
+        prefs.edit().putString("agent_kiwix_model", model).apply()
+        _agentKiwixModel.value = model
+    }
+    
+    // Kiwix Max results
+    private val _agentKiwixMaxResults = MutableStateFlow(prefs.getInt("agent_kiwix_max_results", 3))
+    val agentKiwixMaxResults = _agentKiwixMaxResults.asStateFlow()
+    fun setAgentKiwixMaxResults(count: Int) {
+        prefs.edit().putInt("agent_kiwix_max_results", count.coerceAtLeast(1)).apply()
+        _agentKiwixMaxResults.value = count.coerceAtLeast(1)
+    }
+    
+    // Kiwix Max content chars per page
+    private val _agentKiwixMaxChars = MutableStateFlow(prefs.getInt("agent_kiwix_max_chars", 2000))
+    val agentKiwixMaxChars = _agentKiwixMaxChars.asStateFlow()
+    fun setAgentKiwixMaxChars(chars: Int) {
+        prefs.edit().putInt("agent_kiwix_max_chars", chars.coerceAtLeast(100)).apply()
+        _agentKiwixMaxChars.value = chars.coerceAtLeast(100)
+    }
+    
+    // Context size for Kiwix summarizer LLM
+    private val _agentKiwixNumCtx = MutableStateFlow(prefs.getInt("agent_kiwix_num_ctx", 16384))
+    val agentKiwixNumCtx = _agentKiwixNumCtx.asStateFlow()
+    fun setAgentKiwixNumCtx(count: Int) {
+        prefs.edit().putInt("agent_kiwix_num_ctx", count).apply()
+        _agentKiwixNumCtx.value = count
+    }
+
+    // Kiwix Thinking
+    private val _agentKiwixThinkingEnabled = MutableStateFlow(prefs.getBoolean("agent_kiwix_thinking_enabled", true))
+    val agentKiwixThinkingEnabled = _agentKiwixThinkingEnabled.asStateFlow()
+    fun setAgentKiwixThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_kiwix_thinking_enabled", enabled).apply()
+        _agentKiwixThinkingEnabled.value = enabled
+    }
+    
+    // ========== Per-Agent Context Settings ==========
+    
+    private val _agentOrchestratorCtx = MutableStateFlow(prefs.getInt("agent_orchestrator_ctx", 16384))
+    val agentOrchestratorCtx = _agentOrchestratorCtx.asStateFlow()
+    fun setAgentOrchestratorCtx(size: Int) {
+        prefs.edit().putInt("agent_orchestrator_ctx", size).apply()
+        _agentOrchestratorCtx.value = size
+    }
+    
+    // Orchestrator Thinking
+    private val _agentOrchestratorThinkingEnabled = MutableStateFlow(prefs.getBoolean("agent_orchestrator_thinking_enabled", true))
+    val agentOrchestratorThinkingEnabled = _agentOrchestratorThinkingEnabled.asStateFlow()
+    fun setAgentOrchestratorThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_orchestrator_thinking_enabled", enabled).apply()
+        _agentOrchestratorThinkingEnabled.value = enabled
+    }
+    
+    private val _agentCoderCtx = MutableStateFlow(prefs.getInt("agent_coder_ctx", 16384))
+    val agentCoderCtx = _agentCoderCtx.asStateFlow()
+    fun setAgentCoderCtx(size: Int) {
+        prefs.edit().putInt("agent_coder_ctx", size).apply()
+        _agentCoderCtx.value = size
+    }
+    
+    // Coder Thinking
+    private val _agentCoderThinkingEnabled = MutableStateFlow(prefs.getBoolean("agent_coder_thinking_enabled", true))
+    val agentCoderThinkingEnabled = _agentCoderThinkingEnabled.asStateFlow()
+    fun setAgentCoderThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_coder_thinking_enabled", enabled).apply()
+        _agentCoderThinkingEnabled.value = enabled
+    }
+    
+    private val _agentReviewerCtx = MutableStateFlow(prefs.getInt("agent_reviewer_ctx", 16384))
+    val agentReviewerCtx = _agentReviewerCtx.asStateFlow()
+    fun setAgentReviewerCtx(size: Int) {
+        prefs.edit().putInt("agent_reviewer_ctx", size).apply()
+        _agentReviewerCtx.value = size
+    }
+    
+    // Reviewer Thinking
+    private val _agentReviewerThinkingEnabled = MutableStateFlow(prefs.getBoolean("agent_reviewer_thinking_enabled", true))
+    val agentReviewerThinkingEnabled = _agentReviewerThinkingEnabled.asStateFlow()
+    fun setAgentReviewerThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_reviewer_thinking_enabled", enabled).apply()
+        _agentReviewerThinkingEnabled.value = enabled
+    }
+    
+    private val _agentExecutorCtx = MutableStateFlow(prefs.getInt("agent_executor_ctx", 16384))
+    val agentExecutorCtx = _agentExecutorCtx.asStateFlow()
+    fun setAgentExecutorCtx(size: Int) {
+        prefs.edit().putInt("agent_executor_ctx", size).apply()
+        _agentExecutorCtx.value = size
+    }
+    
+    // Executor Thinking
+    private val _agentExecutorThinkingEnabled = MutableStateFlow(prefs.getBoolean("agent_executor_thinking_enabled", true))
+    val agentExecutorThinkingEnabled = _agentExecutorThinkingEnabled.asStateFlow()
+    fun setAgentExecutorThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_executor_thinking_enabled", enabled).apply()
+        _agentExecutorThinkingEnabled.value = enabled
+    }
+    
+    private val _agentSummarizerCtx = MutableStateFlow(prefs.getInt("agent_summarizer_ctx", 16384))
+    val agentSummarizerCtx = _agentSummarizerCtx.asStateFlow()
+    fun setAgentSummarizerCtx(size: Int) {
+        prefs.edit().putInt("agent_summarizer_ctx", size).apply()
+        _agentSummarizerCtx.value = size
+    }
+    
+    /**
+     * Get context size for a specific agent role
+     */
+    fun getAgentContextForRole(role: String): Int {
+        return when (role.uppercase()) {
+            "ORCHESTRATOR" -> _agentOrchestratorCtx.value
+            "CODER" -> _agentCoderCtx.value
+            "REVIEWER" -> _agentReviewerCtx.value
+            "EXECUTOR" -> _agentExecutorCtx.value
+            "SUMMARIZER" -> _agentSummarizerCtx.value
+            else -> _agentOrchestratorCtx.value
+        }
+    }
+
+    // ========== AI Agent Per-Role System Prompts ==========
+    
+    companion object {
+        const val PDF_BACKEND_OLLAMA = "ollama"
+        const val PDF_BACKEND_LLAMA_SERVER = "llama-server"
+        const val PDF_LLAMA_SERVER_DEFAULT_URL = "http://localhost:8080"
+        const val SUMMARY_CONTEXT_MIN = 1
+        val SUMMARY_CONTEXT_RANGE: IntRange = 2048..32768
+        val PDF_THREADS_RANGE: IntRange = 1..16
+        const val SUMMARY_MAX_TOKENS_MIN = 1
+        val SUMMARY_MAX_TOKENS_RANGE: IntRange = 64..65536
+        val SUMMARY_TIMEOUT_MINUTES_RANGE: IntRange = 0..120
+        const val SUMMARY_TEMPERATURE_MIN = 0f
+        const val SUMMARY_TEMPERATURE_MAX = 2f
+        const val SUMMARY_TIMEOUT_DISABLED = 0
+        const val DEFAULT_SUMMARY_TARGET_LANGUAGE = "source language"
+        val PDF_CONTEXT_RANGE: IntRange = SUMMARY_CONTEXT_RANGE
+        val PDF_MAX_TOKENS_RANGE: IntRange = SUMMARY_MAX_TOKENS_RANGE
+        val PDF_TIMEOUT_MINUTES_RANGE: IntRange = SUMMARY_TIMEOUT_MINUTES_RANGE
+        const val PDF_TEMPERATURE_MIN = SUMMARY_TEMPERATURE_MIN
+        const val PDF_TEMPERATURE_MAX = SUMMARY_TEMPERATURE_MAX
+        const val PDF_TIMEOUT_DISABLED = SUMMARY_TIMEOUT_DISABLED
+        const val DEFAULT_TRANSCRIPT_SUMMARY_PROMPT = """You are an expert transcription summarizer.
+
+Create a concise summary of the provided transcript excerpt.
+
+Instructions:
+- Capture the important facts, decisions, and topics discussed
+- Prefer bullet points when it improves clarity
+- Do not invent information that is not explicitly present
+- Write clearly for someone who has not read the full transcript"""
+        const val DEFAULT_TRANSCRIPT_MERGE_PROMPT = """You are an expert at merging transcript summaries.
+
+Combine the provided partial summaries into one coherent final summary.
+
+Instructions:
+- Preserve all unique relevant information
+- Remove repetition
+- Organize the result with a short title and clear sections
+- Do not add facts that are not explicitly present in the inputs"""
+        const val FALLBACK_ORCHESTRATOR_PROMPT = "You are the Orchestrator, the central brain of a multi-agent AI coding system."
+        const val FALLBACK_CODER_PROMPT = "You are the Coder agent. You specialize in software development and file manipulation."
+        const val FALLBACK_REVIEWER_PROMPT = "You are the Reviewer agent. Your purpose is to ensure code quality, security, and correctness."
+        const val FALLBACK_EXECUTOR_PROMPT = "You are the Executor agent. You are the bridge between the AI and the system shell."
+        const val FALLBACK_TAMA_PET_PROMPT = "You are a virtual pet. Your personality and responses depend on your current stats, growth stage, and mood. Be expressive and stay in character."
+        const val FALLBACK_TAMA_SUMMARIZER_PROMPT = "You are the Tama Summarizer. Your job is to summarize the recent conversation and events into a concise memory that helps the pet remember its owner and life."
+        const val FALLBACK_ADVENTURE_SYSTEM_PROMPT = """You are a master storyteller for dark fantasy text adventures.
+
+When generating a story schematic at the START of an adventure, mark these parameters clearly:
+- TOTAL_STAGES: (a number between 5 and 30)
+- STORY_THREAD: (the main narrative arc)
+- KEY_EVENTS: (major plot points)
+- POSSIBLE_ENDINGS: (ways the story could conclude)
+- TONE: (horror/mystery/action/etc)
+- DIFFICULTY: (how harsh consequences are)
+
+For each story stage:
+- Present the situation vividly and immersively
+- Describe the environment, atmosphere, and any characters
+- Create tension, mystery, and engagement
+- At the END of each stage, ALWAYS give the player 2-4 clear options to choose from
+- Example: "What do you do? A) Attack the creature B) Try to negotiate C) Flee into the darkness D) Search for another path"
+- The player can pick one of your options OR describe their own creative action
+
+The player's choices shape the story and its outcome. React meaningfully to their decisions.
+Be descriptive and immersive. Do not rush the story."""
+        const val FALLBACK_ADVENTURE_SUMMARIZER_PROMPT = """Summarize the adventure stage concisely. Include:
+- Key events that happened
+- Player's choice and its consequences
+- Current situation
+Keep it brief but capture essential details."""
+    }
+    
+    private val _agentOrchestratorPrompt = MutableStateFlow(prefs.getString("agent_orchestrator_prompt", null) ?: PromptUtils.getPrompt(context, PromptUtils.Keys.ORCHESTRATOR, FALLBACK_ORCHESTRATOR_PROMPT))
+    val agentOrchestratorPrompt = _agentOrchestratorPrompt.asStateFlow()
+    fun setAgentOrchestratorPrompt(prompt: String) {
+        prefs.edit().putString("agent_orchestrator_prompt", prompt).apply()
+        _agentOrchestratorPrompt.value = prompt
+    }
+    
+    private val _agentCoderPrompt = MutableStateFlow(prefs.getString("agent_coder_prompt", null) ?: PromptUtils.getPrompt(context, PromptUtils.Keys.CODER, FALLBACK_CODER_PROMPT))
+    val agentCoderPrompt = _agentCoderPrompt.asStateFlow()
+    fun setAgentCoderPrompt(prompt: String) {
+        prefs.edit().putString("agent_coder_prompt", prompt).apply()
+        _agentCoderPrompt.value = prompt
+    }
+    
+    private val _agentReviewerPrompt = MutableStateFlow(prefs.getString("agent_reviewer_prompt", null) ?: PromptUtils.getPrompt(context, PromptUtils.Keys.REVIEWER, FALLBACK_REVIEWER_PROMPT))
+    val agentReviewerPrompt = _agentReviewerPrompt.asStateFlow()
+    fun setAgentReviewerPrompt(prompt: String) {
+        prefs.edit().putString("agent_reviewer_prompt", prompt).apply()
+        _agentReviewerPrompt.value = prompt
+    }
+    
+    private val _agentExecutorPrompt = MutableStateFlow(prefs.getString("agent_executor_prompt", null) ?: PromptUtils.getPrompt(context, PromptUtils.Keys.EXECUTOR, FALLBACK_EXECUTOR_PROMPT))
+    val agentExecutorPrompt = _agentExecutorPrompt.asStateFlow()
+    fun setAgentExecutorPrompt(prompt: String) {
+        prefs.edit().putString("agent_executor_prompt", prompt).apply()
+        _agentExecutorPrompt.value = prompt
+    }
+    
+    private val _agentSummarizerPrompt = MutableStateFlow(prefs.getString("agent_summarizer_prompt", null) ?: PromptUtils.getPrompt(context, PromptUtils.Keys.SUMMARIZER, "You are the Summarizer agent."))
+    val agentSummarizerPrompt = _agentSummarizerPrompt.asStateFlow()
+    fun setAgentSummarizerPrompt(prompt: String) {
+        prefs.edit().putString("agent_summarizer_prompt", prompt).apply()
+        _agentSummarizerPrompt.value = prompt
+    }
+    
+    /**
+     * Get system prompt for a specific agent role
+     */
+    fun getAgentPromptForRole(role: String): String {
+        return when (role.uppercase()) {
+            "ORCHESTRATOR" -> _agentOrchestratorPrompt.value
+            "CODER" -> _agentCoderPrompt.value
+            "REVIEWER" -> _agentReviewerPrompt.value
+            "EXECUTOR" -> _agentExecutorPrompt.value
+            "SUMMARIZER" -> _agentSummarizerPrompt.value
+            else -> _agentOrchestratorPrompt.value
+        }
+    }
+    
+    /**
+     * Reset prompt to default for a specific role
+     */
+    fun resetAgentPromptToDefault(role: String) {
+        when (role.uppercase()) {
+            "ORCHESTRATOR" -> setAgentOrchestratorPrompt(PromptUtils.getPrompt(context, PromptUtils.Keys.ORCHESTRATOR, FALLBACK_ORCHESTRATOR_PROMPT))
+            "CODER" -> setAgentCoderPrompt(PromptUtils.getPrompt(context, PromptUtils.Keys.CODER, FALLBACK_CODER_PROMPT))
+            "REVIEWER" -> setAgentReviewerPrompt(PromptUtils.getPrompt(context, PromptUtils.Keys.REVIEWER, FALLBACK_REVIEWER_PROMPT))
+            "EXECUTOR" -> setAgentExecutorPrompt(PromptUtils.getPrompt(context, PromptUtils.Keys.EXECUTOR, FALLBACK_EXECUTOR_PROMPT))
+            "SUMMARIZER" -> setAgentSummarizerPrompt(PromptUtils.getPrompt(context, PromptUtils.Keys.SUMMARIZER, "You are the Summarizer agent."))
+            "TAMA_PET" -> setTamaPetPrompt(PromptUtils.getPrompt(context, PromptUtils.Keys.TAMA_PET, FALLBACK_TAMA_PET_PROMPT))
+            "TAMA_SUMMARIZER" -> setTamaSummarizerPrompt(PromptUtils.getPrompt(context, PromptUtils.Keys.TAMA_SUMMARIZER, FALLBACK_TAMA_SUMMARIZER_PROMPT))
+        }
+    }
+
+    // ========== Tama Virtual Pet AI Settings ==========
+
+    // Tama Pet LLM Model
+    private val _tamaPetModel = MutableStateFlow(prefs.getString("tama_pet_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val tamaPetModel = _tamaPetModel.asStateFlow()
+    fun setTamaPetModel(model: String) {
+        prefs.edit().putString("tama_pet_model", model).apply()
+        _tamaPetModel.value = model
+    }
+
+    // Tama Summarizer LLM Model
+    private val _tamaSummarizerModel = MutableStateFlow(prefs.getString("tama_summarizer_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val tamaSummarizerModel = _tamaSummarizerModel.asStateFlow()
+    fun setTamaSummarizerModel(model: String) {
+        prefs.edit().putString("tama_summarizer_model", model).apply()
+        _tamaSummarizerModel.value = model
+    }
+
+    // Tama Pet System Prompt
+    private val _tamaPetPrompt = MutableStateFlow(prefs.getString("tama_pet_prompt", null) ?: PromptUtils.getPrompt(context, PromptUtils.Keys.TAMA_PET, FALLBACK_TAMA_PET_PROMPT))
+    val tamaPetPrompt = _tamaPetPrompt.asStateFlow()
+    fun setTamaPetPrompt(prompt: String) {
+        prefs.edit().putString("tama_pet_prompt", prompt).apply()
+        _tamaPetPrompt.value = prompt
+    }
+
+    // Tama Summarizer System Prompt
+    private val _tamaSummarizerPrompt = MutableStateFlow(prefs.getString("tama_summarizer_prompt", null) ?: PromptUtils.getPrompt(context, PromptUtils.Keys.TAMA_SUMMARIZER, FALLBACK_TAMA_SUMMARIZER_PROMPT))
+    val tamaSummarizerPrompt = _tamaSummarizerPrompt.asStateFlow()
+    fun setTamaSummarizerPrompt(prompt: String) {
+        prefs.edit().putString("tama_summarizer_prompt", prompt).apply()
+        _tamaSummarizerPrompt.value = prompt
+    }
+
+    // ========== Tama Ollama (Isolated) Settings ==========
+
+    private val _tamaOllamaUrl = MutableStateFlow(prefs.getString("tama_ollama_url", AIConstants.Urls.OLLAMA_DEFAULT) ?: AIConstants.Urls.OLLAMA_DEFAULT)
+    val tamaOllamaUrl = _tamaOllamaUrl.asStateFlow()
+    fun setTamaOllamaUrl(url: String) {
+        prefs.edit().putString("tama_ollama_url", url).apply()
+        _tamaOllamaUrl.value = url
+    }
+
+    private val _tamaOllamaMmap = MutableStateFlow(prefs.getBoolean("tama_ollama_mmap", false))
+    val tamaOllamaMmap = _tamaOllamaMmap.asStateFlow()
+    fun setTamaOllamaMmap(enabled: Boolean) {
+        prefs.edit().putBoolean("tama_ollama_mmap", enabled).apply()
+        _tamaOllamaMmap.value = enabled
+    }
+
+    private val _tamaOllamaThreads = MutableStateFlow(prefs.getInt("tama_ollama_threads", 4))
+    val tamaOllamaThreads = _tamaOllamaThreads.asStateFlow()
+    fun setTamaOllamaThreads(count: Int) {
+        prefs.edit().putInt("tama_ollama_threads", count).apply()
+        _tamaOllamaThreads.value = count
+    }
+
+    private val _tamaOllamaNumCtx = MutableStateFlow(prefs.getInt("tama_ollama_num_ctx", 16384))
+    val tamaOllamaNumCtx = _tamaOllamaNumCtx.asStateFlow()
+    fun setTamaOllamaNumCtx(count: Int) {
+        prefs.edit().putInt("tama_ollama_num_ctx", count).apply()
+        _tamaOllamaNumCtx.value = count
+    }
+
+    // ========== Adventure Dungeon (Isolated) Settings ==========
+
+    // Adventure LLM Model
+    private val _adventureModel = MutableStateFlow(prefs.getString("adventure_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val adventureModel = _adventureModel.asStateFlow()
+    fun setAdventureModel(model: String) {
+        prefs.edit().putString("adventure_model", model).apply()
+        _adventureModel.value = model
+    }
+
+    // Adventure Summarizer LLM Model
+    private val _adventureSummarizerModel = MutableStateFlow(prefs.getString("adventure_summarizer_model", "qwen3.5:9b") ?: "qwen3.5:9b")
+    val adventureSummarizerModel = _adventureSummarizerModel.asStateFlow()
+    fun setAdventureSummarizerModel(model: String) {
+        prefs.edit().putString("adventure_summarizer_model", model).apply()
+        _adventureSummarizerModel.value = model
+    }
+
+    // Adventure System Prompt (editable by user)
+    private val _adventureSystemPrompt = MutableStateFlow(prefs.getString("adventure_system_prompt", null) ?: FALLBACK_ADVENTURE_SYSTEM_PROMPT)
+    val adventureSystemPrompt = _adventureSystemPrompt.asStateFlow()
+    fun setAdventureSystemPrompt(prompt: String) {
+        prefs.edit().putString("adventure_system_prompt", prompt).apply()
+        _adventureSystemPrompt.value = prompt
+    }
+
+    // Adventure Summarizer Prompt (editable by user)
+    private val _adventureSummarizerPrompt = MutableStateFlow(prefs.getString("adventure_summarizer_prompt", null) ?: FALLBACK_ADVENTURE_SUMMARIZER_PROMPT)
+    val adventureSummarizerPrompt = _adventureSummarizerPrompt.asStateFlow()
+    fun setAdventureSummarizerPrompt(prompt: String) {
+        prefs.edit().putString("adventure_summarizer_prompt", prompt).apply()
+        _adventureSummarizerPrompt.value = prompt
+    }
+
+    // Adventure Ollama URL (independent from Tama and Agent)
+    private val _adventureOllamaUrl = MutableStateFlow(prefs.getString("adventure_ollama_url", AIConstants.Urls.OLLAMA_DEFAULT) ?: AIConstants.Urls.OLLAMA_DEFAULT)
+    val adventureOllamaUrl = _adventureOllamaUrl.asStateFlow()
+    fun setAdventureOllamaUrl(url: String) {
+        prefs.edit().putString("adventure_ollama_url", url).apply()
+        _adventureOllamaUrl.value = url
+    }
+
+    // Adventure Ollama MMAP
+    private val _adventureOllamaMmap = MutableStateFlow(prefs.getBoolean("adventure_ollama_mmap", false))
+    val adventureOllamaMmap = _adventureOllamaMmap.asStateFlow()
+    fun setAdventureOllamaMmap(enabled: Boolean) {
+        prefs.edit().putBoolean("adventure_ollama_mmap", enabled).apply()
+        _adventureOllamaMmap.value = enabled
+    }
+
+    // Adventure Ollama Threads
+    private val _adventureOllamaThreads = MutableStateFlow(prefs.getInt("adventure_ollama_threads", 4))
+    val adventureOllamaThreads = _adventureOllamaThreads.asStateFlow()
+    fun setAdventureOllamaThreads(count: Int) {
+        prefs.edit().putInt("adventure_ollama_threads", count).apply()
+        _adventureOllamaThreads.value = count
+    }
+
+    // Adventure Ollama Context Size
+    private val _adventureOllamaNumCtx = MutableStateFlow(prefs.getInt("adventure_ollama_num_ctx", 16384))
+    val adventureOllamaNumCtx = _adventureOllamaNumCtx.asStateFlow()
+    fun setAdventureOllamaNumCtx(count: Int) {
+        prefs.edit().putInt("adventure_ollama_num_ctx", count).apply()
+        _adventureOllamaNumCtx.value = count
+    }
+
+    // Adventure Story Language
+    private val _adventureLanguage = MutableStateFlow(prefs.getString("adventure_language", "English") ?: "English")
+    val adventureLanguage = _adventureLanguage.asStateFlow()
+    fun setAdventureLanguage(language: String) {
+        prefs.edit().putString("adventure_language", language).apply()
+        _adventureLanguage.value = language
+    }
+
 }

@@ -33,6 +33,8 @@ import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import kotlinx.coroutines.launch
 import java.io.File
+import com.example.llamadroid.util.AssetPackManagerUtil
+import com.example.llamadroid.util.AssetPackManagerUtil.AssetPack
 
 /**
  * Audio Transcription Screen using WhisperCPP
@@ -43,6 +45,9 @@ fun AudioTranscriptionScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settingsRepo = remember { SettingsRepository(context) }
+    
+    // Check for required asset packs
+    
     val db = remember { AppDatabase.getDatabase(context) }
     
     // Service binding
@@ -100,12 +105,12 @@ fun AudioTranscriptionScreen(navController: NavController) {
                     // Will need extraction - set path and let user click transcribe
                     // For now, just set path - user can manually transcribe
                     selectedAudioPath = tempFile.absolutePath
-                    errorMessage = "Video file loaded. Audio extraction will happen on transcribe."
+                    errorMessage = context.getString(R.string.whisper_video_loaded_note)
                 } else {
                     selectedAudioPath = tempFile.absolutePath
                 }
             } catch (e: Exception) {
-                errorMessage = "Failed to load shared file: ${e.message}"
+                errorMessage = context.getString(R.string.whisper_error_shared_file, e.message)
             }
         }
     }
@@ -143,7 +148,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                 if (isVideo) {
                     // Extract audio from video using FFmpeg
                     isExtractingAudio = true
-                    extractionProgress = "Extracting audio from video..."
+                    extractionProgress = context.getString(R.string.whisper_extracting_audio)
                     
                     val binaryRepo = com.example.llamadroid.data.binary.BinaryRepository(context)
                     val ffmpegBinary = binaryRepo.getFFmpegBinary()
@@ -186,10 +191,10 @@ fun AudioTranscriptionScreen(navController: NavController) {
                         
                         if (exitCode == 0 && audioOutput.exists()) {
                             selectedAudioPath = audioOutput.absolutePath
-                            extractionProgress = "Audio extracted successfully!"
+                            extractionProgress = context.getString(R.string.whisper_extraction_success)
                             android.util.Log.d("AudioTranscription", "Audio extracted: ${audioOutput.length()} bytes")
                         } else {
-                            errorMessage = "Failed to extract audio (exit code: $exitCode)"
+                            errorMessage = context.getString(R.string.whisper_error_extraction, exitCode)
                             android.util.Log.e("AudioTranscription", "FFmpeg failed: $output")
                         }
                         tempFile.delete()
@@ -220,7 +225,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
         if (granted) {
             showRecordingDialog = true
         } else {
-            errorMessage = "Recording permission denied"
+            errorMessage = context.getString(R.string.whisper_error_permission)
         }
     }
     
@@ -282,7 +287,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                             onClick = { showModelPicker = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(selectedModelPath?.substringAfterLast("/") ?: "Select model")
+                            Text(selectedModelPath?.substringAfterLast("/") ?: stringResource(R.string.whisper_select_model))
                         }
                     }
                 }
@@ -296,7 +301,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Audio Source", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.whisper_source_label), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Row(
@@ -309,7 +314,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                         ) {
                             Icon(Icons.Default.List, contentDescription = null)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Audio/Video")
+                            Text(stringResource(R.string.whisper_media_btn))
                         }
                         
                         OutlinedButton(
@@ -320,7 +325,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Record")
+                            Text(stringResource(R.string.whisper_record_btn))
                         }
                     }
                     
@@ -343,7 +348,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                     if (selectedAudioPath != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Selected: ${selectedAudioPath!!.substringAfterLast("/")}",
+                            stringResource(R.string.whisper_selected_file, selectedAudioPath!!.substringAfterLast("/")),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -359,7 +364,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Settings", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.whisper_settings_label), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     // Language selection
@@ -369,10 +374,10 @@ fun AudioTranscriptionScreen(navController: NavController) {
                         onExpandedChange = { languageExpanded = it }
                     ) {
                         OutlinedTextField(
-                            value = WhisperLanguages.languages.find { it.first == selectedLanguage }?.second ?: "Auto-detect",
+                            value = WhisperLanguages.languages.find { it.first == selectedLanguage }?.second ?: stringResource(R.string.whisper_auto_detect),
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Language") },
+                            label = { Text(stringResource(R.string.whisper_language_label)) },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded) },
                             modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
@@ -400,7 +405,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Translate to English")
+                        Text(stringResource(R.string.whisper_translate_label))
                         Switch(
                             checked = translateToEnglish,
                             onCheckedChange = { translateToEnglish = it }
@@ -410,75 +415,96 @@ fun AudioTranscriptionScreen(navController: NavController) {
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     // Output formats
-                    Text("Output Formats", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.whisper_output_formats), style = MaterialTheme.typography.labelLarge)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        FilterChip(selected = outputTxt, onClick = { outputTxt = !outputTxt }, label = { Text("TXT") })
-                        FilterChip(selected = outputSrt, onClick = { outputSrt = !outputSrt }, label = { Text("SRT") })
-                        FilterChip(selected = outputVtt, onClick = { outputVtt = !outputVtt }, label = { Text("VTT") })
-                        FilterChip(selected = outputJson, onClick = { outputJson = !outputJson }, label = { Text("JSON") })
+                        FilterChip(selected = outputTxt, onClick = { outputTxt = !outputTxt }, label = { Text(stringResource(R.string.format_txt)) })
+                        FilterChip(selected = outputSrt, onClick = { outputSrt = !outputSrt }, label = { Text(stringResource(R.string.format_srt)) })
+                        FilterChip(selected = outputVtt, onClick = { outputVtt = !outputVtt }, label = { Text(stringResource(R.string.format_vtt)) })
+                        FilterChip(selected = outputJson, onClick = { outputJson = !outputJson }, label = { Text(stringResource(R.string.format_json)) })
                     }
                 }
             }
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Transcribe Button
-            Button(
-                onClick = {
-                    if (selectedModelPath == null) {
-                        errorMessage = "Please select a model"
-                        return@Button
-                    }
-                    if (selectedAudioPath == null) {
-                        errorMessage = "Please select an audio file"
-                        return@Button
-                    }
-                    
-                    val formats = mutableSetOf<WhisperOutputFormat>()
-                    if (outputTxt) formats.add(WhisperOutputFormat.TXT)
-                    if (outputSrt) formats.add(WhisperOutputFormat.SRT)
-                    if (outputVtt) formats.add(WhisperOutputFormat.VTT)
-                    if (outputJson) formats.add(WhisperOutputFormat.JSON)
-                    
-                    val config = WhisperConfig(
-                        modelPath = selectedModelPath!!,
-                        audioPath = selectedAudioPath!!,
-                        language = selectedLanguage,
-                        translate = translateToEnglish,
-                        outputFormats = formats,
-                        threads = threads
-                    )
-                    
-                    scope.launch {
-                        val result = whisperService?.transcribe(config)
-                        result?.fold(
-                            onSuccess = { transcriptionResult = it.text },
-                            onFailure = { errorMessage = it.message }
-                        )
-                    }
-                },
+            // Transcribe Button Row
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = whisperState == WhisperState.Idle || whisperState == WhisperState.Completed
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                when (whisperState) {
-                    is WhisperState.Converting -> {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Converting audio...")
+                Button(
+                    onClick = {
+                        if (selectedModelPath == null) {
+                            errorMessage = context.getString(R.string.whisper_error_no_model)
+                            return@Button
+                        }
+                        if (selectedAudioPath == null) {
+                            errorMessage = context.getString(R.string.whisper_error_no_audio)
+                            return@Button
+                        }
+                        
+                        val formats = mutableSetOf<WhisperOutputFormat>()
+                        if (outputTxt) formats.add(WhisperOutputFormat.TXT)
+                        if (outputSrt) formats.add(WhisperOutputFormat.SRT)
+                        if (outputVtt) formats.add(WhisperOutputFormat.VTT)
+                        if (outputJson) formats.add(WhisperOutputFormat.JSON)
+                        
+                        val config = WhisperConfig(
+                            modelPath = selectedModelPath!!,
+                            audioPath = selectedAudioPath!!,
+                            language = selectedLanguage,
+                            translate = translateToEnglish,
+                            outputFormats = formats,
+                            threads = threads
+                        )
+                        
+                        scope.launch {
+                            val result = whisperService?.transcribe(config)
+                            result?.fold(
+                                onSuccess = { transcriptionResult = it.text },
+                                onFailure = { errorMessage = it.message }
+                            )
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = whisperState == WhisperState.Idle || whisperState == WhisperState.Completed || whisperState is WhisperState.Error
+                ) {
+                    when (whisperState) {
+                        is WhisperState.Converting -> {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.whisper_status_converting))
+                        }
+                        is WhisperState.Transcribing -> {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.whisper_status_transcribing))
+                        }
+                        else -> {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.whisper_transcribe_btn))
+                        }
                     }
-                    is WhisperState.Transcribing -> {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Transcribing...")
-                    }
-                    else -> {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Transcribe")
+                }
+                
+                // Cancel button - visible when transcribing or converting
+                if (whisperState is WhisperState.Converting || whisperState is WhisperState.Transcribing) {
+                    OutlinedButton(
+                        onClick = {
+                            whisperService?.cancel()
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.action_cancel))
                     }
                 }
             }
@@ -513,9 +539,9 @@ fun AudioTranscriptionScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Transcription", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.whisper_result_label), style = MaterialTheme.typography.titleMedium)
                             IconButton(onClick = { /* TODO: Copy */ }) {
-                                Icon(Icons.Default.Share, contentDescription = "Copy")
+                                Icon(Icons.Default.Share, contentDescription = stringResource(R.string.action_copy))
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -530,7 +556,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
     if (showModelPicker) {
         AlertDialog(
             onDismissRequest = { showModelPicker = false },
-            title = { Text("Select Model") },
+            title = { Text(stringResource(R.string.whisper_select_model)) },
             text = {
                 Column {
                     whisperModels.forEach { model ->
@@ -548,7 +574,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
             },
             confirmButton = {
                 TextButton(onClick = { showModelPicker = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -571,7 +597,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                 }
                 showRecordingDialog = false
             },
-            title = { Text("Record Audio", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.whisper_record_title), fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -590,11 +616,11 @@ fun AudioTranscriptionScreen(navController: NavController) {
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     if (isRecording) {
-                        Text("Recording...", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.whisper_recording), color = MaterialTheme.colorScheme.error)
                     } else if (recordingSeconds > 0) {
-                        Text("Recording saved", color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.whisper_record_saved), color = MaterialTheme.colorScheme.primary)
                     } else {
-                        Text("Tap Start to begin recording")
+                        Text(stringResource(R.string.whisper_record_hint))
                     }
                 }
             },
@@ -612,10 +638,10 @@ fun AudioTranscriptionScreen(navController: NavController) {
                             showRecordingDialog = false
                             recordingSeconds = 0
                         } catch (e: Exception) {
-                            errorMessage = "Failed to save recording: ${e.message}"
+                            errorMessage = context.getString(R.string.whisper_error_save_recording, e.message)
                         }
                     }) {
-                        Text("Use Recording")
+                        Text(stringResource(R.string.whisper_use_recording))
                     }
                 } else if (!isRecording) {
                     // Start recording
@@ -635,11 +661,11 @@ fun AudioTranscriptionScreen(navController: NavController) {
                             mediaRecorder = recorder
                             isRecording = true
                         } catch (e: Exception) {
-                            errorMessage = "Failed to start recording: ${e.message}"
+                            errorMessage = context.getString(R.string.whisper_error_start_recording, e.message)
                             showRecordingDialog = false
                         }
                     }) {
-                        Text("Start")
+                        Text(stringResource(R.string.action_start))
                     }
                 } else {
                     // Stop recording
@@ -650,10 +676,10 @@ fun AudioTranscriptionScreen(navController: NavController) {
                             mediaRecorder = null
                             isRecording = false
                         } catch (e: Exception) {
-                            errorMessage = "Failed to stop recording: ${e.message}"
+                            errorMessage = context.getString(R.string.whisper_error_stop_recording, e.message)
                         }
                     }) {
-                        Text("Stop")
+                        Text(stringResource(R.string.action_stop))
                     }
                 }
             },
@@ -670,7 +696,7 @@ fun AudioTranscriptionScreen(navController: NavController) {
                     recordingSeconds = 0
                     showRecordingDialog = false
                 }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

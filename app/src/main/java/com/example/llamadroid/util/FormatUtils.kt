@@ -1,41 +1,51 @@
 package com.example.llamadroid.util
 
-/**
- * Shared formatting utilities used across the app
- */
+import android.content.Context
+import android.text.format.Formatter
+import java.util.Locale
+
 object FormatUtils {
     
     /**
-     * Format file size in human-readable format (B, KB, MB, GB)
+     * Helper for backward compatibility with existing code calling FormatUtils.formatFileSize
      */
-    fun formatFileSize(bytes: Long): String = when {
-        bytes >= 1_000_000_000 -> "%.1f GB".format(bytes / 1_000_000_000.0)
-        bytes >= 1_000_000 -> "%.1f MB".format(bytes / 1_000_000.0)
-        bytes >= 1_000 -> "%.1f KB".format(bytes / 1_000.0)
-        else -> "$bytes B"
+    fun formatFileSize(bytes: Long): String {
+        return Technical.formatBytes(bytes)
     }
     
     /**
-     * Format duration in human-readable format (e.g., "1h 23m 45s")
+     * For technical output (logs, configs, parsing).
+     * Always uses US locale for consistency (decimal points instead of commas).
      */
-    fun formatDuration(seconds: Long): String {
-        val hours = seconds / 3600
-        val minutes = (seconds % 3600) / 60
-        val secs = seconds % 60
+    object Technical {
+        fun formatBytes(bytes: Long): String {
+            return when {
+                bytes >= 1_000_000_000L -> String.format(Locale.US, "%.2f GB", bytes / 1_000_000_000.0)
+                bytes >= 1_000_000L -> String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+                bytes >= 1_000L -> String.format(Locale.US, "%.0f KB", bytes / 1_000.0)
+                else -> "$bytes B"
+            }
+        }
         
-        return when {
-            hours > 0 -> "${hours}h ${minutes}m ${secs}s"
-            minutes > 0 -> "${minutes}m ${secs}s"
-            else -> "${secs}s"
+        fun formatDecimal(value: Double, decimals: Int = 1): String {
+            return String.format(Locale.US, "%.${decimals}f", value)
         }
     }
     
     /**
-     * Format a number with thousand separators
+     * For user-facing display.
+     * Respects user locale settings.
      */
-    fun formatCount(count: Long): String = when {
-        count >= 1_000_000 -> "%.1fM".format(count / 1_000_000.0)
-        count >= 1_000 -> "%.1fK".format(count / 1_000.0)
-        else -> count.toString()
+    object Display {
+        fun formatBytes(context: Context, bytes: Long): String {
+            return Formatter.formatFileSize(context, bytes)
+        }
+        
+        fun formatDuration(seconds: Double): String {
+            val totalSeconds = seconds.toInt()
+            val mins = totalSeconds / 60
+            val secs = totalSeconds % 60
+            return String.format(Locale.getDefault(), "%d:%02d", mins, secs)
+        }
     }
 }

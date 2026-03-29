@@ -59,12 +59,35 @@ class DashboardViewModel(
     }
 
     fun startServer(context: Context, modelPath: String? = null) {
+        val settingsRepo = com.example.llamadroid.data.SettingsRepository(context)
         try {
             DebugLog.log("Dashboard: Starting server...")
             val intent = android.content.Intent(context, LlamaService::class.java).apply {
-                action = "START"
+                action = LlamaService.ACTION_START
                 // If modelPath is null, service should handle it (e.g., use default or show error)
-                putExtra("MODEL_PATH", modelPath ?: "")
+                putExtra(LlamaService.EXTRA_MODEL_PATH, modelPath ?: "")
+                putExtra(LlamaService.EXTRA_SETTINGS_PROFILE, LlamaService.SETTINGS_PROFILE_GENERAL)
+
+                // Pass global speculative decoding settings
+                if (settingsRepo.speculativeEnabled.value) {
+                    putExtra(LlamaService.EXTRA_DRAFT_MODEL_PATH, settingsRepo.draftModelPath.value)
+                    putExtra(LlamaService.EXTRA_DRAFT_MAX, settingsRepo.draftMaxTokens.value)
+                    putExtra(LlamaService.EXTRA_DRAFT_MIN, settingsRepo.draftMinTokens.value)
+                    putExtra(LlamaService.EXTRA_DRAFT_P_MIN, settingsRepo.draftPMin.value)
+                }
+
+                // Pass global flash attention setting
+                putExtra(LlamaService.EXTRA_FLASH_ATTENTION, settingsRepo.flashAttentionEnabled.value)
+                
+                // Pass custom flags and loaded command ID
+                putExtra(LlamaService.EXTRA_CUSTOM_FLAGS, settingsRepo.customFlags.value)
+                putExtra(LlamaService.EXTRA_COMMAND_TEMPLATE, settingsRepo.customCommandTemplate.value)
+                val loadedCmdId = settingsRepo.loadedCommandId.value
+                if (loadedCmdId != -1L) {
+                    // Just pass the ID as string so the service or UI knows what was loaded, 
+                    // or just pass it as a generic tracking property if needed.
+                    // For now, custom flags are what matters to the engine.
+                }
             }
             context.startForegroundService(intent)
             DebugLog.log("Dashboard: Intent sent")

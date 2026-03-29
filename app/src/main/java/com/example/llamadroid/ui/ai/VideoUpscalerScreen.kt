@@ -29,6 +29,8 @@ import com.example.llamadroid.R
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import java.io.File
+import com.example.llamadroid.util.AssetPackManagerUtil
+import com.example.llamadroid.util.AssetPackManagerUtil.AssetPack
 
 /**
  * Video Upscaler Screen using realsr-ncnn/realcugan-ncnn
@@ -39,6 +41,45 @@ fun VideoUpscalerScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settingsRepo = remember { SettingsRepository(context) }
+    
+    // Check for required asset packs
+    var hasRequiredAssets by remember {
+        mutableStateOf(
+            AssetPackManagerUtil.isReady(context, AssetPack.UPSCALER)
+        )
+    }
+    
+    var showDownloadDialog by remember { mutableStateOf(!hasRequiredAssets) }
+    
+    if (showDownloadDialog) {
+        com.example.llamadroid.ui.components.AssetDownloadDialog(
+            onDismiss = { 
+                // If dismissed without downloading, go back
+                if (!hasRequiredAssets) navController.popBackStack() 
+                showDownloadDialog = false 
+            },
+            onDownloadAll = {
+                hasRequiredAssets = true
+                showDownloadDialog = false
+            },
+            onSkip = {
+                navController.popBackStack()
+                showDownloadDialog = false
+            }
+        )
+        return
+    }
+    
+    if (!hasRequiredAssets) {
+        // Fallback if dialog is somehow bypassed but assets are missing
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Assets missing. Please restart to download.")
+        }
+        return
+    }
     
     // Service binding
     var upscalerService by remember { mutableStateOf<VideoUpscalerService?>(null) }
@@ -90,7 +131,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                 selectedVideoPath = tempFile.absolutePath
                 pendingSharedVideoPath = tempFile.absolutePath // Mark for video info retrieval
             } catch (e: Exception) {
-                errorMessage = "Failed to load shared video: ${e.message}"
+                errorMessage = context.getString(R.string.upscaler_error_shared_video, e.message)
             }
         }
     }
@@ -132,7 +173,7 @@ fun VideoUpscalerScreen(navController: NavController) {
             scope.launch {
                 upscalerService?.getVideoInfo(tempFile.absolutePath)?.fold(
                     onSuccess = { info -> videoInfo = info },
-                    onFailure = { errorMessage = "Could not read video info" }
+                    onFailure = { errorMessage = context.getString(R.string.upscaler_error_video_info) }
                 )
             }
         }
@@ -206,7 +247,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                         val outputWidth = info.width * selectedScale
                         val outputHeight = info.height * selectedScale
                         Text(
-                            "Output: ${outputWidth}x${outputHeight}",
+                            stringResource(R.string.upscaler_output_resolution, outputWidth, outputHeight),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
@@ -223,7 +264,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Engine", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.upscaler_engine_label), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Row(
@@ -254,7 +295,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Model", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.upscaler_model_label), style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     val modelsForEngine = UpscalerModels.getForEngine(selectedEngine)
@@ -278,7 +319,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Scale Factor", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.upscaler_scale_label), style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         
                         Row(
@@ -297,7 +338,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                         // Denoise (only for RealCUGAN with denoise support)
                         if (model.supportsDenoise) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Denoise Level", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.upscaler_denoise_label), style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             Row(
@@ -308,7 +349,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                                     FilterChip(
                                         selected = selectedDenoise == level,
                                         onClick = { selectedDenoise = level },
-                                        label = { Text(if (level == -1) "None" else level.toString()) }
+                                        label = { Text(if (level == -1) stringResource(R.string.upscaler_none) else level.toString()) }
                                     )
                                 }
                             }
@@ -331,8 +372,8 @@ fun VideoUpscalerScreen(navController: NavController) {
                             modifier = Modifier.padding(16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                "Upscaling ${state.current}/${state.total} frames",
+                             Text(
+                                stringResource(R.string.upscaler_status_frames, state.current, state.total),
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -341,7 +382,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("ETA: $eta", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.upscaler_eta, eta), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -349,13 +390,13 @@ fun VideoUpscalerScreen(navController: NavController) {
                 is VideoUpscalerState.ExtractingFrames -> {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Extracting frames...", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.upscaler_status_extracting), style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 is VideoUpscalerState.Rebuilding -> {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Rebuilding video with audio...", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.upscaler_status_rebuilding), style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 else -> {}
@@ -365,11 +406,11 @@ fun VideoUpscalerScreen(navController: NavController) {
             Button(
                 onClick = {
                     if (selectedVideoPath == null) {
-                        errorMessage = "Please select a video"
+                        errorMessage = context.getString(R.string.upscaler_error_no_video)
                         return@Button
                     }
                     if (selectedModel == null) {
-                        errorMessage = "Please select a model"
+                        errorMessage = context.getString(R.string.upscaler_error_no_model)
                         return@Button
                     }
                     
@@ -400,7 +441,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                                     try {
                                         val sourceFile = File(path)
                                         if (!sourceFile.exists()) {
-                                            errorMessage = "Upscaled file not found in cache"
+                                            errorMessage = context.getString(R.string.upscaler_error_not_found)
                                         } else {
                                             val treeUri = android.net.Uri.parse(outputFolder)
                                             val rootDoc = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, treeUri)
@@ -428,20 +469,20 @@ fun VideoUpscalerScreen(navController: NavController) {
                                             }
                                             
                                             if (!savedSuccessfully) {
-                                                errorMessage = "Could not save to output folder. Video saved in cache."
+                                                errorMessage = context.getString(R.string.upscaler_error_save_folder)
                                             }
                                         }
                                     } catch (e: Exception) {
-                                        errorMessage = "Save error: ${e.message}. Video may be in cache."
+                                        errorMessage = context.getString(R.string.upscaler_error_save_generic, e.message)
                                     }
                                 } else {
                                     // No output folder set - inform user
                                     savedSuccessfully = true
-                                    errorMessage = "No output folder set. Video saved to cache: $fileName"
+                                    errorMessage = context.getString(R.string.upscaler_error_no_folder, fileName)
                                 }
                                 
                                 if (savedSuccessfully && errorMessage == null) {
-                                    Toast.makeText(context, "Video saved to $savedPath", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, context.getString(R.string.upscaler_success_toast, savedPath), Toast.LENGTH_LONG).show()
                                 }
                             },
                             onFailure = { errorMessage = it.message }
@@ -455,7 +496,7 @@ fun VideoUpscalerScreen(navController: NavController) {
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Start Upscaling")
+                Text(stringResource(R.string.upscaler_start_btn))
             }
             
             // Cancel Button (when running)
@@ -467,7 +508,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                     onClick = { upscalerService?.cancel() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
             
@@ -491,7 +532,7 @@ fun VideoUpscalerScreen(navController: NavController) {
                     ) {
                         Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF4CAF50))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Video upscaled successfully!", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.upscaler_success_msg), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -540,10 +581,10 @@ private fun ModelOptionRow(
                 Badge { Text("${scale}x") }
             }
             if (model.isAnime) {
-                Badge(containerColor = MaterialTheme.colorScheme.secondary) { Text("anime") }
+                Badge(containerColor = MaterialTheme.colorScheme.secondary) { Text(stringResource(R.string.upscaler_badge_anime)) }
             }
             if (model.supportsDenoise) {
-                Badge(containerColor = MaterialTheme.colorScheme.tertiary) { Text("denoise") }
+                Badge(containerColor = MaterialTheme.colorScheme.tertiary) { Text(stringResource(R.string.upscaler_badge_denoise)) }
             }
         }
     }

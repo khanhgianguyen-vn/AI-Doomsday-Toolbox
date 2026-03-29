@@ -12,12 +12,29 @@ object DebugLog {
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     val logs = _logs.asStateFlow()
     
-    // Patterns to filter out (noisy server logs)
+    // Patterns to filter out (noisy server logs + sensitive build info)
     private val filterPatterns = listOf(
+        // Noisy server health checks
         "GET /health",
         "GET /props", 
         "log_server_r: request: GET /health",
-        "log_server_r: request: GET /props"
+        "log_server_r: request: GET /props",
+        // Sensitive build configuration info (security)
+        "configuration:",
+        "--prefix=",
+        "--cc=",
+        "--cxx=",
+        "--ar=",
+        "--ranlib=",
+        "--strip=",
+        "--sysroot=",
+        "--extra-cflags=",
+        "--extra-ldflags=",
+        "/home/",
+        "/Users/",
+        "/mnt/",
+        "prebuilt/linux",
+        "toolchains/llvm"
     )
     
     fun log(message: String) {

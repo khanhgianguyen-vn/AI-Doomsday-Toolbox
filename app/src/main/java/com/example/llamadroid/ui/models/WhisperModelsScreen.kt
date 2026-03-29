@@ -24,6 +24,8 @@ import com.example.llamadroid.service.WhisperModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import java.io.File
 
 /**
@@ -63,10 +65,10 @@ fun WhisperModelsScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Whisper Models") },
+                title = { Text(stringResource(R.string.whisper_models_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.kiwix_back))
                     }
                 }
             )
@@ -92,9 +94,9 @@ fun WhisperModelsScreen(navController: NavController) {
                     Icon(Icons.Default.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text("WhisperCPP Models", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.whisper_models_title), fontWeight = FontWeight.Bold)
                         Text(
-                            "Larger models = better accuracy, slower speed",
+                            stringResource(R.string.whisper_models_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -207,13 +209,13 @@ private fun WhisperModelCategory(
                         if (model.isEnglishOnly) {
                             Spacer(modifier = Modifier.width(4.dp))
                             Badge(containerColor = MaterialTheme.colorScheme.secondary) { 
-                                Text("EN", style = MaterialTheme.typography.labelSmall) 
+                                Text(stringResource(R.string.whisper_lang_en), style = MaterialTheme.typography.labelSmall) 
                             }
                         }
                         if (model.isQuantized) {
                             Spacer(modifier = Modifier.width(4.dp))
                             Badge(containerColor = MaterialTheme.colorScheme.tertiary) { 
-                                Text("Q", style = MaterialTheme.typography.labelSmall) 
+                                Text(stringResource(R.string.whisper_quant_q), style = MaterialTheme.typography.labelSmall) 
                             }
                         }
                     }
@@ -242,14 +244,14 @@ private fun WhisperModelCategory(
                         Row {
                             Icon(
                                 Icons.Default.Check,
-                                contentDescription = "Downloaded",
+                                contentDescription = stringResource(R.string.desc_downloaded),
                                 tint = Color(0xFF4CAF50)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(onClick = { onDelete(model) }) {
                                 Icon(
                                     Icons.Default.Delete,
-                                    contentDescription = "Delete",
+                                    contentDescription = stringResource(R.string.desc_delete),
                                     tint = MaterialTheme.colorScheme.error
                                 )
                             }
@@ -257,7 +259,7 @@ private fun WhisperModelCategory(
                     }
                     else -> {
                         IconButton(onClick = { onDownload(model) }) {
-                            Icon(Icons.Default.Add, contentDescription = "Download")
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.desc_download))
                         }
                     }
                 }

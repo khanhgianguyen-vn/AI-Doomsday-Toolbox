@@ -18,6 +18,8 @@ import androidx.navigation.NavController
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.SystemPromptEntity
+import androidx.compose.ui.res.stringResource
+import com.example.llamadroid.R
 import kotlinx.coroutines.launch
 
 /**
@@ -43,10 +45,10 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("System Prompts") },
+                title = { Text(stringResource(R.string.prompts_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 }
             )
@@ -62,7 +64,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
             // PDF Summary Section
             item {
                 Text(
-                    "📄 PDF Summary",
+                    stringResource(R.string.prompts_pdf_summary_section),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -80,13 +82,13 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            "Summary Prompt",
+                            stringResource(R.string.prompts_summary_label),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            pdfSummaryPrompt?.take(150)?.plus("...") ?: "Default: Summarizes extracted PDF text concisely",
+                            pdfSummaryPrompt?.take(150)?.plus("...") ?: stringResource(R.string.prompts_summary_default),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 4
@@ -99,11 +101,11 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                 newPromptContent = pdfSummaryPrompt ?: ""
                                 showAddDialog = true
                             }) {
-                                Text("Edit")
+                                Text(stringResource(R.string.action_edit))
                             }
                             if (pdfSummaryPrompt != null) {
                                 TextButton(onClick = { settingsRepo.setPdfSummaryPrompt(null) }) {
-                                    Text("Reset")
+                                    Text(stringResource(R.string.action_reset))
                                 }
                             }
                         }
@@ -123,13 +125,13 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            "Unification Prompt",
+                            stringResource(R.string.prompts_unification_label),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            pdfUnificationPrompt?.take(150)?.plus("...") ?: "Default: Combines chunk summaries into a cohesive document summary",
+                            pdfUnificationPrompt?.take(150)?.plus("...") ?: stringResource(R.string.prompts_unification_default),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 4
@@ -142,11 +144,11 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                 newPromptContent = pdfUnificationPrompt ?: ""
                                 showAddDialog = true
                             }) {
-                                Text("Edit")
+                                Text(stringResource(R.string.action_edit))
                             }
                             if (pdfUnificationPrompt != null) {
                                 TextButton(onClick = { settingsRepo.setPdfUnificationPrompt(null) }) {
-                                    Text("Reset")
+                                    Text(stringResource(R.string.action_reset))
                                 }
                             }
                         }
@@ -163,7 +165,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "💾 Saved Custom Prompts",
+                        stringResource(R.string.prompts_saved_section),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -174,7 +176,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                         editingPrompt = null
                         showAddDialog = true
                     }) {
-                        Icon(Icons.Default.Add, "Add Prompt")
+                        Icon(Icons.Default.Add, stringResource(R.string.prompts_add_prompt_desc))
                     }
                 }
             }
@@ -194,7 +196,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                 .padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("No custom prompts saved", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.prompts_no_custom), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(8.dp))
                             OutlinedButton(onClick = {
                                 promptCategory = "custom"
@@ -204,7 +206,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                             }) {
                                 Icon(Icons.Default.Add, null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Create Prompt")
+                                Text(stringResource(R.string.prompts_create_btn))
                             }
                         }
                     }
@@ -233,7 +235,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                         },
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Icon(Icons.Default.Create, "Edit", modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Default.Create, stringResource(R.string.action_edit), modifier = Modifier.size(18.dp))
                                     }
                                     IconButton(
                                         onClick = {
@@ -245,7 +247,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                     ) {
                                         Icon(
                                             Icons.Default.Delete, 
-                                            "Delete", 
+                                            stringResource(R.string.action_delete), 
                                             modifier = Modifier.size(18.dp),
                                             tint = MaterialTheme.colorScheme.error
                                         )
@@ -262,7 +264,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             // Apply buttons row
-                            Text("Apply as:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.prompts_apply_as), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -274,7 +276,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                     },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text(if (selectedPromptId == prompt.id) "✓ Selected" else "Select", maxLines = 1)
+                                    Text(if (selectedPromptId == prompt.id) stringResource(R.string.prompts_selected) else stringResource(R.string.prompts_select), maxLines = 1)
                                 }
                                 OutlinedButton(
                                     onClick = { 
@@ -282,7 +284,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                     },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("PDF Sum", maxLines = 1)
+                                    Text(stringResource(R.string.prompts_pdf_sum_btn), maxLines = 1)
                                 }
                                 OutlinedButton(
                                     onClick = { 
@@ -290,7 +292,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                                     },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("PDF Unify", maxLines = 1)
+                                    Text(stringResource(R.string.prompts_pdf_unify_btn), maxLines = 1)
                                 }
                             }
                         }
@@ -310,8 +312,8 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
             title = { 
                 Text(
                     when {
-                        editingPrompt != null -> "Edit Prompt"
-                        else -> "New Custom Prompt"
+                        editingPrompt != null -> stringResource(R.string.prompts_edit_title)
+                        else -> stringResource(R.string.prompts_new_title)
                     }
                 ) 
             },
@@ -320,7 +322,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                     OutlinedTextField(
                         value = newPromptName,
                         onValueChange = { newPromptName = it },
-                        label = { Text("Name") },
+                        label = { Text(stringResource(R.string.prompts_name_label)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -328,7 +330,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                     OutlinedTextField(
                         value = newPromptContent,
                         onValueChange = { newPromptContent = it },
-                        label = { Text("Prompt Content") },
+                        label = { Text(stringResource(R.string.prompts_content_label)) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 150.dp),
@@ -374,7 +376,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                         else -> newPromptName.isNotBlank() && newPromptContent.isNotBlank()
                     }
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.action_save))
                 }
             },
             dismissButton = {
@@ -382,7 +384,7 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
                     showAddDialog = false
                     editingPrompt = null
                 }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

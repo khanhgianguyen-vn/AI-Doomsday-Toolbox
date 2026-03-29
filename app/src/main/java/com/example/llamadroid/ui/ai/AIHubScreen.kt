@@ -79,6 +79,16 @@ fun AIHubScreen(navController: NavController) {
             route = Screen.VideoUpscaler.route
         ),
         AIToolItem(
+            emoji = "🔤",
+            title = stringResource(R.string.subtitle_burn_title),
+            description = stringResource(R.string.subtitle_burn_desc),
+            gradientColors = listOf(
+                Color(0xFFFF9800).copy(alpha = 0.15f),
+                Color(0xFFF57C00).copy(alpha = 0.3f)
+            ),
+            route = Screen.SubtitleBurn.route
+        ),
+        AIToolItem(
             emoji = "📄",
             title = stringResource(R.string.ai_pdf_tools),
             description = stringResource(R.string.ai_pdf_tools_desc),
@@ -100,13 +110,73 @@ fun AIHubScreen(navController: NavController) {
         ),
         AIToolItem(
             emoji = "⚙️",
-            title = "Workflows",
-            description = "Chain AI operations",
+            title = stringResource(R.string.hub_workflows),
+            description = stringResource(R.string.hub_workflows_desc),
             gradientColors = listOf(
                 Color(0xFF607D8B).copy(alpha = 0.15f),
                 Color(0xFF455A64).copy(alpha = 0.3f)
             ),
             route = Screen.Workflows.route
+        ),
+        AIToolItem(
+            emoji = "⚡",
+            title = stringResource(R.string.hub_benchmark),
+            description = stringResource(R.string.hub_benchmark_desc),
+            gradientColors = listOf(
+                Color(0xFFFFEB3B).copy(alpha = 0.15f),
+                Color(0xFFFBC02D).copy(alpha = 0.3f)
+            ),
+            route = Screen.Benchmark.route
+        ),
+        AIToolItem(
+            emoji = "📊",
+            title = stringResource(R.string.hub_dataset),
+            description = stringResource(R.string.hub_dataset_desc),
+            gradientColors = listOf(
+                Color(0xFF00BCD4).copy(alpha = 0.15f),
+                Color(0xFF0097A7).copy(alpha = 0.3f)
+            ),
+            route = Screen.Dataset.route
+        ),
+        AIToolItem(
+            emoji = "🖥️",
+            title = stringResource(R.string.hub_termux),
+            description = stringResource(R.string.hub_termux_desc),
+            gradientColors = listOf(
+                Color(0xFF37474F).copy(alpha = 0.15f),
+                Color(0xFF263238).copy(alpha = 0.3f)
+            ),
+            route = Screen.Termux.route
+        ),
+        AIToolItem(
+            emoji = "🤖",
+            title = stringResource(R.string.hub_agent),
+            description = stringResource(R.string.hub_agent_desc),
+            gradientColors = listOf(
+                Color(0xFF673AB7).copy(alpha = 0.15f),
+                Color(0xFF512DA8).copy(alpha = 0.3f)
+            ),
+            route = Screen.Agent.route
+        ),
+        AIToolItem(
+            emoji = "🦙",
+            title = stringResource(R.string.ollama_title),
+            description = stringResource(R.string.ollama_desc),
+            gradientColors = listOf(
+                Color(0xFF000000).copy(alpha = 0.15f),
+                Color(0xFF333333).copy(alpha = 0.3f)
+            ),
+            route = Screen.OllamaManager.route
+        ),
+        AIToolItem(
+            emoji = "🐍",
+            title = stringResource(R.string.llama_client_title),
+            description = stringResource(R.string.llama_client_desc),
+            gradientColors = listOf(
+                Color(0xFFFF5722).copy(alpha = 0.15f),
+                Color(0xFFFF8A65).copy(alpha = 0.3f)
+            ),
+            route = Screen.LlamaServerList.route
         )
     )
 

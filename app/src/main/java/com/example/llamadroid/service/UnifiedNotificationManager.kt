@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.llamadroid.MainActivity
+import com.example.llamadroid.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.ConcurrentHashMap
@@ -51,7 +52,10 @@ object UnifiedNotificationManager {
         FILE_SERVER("📂", "File Server"),
         MODEL_SHARE("🔁", "Model Share"),
         LLAMA_SERVER("🦙", "LLM Server"),
-        ZIM_SHARE("📚", "ZIM File Share")
+        LLAMA_CLIENT("💭", "Llama Chat"),
+        ZIM_SHARE("📚", "ZIM File Share"),
+        BENCHMARK("⚡", "Benchmark"),
+        AGENT("🤖", "AI Agent")
     }
     
     // Active tasks
@@ -322,7 +326,10 @@ object UnifiedNotificationManager {
             TaskType.FILE_SERVER -> android.R.drawable.ic_menu_share
             TaskType.MODEL_SHARE -> android.R.drawable.ic_menu_upload
             TaskType.LLAMA_SERVER -> android.R.drawable.ic_menu_manage
+            TaskType.LLAMA_CLIENT -> android.R.drawable.ic_menu_send
             TaskType.ZIM_SHARE -> android.R.drawable.ic_menu_share
+            TaskType.BENCHMARK -> android.R.drawable.ic_menu_compass
+            TaskType.AGENT -> android.R.drawable.ic_menu_manage
         }
         
         val builder = NotificationCompat.Builder(appContext, CHANNEL_ID)
@@ -443,14 +450,30 @@ object UnifiedNotificationManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        return NotificationCompat.Builder(appContext, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .setContentTitle("${task.type.emoji} ${task.title}")
             .setContentText(task.progressText)
             .setProgress(100, (task.progress * 100).toInt(), false)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .build()
+        if (task.type == TaskType.AGENT) {
+            val stopIntent = Intent(appContext, AgentForegroundService::class.java).apply {
+                action = AgentForegroundService.ACTION_STOP_ALL_RUNTIME
+            }
+            val stopPendingIntent = PendingIntent.getService(
+                appContext,
+                taskId + 10_000,
+                stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                android.R.drawable.ic_media_pause,
+                appContext.getString(R.string.action_stop),
+                stopPendingIntent
+            )
+        }
+        return builder.build()
     }
     
     /**

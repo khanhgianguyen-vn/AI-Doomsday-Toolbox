@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,11 +23,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.ZimEntity
@@ -36,6 +39,8 @@ import com.example.llamadroid.data.model.ZimRepository
 import com.example.llamadroid.util.FormatUtils
 import com.example.llamadroid.service.DownloadService
 import kotlinx.coroutines.launch
+import com.example.llamadroid.util.AssetPackManagerUtil
+import com.example.llamadroid.util.AssetPackManagerUtil.AssetPack
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +52,7 @@ fun ZimManagerScreen(navController: NavController) {
     val repo = remember { ZimRepository(context, db.zimDao()) }
     val settings = remember { SettingsRepository(context) }
     
+    
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Installed", "Catalog")
     
@@ -56,10 +62,10 @@ fun ZimManagerScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("ZIM Library") },
+                title = { Text(stringResource(R.string.zim_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 }
             )
@@ -71,7 +77,12 @@ fun ZimManagerScreen(navController: NavController) {
                 .padding(padding)
         ) {
             // Tab Row - 4 tabs (Settings moved to main Settings screen)
-            val tabs = listOf("Installed", "Catalog", "Downloads", "Share")
+            val tabs = listOf(
+                stringResource(R.string.zim_tab_installed),
+                stringResource(R.string.zim_tab_catalog),
+                stringResource(R.string.zim_tab_downloads),
+                stringResource(R.string.zim_tab_share)
+            )
             ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 edgePadding = 0.dp
@@ -126,15 +137,14 @@ private fun FolderSetupScreen(
                 )
                 
                 Text(
-                    "Select ZIM Storage Folder",
+                    stringResource(R.string.zim_storage_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
                 
                 Text(
-                    "Choose where to store downloaded ZIM files. " +
-                    "ZIM files can be large (100MB - 90GB), so select a folder with enough space.",
+                    stringResource(R.string.zim_storage_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -148,11 +158,11 @@ private fun FolderSetupScreen(
                 ) {
                     Icon(Icons.Default.Add, null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Select Folder")
+                    Text(stringResource(R.string.zim_select_folder))
                 }
                 
                 TextButton(onClick = onSkip) {
-                    Text("Skip for now (use internal storage)")
+                    Text(stringResource(R.string.zim_skip_internal))
                 }
             }
         }
@@ -248,14 +258,14 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                         finalPath = resolvedPath
                         wasCopied = false
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "Using reference: $filename", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.zim_using_ref, filename), android.widget.Toast.LENGTH_SHORT).show()
                         }
                         com.example.llamadroid.util.DebugLog.log("[ZIM] Using direct path: $resolvedPath")
                     } else {
                         // Fallback: copy to app storage
                         val destFile = File(zimDir, filename)
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "Copying $filename...", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.zim_copying, filename), android.widget.Toast.LENGTH_SHORT).show()
                         }
                         context.contentResolver.openInputStream(it)?.use { input ->
                             java.io.FileOutputStream(destFile).use { output ->
@@ -275,7 +285,7 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                         filename = filename,
                         path = finalPath,
                         title = filename.substringBeforeLast("."),
-                        description = if (wasCopied) "Imported (copied)" else "Imported (reference)",
+                        description = if (wasCopied) context.getString(R.string.zim_imported_copied) else context.getString(R.string.zim_imported_ref),
                         language = "unknown",
                         sizeBytes = fileSize,
                         articleCount = 0,
@@ -290,13 +300,16 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                     db.zimDao().insertZim(zimEntity)
                     
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        val msg = if (wasCopied) "Imported (copied): $filename" else "Imported (reference): $filename"
+                        val msg = if (wasCopied) 
+                            context.getString(R.string.zim_import_success_copied, filename) 
+                        else 
+                            context.getString(R.string.zim_import_success_ref, filename)
                         android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
                     com.example.llamadroid.util.DebugLog.log("[ZIM] Import failed: ${e.message}")
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Import failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.zim_import_failed, e.message), android.widget.Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -310,7 +323,7 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                 val sourceFile = File(zim.path)
                 if (!sourceFile.exists()) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "File not found", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.zim_file_not_found), android.widget.Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
@@ -328,7 +341,7 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                     
                     if (uri != null) {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "Exporting to Downloads...", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.zim_exporting), android.widget.Toast.LENGTH_SHORT).show()
                         }
                         
                         resolver.openOutputStream(uri)?.use { output ->
@@ -343,7 +356,7 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                         resolver.update(uri, contentValues, null, null)
                         
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            android.widget.Toast.makeText(context, "Exported to Downloads: ${zim.filename}", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.zim_exported_success, zim.filename), android.widget.Toast.LENGTH_SHORT).show()
                         }
                         
                         com.example.llamadroid.util.DebugLog.log("[ZIM] Exported: ${zim.filename} to Downloads")
@@ -354,13 +367,13 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                     val destFile = File(downloadsDir, zim.filename)
                     
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Exporting to Downloads...", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.zim_exporting), android.widget.Toast.LENGTH_SHORT).show()
                     }
                     
                     sourceFile.copyTo(destFile, overwrite = true)
                     
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(context, "Exported to Downloads: ${zim.filename}", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.zim_exported_success, zim.filename), android.widget.Toast.LENGTH_SHORT).show()
                     }
                     
                     com.example.llamadroid.util.DebugLog.log("[ZIM] Exported: ${zim.filename} to Downloads (legacy)")
@@ -368,7 +381,7 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
             } catch (e: Exception) {
                 com.example.llamadroid.util.DebugLog.log("[ZIM] Export failed: ${e.message}")
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                    android.widget.Toast.makeText(context, context.getString(R.string.zim_export_failed, e.message), android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -384,21 +397,21 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    Icons.Default.List,
+                    Icon(
+                        Icons.AutoMirrored.Filled.List,
                     contentDescription = null,
                     modifier = Modifier.size(80.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    "No ZIM files installed",
+                    stringResource(R.string.zim_no_installed),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Browse the catalog to download offline content",
+                    stringResource(R.string.zim_browse_catalog),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -445,25 +458,25 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                 .padding(16.dp),
             containerColor = MaterialTheme.colorScheme.primary
         ) {
-            Icon(Icons.Default.Add, "Import ZIM")
+            Icon(Icons.Default.Add, stringResource(R.string.zim_import_desc))
         }
         
         // Rename Dialog
         if (showRenameDialog && zimToRename != null) {
             AlertDialog(
                 onDismissRequest = { showRenameDialog = false },
-                title = { Text("Rename ZIM") },
+                title = { Text(stringResource(R.string.zim_rename_title)) },
                 text = {
                     Column {
                         OutlinedTextField(
                             value = newZimName,
                             onValueChange = { newZimName = it },
-                            label = { Text("New name") },
+                            label = { Text(stringResource(R.string.zim_new_name_label)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
-                            "Extension .zim will be kept",
+                            stringResource(R.string.zim_rename_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp)
@@ -478,10 +491,10 @@ fun InstalledZimsTab(repo: ZimRepository, navController: NavController) {
                             }
                             showRenameDialog = false
                         }
-                    ) { Text("Rename") }
+                    ) { Text(stringResource(R.string.zim_action_rename)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
+                    TextButton(onClick = { showRenameDialog = false }) { Text(stringResource(R.string.action_cancel)) }
                 }
             )
         }
@@ -538,14 +551,14 @@ fun ZimShareDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Share ${zim.title}") },
+        title = { Text(stringResource(R.string.zim_share_title, zim.title)) },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "To share ZIM files over the network:",
+                    stringResource(R.string.zim_share_network_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -553,10 +566,10 @@ fun ZimShareDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Column(modifier = Modifier.padding(start = 8.dp)) {
-                    Text("1. Open the Kiwix Viewer", style = MaterialTheme.typography.bodySmall)
-                    Text("2. The server will start automatically", style = MaterialTheme.typography.bodySmall)
-                    Text("3. Enable LAN access in Settings", style = MaterialTheme.typography.bodySmall)
-                    Text("4. Other devices can connect to:", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.zim_share_step1), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.zim_share_step2), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.zim_share_step3), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.zim_share_step4), style = MaterialTheme.typography.bodySmall)
                 }
                 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -568,7 +581,7 @@ fun ZimShareDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = if (ipAddress != null) "http://$ipAddress:8888" else "Connect to WiFi",
+                        text = if (ipAddress != null) "http://$ipAddress:8888" else stringResource(R.string.zim_connect_wifi),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(12.dp),
@@ -578,7 +591,7 @@ fun ZimShareDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
         }
     )
 }
@@ -612,7 +625,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                 isLoading = false
             },
             onFailure = { e ->
-                errorMessage = "Failed to load catalog: ${e.message}"
+                errorMessage = context.getString(R.string.zim_error_prefix, e.message)
                 isLoading = false
             }
         )
@@ -630,7 +643,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search ZIMs...") },
+                placeholder = { Text(stringResource(R.string.zim_search_placeholder)) },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 singleLine = true,
                 modifier = Modifier.weight(1f)
@@ -639,7 +652,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
             // Language dropdown
             Box {
                 OutlinedButton(onClick = { languageExpanded = true }) {
-                    Text(selectedLanguage.uppercase())
+                    Text(getLocalizedLanguageName(selectedLanguage))
                 }
                 DropdownMenu(
                     expanded = languageExpanded,
@@ -647,7 +660,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                 ) {
                     KiwixCatalogClient.LANGUAGE_OPTIONS.forEach { (code, name) ->
                         DropdownMenuItem(
-                            text = { Text(name) },
+                            text = { Text(getLocalizedLanguageName(code)) },
                             onClick = {
                                 selectedLanguage = code
                                 languageExpanded = false
@@ -668,7 +681,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Loading catalog...")
+                        Text(stringResource(R.string.zim_loading_catalog))
                     }
                 }
             }
@@ -685,10 +698,10 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Error: $errorMessage")
+                        Text(stringResource(R.string.zim_error_prefix, errorMessage ?: ""))
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(onClick = { searchQuery = searchQuery }) {
-                            Text("Retry")
+                            Text(stringResource(R.string.zim_retry))
                         }
                     }
                 }
@@ -698,7 +711,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No results found")
+                    Text(stringResource(R.string.zim_no_results))
                 }
             }
             else -> {
@@ -729,7 +742,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                                 
                                 val request = android.app.DownloadManager.Request(android.net.Uri.parse(entry.url))
                                     .setTitle(entry.title)
-                                    .setDescription("Downloading ZIM file")
+                                    .setDescription(context.getString(R.string.zim_downloading_desc))
                                     .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                                     .setAllowedOverMetered(true)
                                     .setAllowedOverRoaming(false)
@@ -764,7 +777,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                                     
                                     android.widget.Toast.makeText(
                                         context,
-                                        "Downloading: ${entry.title}",
+                                        context.getString(R.string.zim_downloading_toast, entry.title),
                                         android.widget.Toast.LENGTH_SHORT
                                     ).show()
                                     
@@ -772,7 +785,7 @@ fun CatalogTab(repo: ZimRepository, zimFolderUri: String?) {
                                 } catch (e: Exception) {
                                     android.widget.Toast.makeText(
                                         context,
-                                        "Download failed: ${e.message}",
+                                        context.getString(R.string.zim_download_failed, e.message),
                                         android.widget.Toast.LENGTH_LONG
                                     ).show()
                                     com.example.llamadroid.util.DebugLog.log("[KIWIX] Download failed: ${e.message}")
@@ -837,7 +850,7 @@ fun ZimCard(
                     )
                     if (zim.articleCount > 0) {
                         Text(
-                            "${zim.articleCount} articles",
+                            stringResource(R.string.zim_articles_count, zim.articleCount.toInt()),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
@@ -848,30 +861,30 @@ fun ZimCard(
                 // More options menu
                 Box {
                     IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, "More options")
+                        Icon(Icons.Default.MoreVert, stringResource(R.string.zim_more_options))
                     }
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Rename") },
+                            text = { Text(stringResource(R.string.zim_menu_rename)) },
                             leadingIcon = { Icon(Icons.Default.Edit, null) },
                             onClick = { showMenu = false; onRename() }
                         )
                         DropdownMenuItem(
-                            text = { Text("Export to Downloads") },
+                            text = { Text(stringResource(R.string.zim_menu_export)) },
                             leadingIcon = { Icon(Icons.Default.Share, null) },
                             onClick = { showMenu = false; onExport() }
                         )
                         DropdownMenuItem(
-                            text = { Text("Share over Network") },
+                            text = { Text(stringResource(R.string.zim_menu_share)) },
                             leadingIcon = { Icon(Icons.Default.Share, null) },
                             onClick = { showMenu = false; onShare() }
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
-                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            text = { Text(stringResource(R.string.zim_menu_delete), color = MaterialTheme.colorScheme.error) },
                             leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                             onClick = { showMenu = false; onDelete() }
                         )
@@ -910,7 +923,7 @@ fun CatalogEntryCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 // Show size and language inline
                 Text(
-                    "${entry.language.uppercase()} • ${if (entry.size > 0) FormatUtils.formatFileSize(entry.size) else "Size unknown"}",
+                    "${entry.language.uppercase()} • ${if (entry.size > 0) FormatUtils.formatFileSize(entry.size) else stringResource(R.string.zim_size_unknown)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
@@ -927,7 +940,7 @@ fun CatalogEntryCard(
             FilledTonalButton(onClick = onDownload) {
                 Icon(Icons.Default.KeyboardArrowDown, null)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Get")
+                Text(stringResource(R.string.zim_get))
             }
         }
     }
@@ -966,12 +979,12 @@ fun DownloadingTab() {
                     tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                 )
                 Text(
-                    "No active downloads",
+                    stringResource(R.string.zim_no_active_downloads),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "Download ZIMs from the Catalog tab",
+                    stringResource(R.string.zim_active_downloads_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -1031,7 +1044,7 @@ fun DownloadingTab() {
                         ) {
                             Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Cancel Download")
+                            Text(stringResource(R.string.zim_cancel_download))
                         }
                     }
                 }
@@ -1126,19 +1139,19 @@ fun ZimShareTab() {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        if (isRunning) "Sharing ZIM Files" else "ZIM File Server",
+                        if (isRunning) stringResource(R.string.zim_sharing_title) else stringResource(R.string.zim_file_server_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "${installedZims.size} ZIM file(s) available for download",
+                        stringResource(R.string.zim_available_count, installedZims.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (isRunning && activeDownloads > 0) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "📥 $activeDownloads active download(s)",
+                            stringResource(R.string.zim_active_downloads_count, activeDownloads),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -1167,7 +1180,7 @@ fun ZimShareTab() {
                             null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isRunning) "Stop Server" else "Start File Server (Port 8087)")
+                        Text(if (isRunning) stringResource(R.string.zim_stop_server) else stringResource(R.string.zim_start_server))
                     }
                 }
             }
@@ -1187,7 +1200,7 @@ fun ZimShareTab() {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "📲 Scan to Download ZIM Files",
+                            stringResource(R.string.zim_scan_to_download),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -1214,7 +1227,7 @@ fun ZimShareTab() {
                                         qrBitmaps[ip]?.let { bitmap ->
                                             Image(
                                                 bitmap = bitmap.asImageBitmap(),
-                                                contentDescription = "QR for $url",
+                                                contentDescription = stringResource(R.string.zim_qr_content_desc, url),
                                                 modifier = Modifier
                                                     .size(120.dp)
                                                     .padding(8.dp)
@@ -1235,7 +1248,7 @@ fun ZimShareTab() {
                         
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            "Open any URL in a browser to download ZIM files",
+                            stringResource(R.string.zim_open_url_browser),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -1248,7 +1261,7 @@ fun ZimShareTab() {
         // Info
         item {
             Text(
-                "Share ZIM files with other devices on your network. They can download files directly from this device.",
+                stringResource(R.string.zim_network_share_info),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -1317,14 +1330,14 @@ fun KiwixSettingsTab(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Storage",
+                        stringResource(R.string.zim_storage_header),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     Text(
-                        "ZIM files are stored in the app's internal storage for fast access by the Kiwix server.",
+                        stringResource(R.string.zim_storage_info),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1332,7 +1345,7 @@ fun KiwixSettingsTab(
                     
                     val zimDir = File(context.getExternalFilesDir(null), "zim_downloads")
                     Text(
-                        "Path: ${zimDir.absolutePath}",
+                        stringResource(R.string.zim_path_label, zimDir.absolutePath),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -1350,7 +1363,7 @@ fun KiwixSettingsTab(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Kiwix Server",
+                        stringResource(R.string.zim_server_header),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -1363,15 +1376,15 @@ fun KiwixSettingsTab(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "LAN Access",
+                                stringResource(R.string.zim_lan_access),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
                                 if (kiwixRemoteAccess) 
-                                    "Server accessible from other devices (0.0.0.0)" 
+                                    stringResource(R.string.zim_lan_access_on) 
                                 else 
-                                    "Local only (127.0.0.1)",
+                                    stringResource(R.string.zim_lan_access_off),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1403,13 +1416,30 @@ fun KiwixSettingsTab(
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        "ZIM files can be very large (100MB - 90GB). " +
-                        "Make sure you have enough storage space.",
+                        stringResource(R.string.zim_storage_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun getLocalizedLanguageName(code: String): String {
+    return when (code.lowercase()) {
+        "all" -> stringResource(R.string.lang_all)
+        "eng" -> stringResource(R.string.lang_eng)
+        "spa" -> stringResource(R.string.lang_spa)
+        "fra" -> stringResource(R.string.lang_fra)
+        "deu" -> stringResource(R.string.lang_deu)
+        "por" -> stringResource(R.string.lang_por)
+        "rus" -> stringResource(R.string.lang_rus)
+        "zho" -> stringResource(R.string.lang_zho)
+        "ara" -> stringResource(R.string.lang_ara)
+        "hin" -> stringResource(R.string.lang_hin)
+        "jpn" -> stringResource(R.string.lang_jpn)
+        else -> code.uppercase()
     }
 }

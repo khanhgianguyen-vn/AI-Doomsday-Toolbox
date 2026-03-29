@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.ModelType
@@ -42,10 +43,10 @@ fun ImageGenSettingsScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Image Generation Settings") },
+                title = { Text(stringResource(R.string.imagegen_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 }
             )
@@ -70,7 +71,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("🖼️ txt2img Threads", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.imagegen_txt2img_threads), fontWeight = FontWeight.Bold)
                             Text("$sdTxt2imgThreads", color = MaterialTheme.colorScheme.primary)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -81,7 +82,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             steps = 6
                         )
                         Text(
-                            "CPU threads for text-to-image generation",
+                            stringResource(R.string.imagegen_txt2img_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -101,7 +102,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("🔄 img2img Threads", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.imagegen_img2img_threads), fontWeight = FontWeight.Bold)
                             Text("$sdImg2imgThreads", color = MaterialTheme.colorScheme.primary)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -112,7 +113,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             steps = 6
                         )
                         Text(
-                            "CPU threads for image-to-image generation",
+                            stringResource(R.string.imagegen_img2img_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -132,7 +133,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("⬆️ Upscale Threads", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.imagegen_upscale_threads), fontWeight = FontWeight.Bold)
                             Text("$sdUpscaleThreads", color = MaterialTheme.colorScheme.primary)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -143,7 +144,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             steps = 6
                         )
                         Text(
-                            "CPU threads for image upscaling",
+                            stringResource(R.string.imagegen_upscale_desc),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -158,7 +159,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("🧠 " + stringResource(com.example.llamadroid.R.string.imagegen_memory_opt), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.imagegen_memory_opt), fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
                         
                         // VAE Tiling
@@ -167,7 +168,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(stringResource(com.example.llamadroid.R.string.imagegen_vae_tiling))
+                            Text(stringResource(R.string.imagegen_vae_tiling))
                             Switch(
                                 checked = sdVaeTiling,
                                 onCheckedChange = { settingsRepo.setSdVaeTiling(it) }
@@ -179,7 +180,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             
                             // Tile Overlap
                             Text(
-                                stringResource(com.example.llamadroid.R.string.imagegen_tile_overlap) + ": ${"%.2f".format(sdVaeTileOverlap)}",
+                                stringResource(R.string.imagegen_tile_overlap) + ": ${"%.2f".format(sdVaeTileOverlap)}",
                                 style = MaterialTheme.typography.labelMedium
                             )
                             Slider(
@@ -193,7 +194,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             OutlinedTextField(
                                 value = sdVaeTileSize,
                                 onValueChange = { settingsRepo.setSdVaeTileSize(it) },
-                                label = { Text(stringResource(com.example.llamadroid.R.string.imagegen_tile_size)) },
+                                label = { Text(stringResource(R.string.imagegen_tile_size)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("32x32") },
                                 singleLine = true
@@ -204,7 +205,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                             OutlinedTextField(
                                 value = sdVaeRelativeTileSize,
                                 onValueChange = { settingsRepo.setSdVaeRelativeTileSize(it) },
-                                label = { Text(stringResource(com.example.llamadroid.R.string.imagegen_relative_tile_size)) },
+                                label = { Text(stringResource(R.string.imagegen_relative_tile_size)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("e.g. 0.5") },
                                 singleLine = true
@@ -217,14 +218,14 @@ fun ImageGenSettingsScreen(navController: NavController) {
                         OutlinedTextField(
                             value = sdTensorTypeRules,
                             onValueChange = { settingsRepo.setSdTensorTypeRules(it) },
-                            label = { Text(stringResource(com.example.llamadroid.R.string.imagegen_tensor_type_rules)) },
+                            label = { Text(stringResource(R.string.imagegen_tensor_type_rules)) },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text("e.g. *:q8_0,attn*:f16") },
                             supportingText = {
                                 Column {
-                                    Text(stringResource(com.example.llamadroid.R.string.imagegen_vae_gguf_note))
+                                    Text(stringResource(R.string.imagegen_vae_gguf_note))
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Text("Presets:", style = MaterialTheme.typography.labelSmall)
+                                    Text(stringResource(R.string.imagegen_presets), style = MaterialTheme.typography.labelSmall)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -237,7 +238,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                                         }
                                         AssistChip(
                                             onClick = { settingsRepo.setSdTensorTypeRules("") },
-                                            label = { Text("Default") }
+                                            label = { Text(stringResource(R.string.imagegen_default)) }
                                         )
                                     }
                                 }

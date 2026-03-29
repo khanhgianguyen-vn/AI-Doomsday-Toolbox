@@ -1,18 +1,39 @@
 package com.example.llamadroid.service
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import androidx.documentfile.provider.DocumentFile
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.util.DebugLog
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
+
+data class PdfExtractionResult(
+    val text: String,
+    val totalPages: Int,
+    val textLayerPages: Int,
+    val ocrPages: Int,
+    val emptyPages: Int
+)
 
 /**
  * Service for PDF operations: merge, split, extract text
@@ -105,20 +126,102 @@ class PDFService(private val context: Context) {
      * Extract all text from PDF
      */
     suspend fun extractText(pdfUri: Uri): Result<String> = withContext(Dispatchers.IO) {
+        extractTextDetailed(pdfUri).map { it.text }
+    }
+
+    suspend fun extractTextDetailed(pdfUri: Uri): Result<PdfExtractionResult> = withContext(Dispatchers.IO) {
         try {
-            DebugLog.log("[PDF] Extracting text from PDF")
-            
-            context.contentResolver.openInputStream(pdfUri)?.use { inputStream ->
-                val doc = PDDocument.load(inputStream)
-                val stripper = PDFTextStripper()
-                val text = stripper.getText(doc)
-                doc.close()
-                
-                DebugLog.log("[PDF] Extracted ${text.length} characters")
-                return@withContext Result.success(text)
+            DebugLog.log("[PDF] Extracting text from PDF with text-layer + OCR fallback")
+
+            val cachedPdf = copyPdfToCache(pdfUri)
+            try {
+                val pfd = ParcelFileDescriptor.open(cachedPdf, ParcelFileDescriptor.MODE_READ_ONLY)
+                val renderer = PdfRenderer(pfd)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                val doc = runCatching { PDDocument.load(cachedPdf) }.getOrNull()
+
+                try {
+                    if (doc?.isEncrypted == true) {
+                        runCatching { doc.setAllSecurityToBeRemoved(true) }
+                    }
+
+                    val totalPages = renderer.pageCount
+                    if (totalPages == 0) {
+                        return@withContext Result.failure(Exception("PDF has no pages"))
+                    }
+
+                    val pageTexts = mutableListOf<String>()
+                    var textLayerPages = 0
+                    var ocrPages = 0
+                    var emptyPages = 0
+
+                    for (pageIndex in 0 until totalPages) {
+                        val pageNumber = pageIndex + 1
+                        val textLayerText = if (doc != null && pageNumber <= doc.numberOfPages) {
+                            runCatching { extractTextFromPage(doc, pageNumber) }
+                                .onFailure { DebugLog.log("[PDF] Page $pageNumber text-layer extract failed: ${it.message}") }
+                                .getOrDefault("")
+                        } else {
+                            ""
+                        }
+
+                        val normalizedTextLayer = normalizeExtractedText(textLayerText)
+                        val finalText = if (shouldUseOcrFallback(normalizedTextLayer)) {
+                            val ocrText = runCatching { extractTextWithOcr(renderer, recognizer, pageIndex) }
+                                .onFailure { DebugLog.log("[PDF] Page $pageNumber OCR failed: ${it.message}") }
+                                .getOrDefault("")
+                            val normalizedOcr = normalizeExtractedText(ocrText)
+                            when {
+                                normalizedOcr.isNotBlank() -> {
+                                    ocrPages += 1
+                                    normalizedOcr
+                                }
+                                normalizedTextLayer.isNotBlank() -> {
+                                    textLayerPages += 1
+                                    normalizedTextLayer
+                                }
+                                else -> {
+                                    emptyPages += 1
+                                    ""
+                                }
+                            }
+                        } else {
+                            textLayerPages += 1
+                            normalizedTextLayer
+                        }
+
+                        if (finalText.isNotBlank()) {
+                            pageTexts.add(finalText)
+                        }
+                    }
+
+                    val extractedText = pageTexts.joinToString("\n\n").trim()
+                    if (extractedText.isBlank()) {
+                        return@withContext Result.failure(Exception("No extractable text found"))
+                    }
+
+                    DebugLog.log(
+                        "[PDF] Extracted ${extractedText.length} characters across $totalPages pages " +
+                            "(text=$textLayerPages, ocr=$ocrPages, empty=$emptyPages)"
+                    )
+                    return@withContext Result.success(
+                        PdfExtractionResult(
+                            text = extractedText,
+                            totalPages = totalPages,
+                            textLayerPages = textLayerPages,
+                            ocrPages = ocrPages,
+                            emptyPages = emptyPages
+                        )
+                    )
+                } finally {
+                    runCatching { doc?.close() }
+                    runCatching { recognizer.close() }
+                    runCatching { renderer.close() }
+                    runCatching { pfd.close() }
+                }
+            } finally {
+                cachedPdf.delete()
             }
-            
-            Result.failure(Exception("Could not open PDF"))
         } catch (e: Exception) {
             DebugLog.log("[PDF] Extract failed: ${e.message}")
             Result.failure(e)
@@ -162,6 +265,94 @@ class PDFService(private val context: Context) {
         
         return pages.distinct().sorted()
     }
+
+    private fun copyPdfToCache(pdfUri: Uri): File {
+        val cacheFile = File(context.cacheDir, "pdf_extract_${System.currentTimeMillis()}.pdf")
+        context.contentResolver.openInputStream(pdfUri)?.use { input ->
+            FileOutputStream(cacheFile).use { output -> input.copyTo(output) }
+        } ?: throw IllegalStateException("Could not open PDF")
+        return cacheFile
+    }
+
+    private fun extractTextFromPage(doc: PDDocument, pageNumber: Int): String {
+        val stripper = PDFTextStripper()
+        stripper.setStartPage(pageNumber)
+        stripper.setEndPage(pageNumber)
+        stripper.setSortByPosition(true)
+        stripper.setAddMoreFormatting(true)
+        stripper.setLineSeparator("\n")
+        stripper.setPageEnd("\n\n")
+        return stripper.getText(doc)
+    }
+
+    private fun normalizeExtractedText(text: String): String {
+        return text
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .replace("\u00AD", "")
+            .lines()
+            .joinToString("\n") { it.trimEnd() }
+            .replace(Regex("""\n{3,}"""), "\n\n")
+            .trim()
+    }
+
+    private fun shouldUseOcrFallback(text: String): Boolean {
+        if (text.isBlank()) return true
+
+        val alnumCount = text.count { it.isLetterOrDigit() }
+        if (alnumCount < 24) return true
+
+        val replacementChars = text.count { it == '\uFFFD' || it == '\u0000' }
+        if (replacementChars > 0) return true
+
+        val visibleChars = text.count { !it.isWhitespace() }.coerceAtLeast(1)
+        val alnumRatio = alnumCount.toFloat() / visibleChars
+        return alnumRatio < 0.45f
+    }
+
+    private suspend fun extractTextWithOcr(
+        renderer: PdfRenderer,
+        recognizer: TextRecognizer,
+        pageIndex: Int
+    ): String {
+        val page = renderer.openPage(pageIndex)
+        try {
+            val scale = computeOcrScale(page.width, page.height)
+            val bitmapWidth = (page.width * scale).roundToInt().coerceAtLeast(page.width)
+            val bitmapHeight = (page.height * scale).roundToInt().coerceAtLeast(page.height)
+            val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
+
+            try {
+                Canvas(bitmap).drawColor(Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                val image = InputImage.fromBitmap(bitmap, 0)
+                return recognizeText(recognizer, image)
+            } finally {
+                bitmap.recycle()
+            }
+        } finally {
+            page.close()
+        }
+    }
+
+    private fun computeOcrScale(width: Int, height: Int): Float {
+        val longSide = maxOf(width, height).coerceAtLeast(1)
+        return (2000f / longSide.toFloat()).coerceIn(1.5f, 2.5f)
+    }
+
+    private suspend fun recognizeText(recognizer: TextRecognizer, image: InputImage): String =
+        suspendCancellableCoroutine { continuation ->
+            recognizer.process(image)
+                .addOnSuccessListener { result ->
+                    val extractedText = result.textBlocks.joinToString("\n\n") { block ->
+                        block.lines.joinToString("\n") { it.text }
+                    }
+                    continuation.resume(extractedText)
+                }
+                .addOnFailureListener { error ->
+                    continuation.resumeWithException(error)
+                }
+        }
     
     /**
      * Save PDF document to output folder
@@ -286,12 +477,10 @@ class PDFService(private val context: Context) {
             } ?: return@withContext Result.failure(Exception("Could not load image"))
             
             // Use ML Kit Text Recognition
-            val image = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
-            val recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(
-                com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS
-            )
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             
-            return@withContext kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            return@withContext suspendCancellableCoroutine { continuation ->
                 recognizer.process(image)
                     .addOnSuccessListener { result ->
                         val extractedText = result.textBlocks.joinToString("\n\n") { block ->
@@ -299,12 +488,14 @@ class PDFService(private val context: Context) {
                         }
                         DebugLog.log("[PDF] OCR extracted ${extractedText.length} characters")
                         bitmap.recycle()
-                        continuation.resume(Result.success(extractedText)) {}
+                        recognizer.close()
+                        continuation.resume(Result.success(extractedText))
                     }
                     .addOnFailureListener { e ->
                         DebugLog.log("[PDF] OCR failed: ${e.message}")
                         bitmap.recycle()
-                        continuation.resume(Result.failure(e)) {}
+                        recognizer.close()
+                        continuation.resume(Result.failure(e))
                     }
             }
             
@@ -503,4 +694,3 @@ class PDFService(private val context: Context) {
         }
     }
 }
-

@@ -1,41 +1,59 @@
 package com.example.llamadroid.ui.pdf
 
 import android.content.Intent
-import android.widget.Toast
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
-import com.example.llamadroid.data.db.AppDatabase
-import com.example.llamadroid.data.db.ModelType
-import com.example.llamadroid.data.db.NoteEntity
-import com.example.llamadroid.data.db.NoteType
 import com.example.llamadroid.service.PDFService
 import com.example.llamadroid.service.PDFSummaryService
+import com.example.llamadroid.service.PdfSummaryStateHolder
+import com.example.llamadroid.ui.components.SummaryMarkdownCard
+import com.example.llamadroid.ui.components.SummarySettingsChipCard
 import kotlinx.coroutines.launch
-import java.io.File
-import com.example.llamadroid.ui.components.SliderWithInput
-import com.example.llamadroid.ui.components.IntSliderWithInput
 
-/**
- * PDF AI Summary Screen - Uses LLM to summarize PDF text
- * State persists across tab changes via rememberSaveable
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PDFSummaryScreen(navController: NavController) {
@@ -43,140 +61,92 @@ fun PDFSummaryScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     val settingsRepo = remember { SettingsRepository(context) }
     val pdfService = remember { PDFService(context) }
-    val db = remember { AppDatabase.getDatabase(context) }
-    
-    // State - using rememberSaveable for tab change persistence
-    // URI stored as string for serialization
-    var selectedPdfString by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedPdf = selectedPdfString?.let { android.net.Uri.parse(it) }
-    
-    var extractedText by rememberSaveable { mutableStateOf("") }
-    var summary by rememberSaveable { mutableStateOf("") }
-    var isExtracting by remember { mutableStateOf(false) }
-    var progress by rememberSaveable { mutableStateOf("") }
-    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    
-    // Store the PDF name when summarization starts (to use correct name when saving)
-    var summarizingPdfName by rememberSaveable { mutableStateOf<String?>(null) }
-    
-    // PDF-specific settings (with fallback to main LLM settings)
-    val llmModels by db.modelDao().getModelsByType(ModelType.LLM).collectAsState(initial = emptyList())
-    
-    // Local state for settings (synced to/from SettingsRepository)
-    val savedModelPath by settingsRepo.pdfModelPath.collectAsState()
-    val mainModelPath by settingsRepo.selectedModelPath.collectAsState()
-    var selectedModelPath by remember { mutableStateOf(savedModelPath ?: mainModelPath) }
-    var threads by remember { mutableIntStateOf(4) }
-    var contextSize by remember { mutableIntStateOf(2048) }
-    var maxTokens by remember { mutableIntStateOf(512) }
-    var temperature by remember { mutableFloatStateOf(0.7f) }
-    
-    // Initialize from saved settings
-    LaunchedEffect(Unit) {
-        threads = settingsRepo.pdfThreads.value
-        contextSize = settingsRepo.pdfContextSize.value
-        maxTokens = settingsRepo.pdfMaxTokens.value
-        temperature = settingsRepo.pdfTemperature.value
-    }
-    
-    // Auto-select first available model if none selected
-    LaunchedEffect(llmModels, savedModelPath, mainModelPath) {
-        if (selectedModelPath == null && llmModels.isNotEmpty()) {
-            selectedModelPath = llmModels.first().path
-        } else if (selectedModelPath == null && savedModelPath != null) {
-            selectedModelPath = savedModelPath
-        } else if (selectedModelPath == null && mainModelPath != null) {
-            selectedModelPath = mainModelPath
-        }
-    }
-    
-    // Track service state
-    val isSummarizing by PDFSummaryService.isSummarizing.collectAsState()
-    val currentChunk by PDFSummaryService.currentChunk.collectAsState()
-    val totalChunks by PDFSummaryService.totalChunks.collectAsState()
-    val currentPhase by PDFSummaryService.currentPhase.collectAsState()
-    
-    // Observe result from service at TOP LEVEL (not inside conditional)
-    // This ensures result is processed even if user navigates away
-    val serviceResult by PDFSummaryService.result.collectAsState()
-    
-    LaunchedEffect(serviceResult) {
-        serviceResult?.let { result ->
-            result.fold(
-                onSuccess = { summaryText ->
-                    summary = summaryText
-                    progress = "Summary complete! Auto-saving..."
-                    
-                    // Use the stored PDF name (not current selectedPdf which may have changed)
-                    val pdfName = summarizingPdfName ?: "PDF"
-                    
-                    // AUTO-SAVE to Notes
-                    try {
-                        db.noteDao().insert(
-                            NoteEntity(
-                                title = "Summary: $pdfName",
-                                content = summaryText,
-                                type = NoteType.PDF_SUMMARY,
-                                sourceFile = pdfName
-                            )
-                        )
-                        com.example.llamadroid.util.DebugLog.log("[PDF-AI] Summary saved to Notes: $pdfName - ${summaryText.length} chars")
-                        progress = "Saved to Notes!"
-                        Toast.makeText(context, "Summary saved to Notes!", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        com.example.llamadroid.util.DebugLog.log("[PDF-AI] Failed to save: ${e.message}")
-                        progress = "Error saving to Notes"
-                    }
-                    PDFSummaryService.clearResult()
-                },
-                onFailure = {
-                    if (it.message != "Cancelled") {
-                        errorMessage = it.message ?: "Summarization failed"
-                    }
-                    progress = ""
-                    PDFSummaryService.clearResult()
-                }
-            )
-        }
-    }
-    
-    // PDF picker
+
+    val selectedPdfString by PdfSummaryStateHolder.selectedPdfUri.collectAsState()
+    val selectedPdfName by PdfSummaryStateHolder.selectedPdfName.collectAsState()
+    val extractedText by PdfSummaryStateHolder.extractedText.collectAsState()
+    val extractionDetails by PdfSummaryStateHolder.extractionDetails.collectAsState()
+    val projectedChunkCount by PdfSummaryStateHolder.projectedChunkCount.collectAsState()
+    val isExtracting by PdfSummaryStateHolder.isExtracting.collectAsState()
+    val progressMessage by PdfSummaryStateHolder.progressMessage.collectAsState()
+    val errorMessage by PdfSummaryStateHolder.error.collectAsState()
+    val metadataMessage by PdfSummaryStateHolder.metadataMessage.collectAsState()
+    val summary by PdfSummaryStateHolder.summary.collectAsState()
+    val partialSummaries by PdfSummaryStateHolder.partialSummaries.collectAsState()
+    val isSummarizing by PdfSummaryStateHolder.isSummarizing.collectAsState()
+    val currentChunk by PdfSummaryStateHolder.currentChunk.collectAsState()
+    val totalChunks by PdfSummaryStateHolder.totalChunks.collectAsState()
+    val cancelled by PdfSummaryStateHolder.cancelled.collectAsState()
+
+    val backend by settingsRepo.pdfSummaryBackend.collectAsState()
+    val ollamaUrl by settingsRepo.pdfSummaryOllamaUrl.collectAsState()
+    val llamaServerUrl by settingsRepo.pdfSummaryLlamaServerUrl.collectAsState()
+    val ollamaModel by settingsRepo.pdfSummaryOllamaModel.collectAsState()
+    val thinkingEnabled by settingsRepo.pdfSummaryThinkingEnabled.collectAsState()
+    val contextSize by settingsRepo.pdfContextSize.collectAsState()
+    val maxTokens by settingsRepo.pdfMaxTokens.collectAsState()
+    val mergeContext by settingsRepo.pdfMergeContextSize.collectAsState()
+    val mergeMaxTokens by settingsRepo.pdfMergeMaxTokens.collectAsState()
+    val temperature by settingsRepo.pdfTemperature.collectAsState()
+    val timeoutMinutes by settingsRepo.pdfSummaryTimeoutMinutes.collectAsState()
+    val targetLanguage by settingsRepo.pdfSummaryTargetLanguage.collectAsState()
+    val serverModelLabel by settingsRepo.pdfSummaryLlamaServerModelLabel.collectAsState()
+    val serverContextLabel by settingsRepo.pdfSummaryLlamaServerContextLabel.collectAsState()
+    val serverContextTokens by settingsRepo.pdfSummaryLlamaServerContextTokens.collectAsState()
+
+    val selectedPdf = selectedPdfString?.let(Uri::parse)
+
     val pdfPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
             try {
-                context.contentResolver.takePersistableUriPermission(
-                    it,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (e: Exception) { }
-            selectedPdfString = it.toString()
-            extractedText = ""
-            summary = ""
-            errorMessage = null
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {
+            }
+            if (isSummarizing) return@let
+            PdfSummaryStateHolder.reset()
+            PdfSummaryStateHolder.setSelectedPdfUri(it.toString())
+            PdfSummaryStateHolder.setSelectedPdfName(it.lastPathSegment ?: context.getString(R.string.file_type_pdf))
+            PDFSummaryService.clearResult()
+            PDFSummaryService.clearPartialChunkSummaries()
         }
     }
-    
-    // Note: No DisposableEffect cancel - process survives tab changes
-    // Cancel only happens on explicit back button press
-    
+
+    val backendReady = if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+        llamaServerUrl.isNotBlank()
+    } else {
+        ollamaUrl.isNotBlank() && !ollamaModel.isNullOrBlank()
+    }
+
+    val warningMessage = when {
+        !backendReady && backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER ->
+            stringResource(R.string.pdf_missing_llama_server_url)
+        !backendReady -> stringResource(R.string.pdf_error_missing_ollama_model)
+        backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER && serverContextTokens > 0 && mergeContext > serverContextTokens ->
+            stringResource(R.string.pdf_context_warning, mergeContext, serverContextTokens)
+        else -> null
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("PDF AI Summary") },
+                title = { Text(stringResource(R.string.pdf_ai_summary_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { 
-                        // Note: Do NOT cancel on back - process continues in background
-                        navController.popBackStack() 
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
                     }
                 },
                 actions = {
-                    // Settings icon
+                    IconButton(
+                        onClick = {
+                            scope.launch { PDFSummaryService.refreshBackendMetadata(context) }
+                        }
+                    ) {
+                        Icon(Icons.Default.Refresh, stringResource(R.string.pdf_refresh_backend_info))
+                    }
                     IconButton(onClick = { navController.navigate("settings_pdf") }) {
-                        Icon(Icons.Default.Settings, "PDF Settings")
+                        Icon(Icons.Default.Settings, stringResource(R.string.nav_settings))
                     }
                 }
             )
@@ -187,411 +157,260 @@ fun PDFSummaryScreen(navController: NavController) {
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Model Selection Section
-            Text("LLM Model", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            var modelExpanded by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = modelExpanded,
-                onExpandedChange = { modelExpanded = it }
-            ) {
-                OutlinedTextField(
-                    value = selectedModelPath?.let { File(it).name } ?: "Select LLM Model",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Model") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
+            SummarySettingsChipCard(
+                title = stringResource(R.string.pdf_active_settings_title),
+                supportingText = metadataMessage,
+                chips = listOf(
+                    if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                        stringResource(R.string.pdf_backend_llama_server)
+                    } else {
+                        stringResource(R.string.pdf_backend_ollama)
+                    },
+                    if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                        serverModelLabel ?: stringResource(R.string.pdf_server_value_unavailable)
+                    } else {
+                        ollamaModel ?: stringResource(R.string.pdf_select_ollama_model)
+                    },
+                    stringResource(R.string.pdf_target_language_chip, targetLanguage),
+                    stringResource(R.string.pdf_chunk_context_chip, contextSize),
+                    stringResource(R.string.pdf_chunk_max_chip, maxTokens),
+                    stringResource(R.string.pdf_merge_context_chip, mergeContext),
+                    stringResource(R.string.pdf_merge_max_chip, mergeMaxTokens),
+                    if (timeoutMinutes == SettingsRepository.PDF_TIMEOUT_DISABLED) {
+                        stringResource(R.string.pdf_timeout_off)
+                    } else {
+                        stringResource(R.string.pdf_timeout_value_minutes, timeoutMinutes)
+                    },
+                    if (thinkingEnabled) stringResource(R.string.action_enabled) else stringResource(R.string.action_disabled)
                 )
-                ExposedDropdownMenu(
-                    expanded = modelExpanded,
-                    onDismissRequest = { modelExpanded = false }
-                ) {
-                    llmModels.forEach { model ->
-                        DropdownMenuItem(
-                            text = { Text(model.filename) },
-                            onClick = {
-                                selectedModelPath = model.path
-                                settingsRepo.setPdfModelPath(model.path)
-                                modelExpanded = false
-                            }
-                        )
-                    }
-                    if (llmModels.isEmpty()) {
-                        DropdownMenuItem(
-                            text = { Text("No LLM models - download one first") },
-                            onClick = { modelExpanded = false }
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Parameters Section
-            Text("Parameters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Threads slider
-            IntSliderWithInput(
-                value = threads,
-                onValueChange = { 
-                    threads = it
-                    settingsRepo.setPdfThreads(threads)
-                },
-                valueRange = 1..16,
-                label = "Threads"
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Context size slider
-            IntSliderWithInput(
-                value = contextSize,
-                onValueChange = { 
-                    contextSize = it
-                    settingsRepo.setPdfContextSize(contextSize)
-                },
-                valueRange = 512..8192,
-                label = "Context"
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Max tokens slider
-            IntSliderWithInput(
-                value = maxTokens,
-                onValueChange = { 
-                    maxTokens = it
-                    settingsRepo.setPdfMaxTokens(maxTokens)
-                },
-                valueRange = 64..2048,
-                label = "Max Tokens"
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Temperature slider
-            SliderWithInput(
-                value = temperature,
-                onValueChange = { 
-                    temperature = it
-                    settingsRepo.setPdfTemperature(temperature)
-                },
-                valueRange = 0f..2f,
-                label = "Temperature",
-                decimalPlaces = 1
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // KV Cache Quantization
-            val kvCacheEnabled by settingsRepo.pdfKvCacheEnabled.collectAsState()
-            val kvCacheTypeK by settingsRepo.pdfKvCacheTypeK.collectAsState()
-            val kvCacheTypeV by settingsRepo.pdfKvCacheTypeV.collectAsState()
-            val cacheTypes = listOf("f16", "q8_0", "q4_0")
-            var showTypeKMenu by remember { mutableStateOf(false) }
-            var showTypeVMenu by remember { mutableStateOf(false) }
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("💾 KV Cache Quantization", style = MaterialTheme.typography.bodyMedium)
-                Switch(
-                    checked = kvCacheEnabled,
-                    onCheckedChange = { settingsRepo.setPdfKvCacheEnabled(it) }
-                )
-            }
-            
-            if (kvCacheEnabled) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Box {
-                        OutlinedButton(onClick = { showTypeKMenu = true }) {
-                            Text("K: $kvCacheTypeK")
-                            Icon(Icons.Default.ArrowDropDown, null)
-                        }
-                        DropdownMenu(expanded = showTypeKMenu, onDismissRequest = { showTypeKMenu = false }) {
-                            cacheTypes.forEach { type ->
-                                DropdownMenuItem(text = { Text(type) }, onClick = {
-                                    settingsRepo.setPdfKvCacheTypeK(type)
-                                    showTypeKMenu = false
-                                })
-                            }
-                        }
-                    }
-                    Box {
-                        OutlinedButton(onClick = { showTypeVMenu = true }) {
-                            Text("V: $kvCacheTypeV")
-                            Icon(Icons.Default.ArrowDropDown, null)
-                        }
-                        DropdownMenu(expanded = showTypeVMenu, onDismissRequest = { showTypeVMenu = false }) {
-                            cacheTypes.forEach { type ->
-                                DropdownMenuItem(text = { Text(type) }, onClick = {
-                                    settingsRepo.setPdfKvCacheTypeV(type)
-                                    showTypeVMenu = false
-                                })
-                            }
-                        }
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Error display
-            errorMessage?.let { error ->
+
+            warningMessage?.let {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
                     )
                 ) {
-                    Row(
+                    Text(
+                        text = it,
                         modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "❌ $error",
-                            modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        IconButton(onClick = { errorMessage = null }) {
-                            Icon(Icons.Default.Close, "Dismiss")
-                        }
-                    }
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
                 }
-                Spacer(modifier = Modifier.height(16.dp))
             }
-            
-            // PDF selection
+
             if (selectedPdf == null) {
                 OutlinedButton(
                     onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSummarizing
                 ) {
-                    Icon(Icons.Default.Add, null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Select PDF")
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                    Text(stringResource(R.string.pdf_select_pdf))
                 }
             } else {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("📄", style = MaterialTheme.typography.headlineSmall)
-                        Spacer(modifier = Modifier.width(12.dp))
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    androidx.compose.foundation.layout.Row(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            selectedPdf?.lastPathSegment ?: "Selected PDF",
-                            modifier = Modifier.weight(1f),
-                            maxLines = 2
+                            selectedPdfName ?: stringResource(R.string.pdf_selected_file),
+                            modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = { 
-                            selectedPdfString = null
-                            extractedText = ""
-                            summary = ""
-                            errorMessage = null
-                        }) {
-                            Icon(Icons.Default.Close, "Remove")
+                        IconButton(
+                            onClick = {
+                                if (!isSummarizing) {
+                                    PdfSummaryStateHolder.reset()
+                                    PDFSummaryService.clearResult()
+                                }
+                            },
+                            enabled = !isSummarizing
+                        ) {
+                            Icon(Icons.Default.Close, stringResource(R.string.action_remove))
                         }
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Step 1: Extract text
-                if (extractedText.isEmpty()) {
+
+                if (extractedText.isBlank()) {
                     Button(
                         onClick = {
                             scope.launch {
-                                isExtracting = true
-                                progress = "Extracting text from PDF..."
-                                errorMessage = null
-                                try {
-                                    val result = pdfService.extractText(selectedPdf!!)
-                                    result.fold(
-                                        onSuccess = { text ->
-                                            extractedText = text
-                                            progress = "Extracted ${text.length} characters"
-                                        },
-                                        onFailure = {
-                                            errorMessage = "Failed to extract text: ${it.message}"
-                                            progress = ""
-                                        }
+                                PdfSummaryStateHolder.setIsExtracting(true)
+                                PdfSummaryStateHolder.setProgressMessage(context.getString(R.string.pdf_extracting_progress))
+                                PdfSummaryStateHolder.setError(null)
+                                val result = pdfService.extractTextDetailed(selectedPdf)
+                                result.onSuccess { extraction ->
+                                    PdfSummaryStateHolder.setExtractedText(extraction.text)
+                                    val details = context.getString(
+                                        R.string.pdf_extract_success_pages,
+                                        extraction.text.length,
+                                        extraction.totalPages,
+                                        extraction.textLayerPages,
+                                        extraction.ocrPages,
+                                        extraction.emptyPages
                                     )
-                                } finally {
-                                    isExtracting = false
+                                    PdfSummaryStateHolder.setExtractionDetails(details)
+                                    PDFSummaryService.estimateChunkCount(context, extraction.text)
+                                        .onSuccess { estimate ->
+                                            val estimateLabel = if (estimate.tokenCountMode.name == "EXACT") {
+                                                context.getString(R.string.pdf_chunk_count_exact, estimate.chunkCount)
+                                            } else {
+                                                context.getString(R.string.pdf_chunk_count_estimated, estimate.chunkCount)
+                                            }
+                                            PdfSummaryStateHolder.setExtractionDetails("$details\n$estimateLabel")
+                                        }
+                                }.onFailure {
+                                    PdfSummaryStateHolder.setError(
+                                        context.getString(
+                                            R.string.pdf_extract_failed,
+                                            it.message ?: context.getString(R.string.error_generic)
+                                        )
+                                    )
                                 }
+                                PdfSummaryStateHolder.setIsExtracting(false)
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isExtracting && selectedModelPath != null
+                        enabled = !isExtracting && !isSummarizing
                     ) {
                         if (isExtracting) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
                         }
-                        Text("Step 1: Extract Text")
+                        Text(stringResource(R.string.pdf_extract_text_step))
                     }
                 } else {
-                    // Show extracted text info
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
                         )
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("✅ Text Extracted", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.pdf_text_extracted_title), fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                "${extractedText.length} characters, ~${extractedText.split("\\s+".toRegex()).size} words",
+                                stringResource(
+                                    R.string.pdf_text_extracted_stats,
+                                    extractedText.length,
+                                    extractedText.split("\\s+".toRegex()).count { it.isNotBlank() },
+                                    projectedChunkCount
+                                ),
                                 style = MaterialTheme.typography.bodySmall
                             )
+                            extractionDetails?.let {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Step 2: Summarize
-                    if (summary.isEmpty()) {
+
+                    if (summary.isBlank()) {
                         Button(
                             onClick = {
-                                progress = "Summarizing with AI..."
-                                errorMessage = null
-                                
-                                // Store the PDF name NOW so it's correct when saving later
-                                val pdfName = selectedPdf?.lastPathSegment ?: "PDF"
-                                summarizingPdfName = pdfName
-                                
+                                PdfSummaryStateHolder.setProgressMessage(context.getString(R.string.pdf_summarizing_ai))
+                                PdfSummaryStateHolder.setError(null)
                                 PDFSummaryService.startSummarization(
                                     context = context,
-                                    modelPath = selectedModelPath!!,
                                     text = extractedText,
-                                    pdfFileName = pdfName,
-                                    threads = threads,
-                                    contextSize = contextSize,
-                                    temperature = temperature,
-                                    maxTokens = maxTokens
+                                    pdfFileName = selectedPdfName ?: context.getString(R.string.file_type_pdf)
                                 )
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !isSummarizing
+                            enabled = !isSummarizing && backendReady
                         ) {
                             if (isSummarizing) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                val progressText = when {
-                                    totalChunks > 1 && currentChunk > 0 -> 
-                                        "Chunk $currentChunk/$totalChunks..."
-                                    currentPhase.isNotEmpty() -> 
-                                        currentPhase
-                                    else -> 
-                                        "Summarizing..."
-                                }
-                                Text(progressText)
-                            } else {
-                                Text("Step 2: Generate AI Summary")
+                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
                             }
-                        }
-                        
-                        // Show detailed progress when chunking
-                        if (isSummarizing && totalChunks > 1) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-                                )
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("📊 Multi-chunk Processing", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    LinearProgressIndicator(
-                                        progress = { if (currentChunk > 0) currentChunk.toFloat() / totalChunks else 0f },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        when {
-                                            currentChunk > 0 -> "Summarizing chunk $currentChunk of $totalChunks..."
-                                            currentPhase.contains("Unifying") -> "Combining all summaries..."
-                                            else -> currentPhase
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                        
-                        if (isSummarizing) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedButton(
-                                onClick = { PDFSummaryService.cancel() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Cancel")
-                            }
-                        }
-                    } else {
-                        // Show summary
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("📝 AI Summary", fontWeight = FontWeight.Bold)
-                            Text("✅ Saved", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .padding(16.dp)
-                                    .verticalScroll(rememberScrollState())
-                            ) {
-                                Text(summary)
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Done button
-                        Button(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Check, null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Done")
+                            Text(stringResource(R.string.pdf_generate_summary_step_remote))
                         }
                     }
                 }
-                
-                // Progress
-                if (progress.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        progress,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                if (isSummarizing) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(progressMessage.ifBlank { stringResource(R.string.pdf_summarizing_ai) }, fontWeight = FontWeight.Bold)
+                            if (totalChunks > 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LinearProgressIndicator(
+                                    progress = {
+                                        if (currentChunk > 0 && totalChunks > 0) {
+                                            currentChunk.toFloat() / totalChunks
+                                        } else {
+                                            0f
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { PDFSummaryService.cancel() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+
+                errorMessage?.let {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
+                        )
+                    ) {
+                        Text(
+                            text = it,
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+
+                if (cancelled && !isSummarizing && errorMessage == null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+                        )
+                    ) {
+                        Text(
+                            text = stringResource(R.string.summary_cancelled_message),
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+
+                if (partialSummaries.isNotEmpty()) {
+                    SummaryMarkdownCard(
+                        title = stringResource(R.string.pdf_partial_results_title),
+                        markdown = partialSummaries.mapIndexed { index, summaryPart ->
+                            "### ${context.getString(R.string.summary_partial_item_label, index + 1)}\n$summaryPart"
+                        }.joinToString("\n\n")
+                    )
+                }
+
+                if (summary.isNotBlank()) {
+                    SummaryMarkdownCard(
+                        title = stringResource(R.string.pdf_summary_result_label),
+                        markdown = summary
                     )
                 }
             }
