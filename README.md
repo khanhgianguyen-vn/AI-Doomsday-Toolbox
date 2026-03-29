@@ -8,7 +8,10 @@ Run local LLMs, Whisper transcription, image generation, distributed inference, 
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-blue.svg)](https://developer.android.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](LICENSE)
 
-<!-- IMAGE: Hero overview. Best choice: a clean collage showing the dashboard, distributed inference, dataset creator, Ollama manager, and Tama pet screens so users instantly understand the app is broader than a single chatbot. -->
+<img width="998" height="2048" alt="image" src="https://github.com/user-attachments/assets/fcaeb854-6804-4f65-ac39-de7a00b3a77b" />
+<img width="1002" height="2048" alt="image" src="https://github.com/user-attachments/assets/943faf10-5613-43b7-85cf-8e414a235237" />
+
+
 
 ## Why It's Different
 
@@ -34,8 +37,8 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Experiment with turning old phones into a low-cost phone cluster for local AI workloads
 - Monitor worker/master flows from inside the app
 - Share models and services over the local network for offline collaboration
+<img width="1013" height="2048" alt="image" src="https://github.com/user-attachments/assets/4cf4ef0a-631c-4e86-b59f-1ec799ec6a5f" />
 
-<!-- IMAGE: Distributed inference / Android cluster. Best choice: a screenshot that clearly shows multiple nodes, device roles, or a network visualization so users immediately understand the "old phones as compute nodes" story. -->
 
 ### Local AI Chat
 
@@ -44,7 +47,7 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Use Ollama-compatible workflows where they fit best for your setup
 - Keep inference on-device or on your own local network instead of relying on cloud chat
 
-<!-- IMAGE: Llama native chat. Best choice: a conversation view with model info, generation stats, and a strong prompt/response example. -->
+<img width="1024" height="2048" alt="image" src="https://github.com/user-attachments/assets/096752ba-3832-4020-a670-969a94acb1da" />
 
 ### Ollama Manager
 
@@ -53,7 +56,7 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - View and edit Modelfiles
 - Create derived models without leaving the Android interface
 
-<!-- IMAGE: Ollama manager / Modelfile editor. Best choice: one screenshot of the model list and one of the Modelfile editor with a create/edit dialog open. -->
+<img width="1024" height="2048" alt="image" src="https://github.com/user-attachments/assets/59cb9abd-635f-4d1a-aaec-bbd566085dc0" />
 
 ### Benchmarking
 
@@ -62,7 +65,7 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Save benchmark results for later reference
 - Use real llama benchmarking output instead of guessing performance
 
-<!-- IMAGE: Benchmark screen. Best choice: a result view that shows thread counts and tokens-per-second so the feature benefit is obvious at a glance. -->
+<img width="1019" height="2048" alt="image" src="https://github.com/user-attachments/assets/131a2495-20e1-4ea7-b3f5-02801afc4881" />
 
 ### Dataset Creator
 
@@ -74,7 +77,6 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Export in Alpaca JSON format
 - Customize the prompts used for cleaning, question generation, answer generation, and review
 
-<!-- IMAGE: Dataset creator. Best choice: a project screen showing chunk counts, prompt customization, ratings, and an export action to communicate the full pipeline. -->
 
 ### Termux Tools And Proot Workflows
 
@@ -85,9 +87,10 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Manage remote files with the built-in Termux file manager
 - Optionally expose some services outside `localhost` when your workflow needs LAN access
 
-**Note:** A1111 / AUTOMATIC1111 support is still experimental and actively being worked on.
+**Note:** A1111 / AUTOMATIC1111 support is still experimental and actively being worked on, same with oobabooga since recent update of their repo.
 
-<!-- IMAGE: Termux tools. Best choice: one screenshot of the tool cards/install flow, one of the SSH/proot helper instructions, and one of the in-app webview or file manager. -->
+<img width="1043" height="2048" alt="image" src="https://github.com/user-attachments/assets/7b0a2e06-26b2-4829-ad73-cd29f10fd3c6" />
+
 
 ### AI Agent Workspace
 
@@ -96,7 +99,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Keep project-specific workspace memory and task context
 - Build reusable automation flows around your own projects
 
-<!-- IMAGE: AI agent workspace. Best choice: the chat/workspace screen with visible tool activity or custom-agent controls. -->
+<img width="1018" height="2048" alt="image" src="https://github.com/user-attachments/assets/cab59f56-eb7f-4d2c-9619-e479c2a8ec8e" />
+<img width="1115" height="2272" alt="image" src="https://github.com/user-attachments/assets/5b026fbb-7bc7-4478-9f18-e5f0b7142815" />
+
 
 ### PDF, Video, And Summary Tools
 
@@ -105,7 +110,11 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Use Ollama and/or llama.cpp-compatible remote backends for summary generation
 - Tune prompts, context limits, output length, and related summary parameters per workflow
 
-<!-- IMAGE: Summary tools. Best choice: a PDF or video summary screen showing markdown output and the remote-backend controls. -->
+<img width="1013" height="2048" alt="image" src="https://github.com/user-attachments/assets/a360e96d-b887-4b35-bf67-99df7d12b5bb" />
+<img width="1009" height="2048" alt="image" src="https://github.com/user-attachments/assets/bc79cd17-20a7-41f4-a56f-fc33becbc10b" />
+<img width="998" height="2048" alt="image" src="https://github.com/user-attachments/assets/5ec398cc-c178-4388-a4c3-802b4edb93a9" />
+
+
 
 ### Audio, Video, And Subtitle Tools
 
@@ -114,7 +123,6 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Burn subtitles into video with styling controls such as font, color, and position
 - Process media directly from Android share intents
 
-<!-- IMAGE: Subtitle burning. Best choice: a before/after view or settings screen that clearly shows font, color, and subtitle-position controls. -->
 
 ### Image Generation And Upscaling
 
@@ -123,7 +131,7 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Use FastSDCPU in Termux/proot workflows for additional image-generation setups
 - Experiment with A1111-style web UI workflows through the Termux tools area
 
-<!-- IMAGE: Image generation + upscaling. Best choice: one generation result grid and one upscaling comparison image. -->
+<img width="1004" height="2048" alt="image" src="https://github.com/user-attachments/assets/e624aee3-8533-4345-a610-f8931ab89ee7" />
 
 ### Offline Knowledge, Sharing, And Utilities
 
@@ -131,8 +139,6 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Share models and files over LAN
 - Create and manage notes
 - Use Android share intents to send PDFs, videos, images, and audio into the app’s processing flows
-
-<!-- IMAGE: Kiwix / sharing / notes. Best choice: a compact collage showing the Kiwix library, model sharing QR/network screen, and note viewer. -->
 
 ### Tama Virtual Pet
 
@@ -142,7 +148,6 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Talk to your pet and build memories over time
 - Discover different personalities and long-term companionship mechanics
 
-<!-- IMAGE: Tama / pet system. Best choice: a screenshot of the pet home screen plus either the farm or adventure screen to show it is a real subsystem, not a novelty popup. -->
 
 ## Built With
 
