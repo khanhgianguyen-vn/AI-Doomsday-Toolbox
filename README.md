@@ -8,8 +8,10 @@ Run local LLMs, Whisper transcription, image generation, distributed inference, 
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26-blue.svg)](https://developer.android.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](LICENSE)
 
-<img width="998" height="2048" alt="image" src="https://github.com/user-attachments/assets/fcaeb854-6804-4f65-ac39-de7a00b3a77b" />
-<img width="1002" height="2048" alt="image" src="https://github.com/user-attachments/assets/943faf10-5613-43b7-85cf-8e414a235237" />
+<p align="center">
+  <img width="31%" alt="AI Doomsday Toolbox home screen" src="https://github.com/user-attachments/assets/fcaeb854-6804-4f65-ac39-de7a00b3a77b" />
+  <img width="31%" alt="AI Doomsday Toolbox feature overview" src="https://github.com/user-attachments/assets/943faf10-5613-43b7-85cf-8e414a235237" />
+</p>
 
 
 
@@ -37,7 +39,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Experiment with turning old phones into a low-cost phone cluster for local AI workloads
 - Monitor worker/master flows from inside the app
 - Share models and services over the local network for offline collaboration
-<img width="1013" height="2048" alt="image" src="https://github.com/user-attachments/assets/4cf4ef0a-631c-4e86-b59f-1ec799ec6a5f" />
+<p align="center">
+  <img width="31%" alt="Distributed inference screen" src="https://github.com/user-attachments/assets/4cf4ef0a-631c-4e86-b59f-1ec799ec6a5f" />
+</p>
 
 
 ### Local AI Chat
@@ -47,7 +51,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Use Ollama-compatible workflows where they fit best for your setup
 - Keep inference on-device or on your own local network instead of relying on cloud chat
 
-<img width="1024" height="2048" alt="image" src="https://github.com/user-attachments/assets/096752ba-3832-4020-a670-969a94acb1da" />
+<p align="center">
+  <img width="31%" alt="Local AI chat screen" src="https://github.com/user-attachments/assets/096752ba-3832-4020-a670-969a94acb1da" />
+</p>
 
 ### Ollama Manager
 
@@ -56,7 +62,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - View and edit Modelfiles
 - Create derived models without leaving the Android interface
 
-<img width="1024" height="2048" alt="image" src="https://github.com/user-attachments/assets/59cb9abd-635f-4d1a-aaec-bbd566085dc0" />
+<p align="center">
+  <img width="31%" alt="Ollama manager screen" src="https://github.com/user-attachments/assets/59cb9abd-635f-4d1a-aaec-bbd566085dc0" />
+</p>
 
 ### Benchmarking
 
@@ -65,7 +73,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Save benchmark results for later reference
 - Use real llama benchmarking output instead of guessing performance
 
-<img width="1019" height="2048" alt="image" src="https://github.com/user-attachments/assets/131a2495-20e1-4ea7-b3f5-02801afc4881" />
+<p align="center">
+  <img width="31%" alt="Benchmarking screen" src="https://github.com/user-attachments/assets/131a2495-20e1-4ea7-b3f5-02801afc4881" />
+</p>
 
 ### Dataset Creator
 
@@ -89,7 +99,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 
 **Note:** A1111 / AUTOMATIC1111 support is still experimental and actively being worked on, same with oobabooga since recent update of their repo.
 
-<img width="1043" height="2048" alt="image" src="https://github.com/user-attachments/assets/7b0a2e06-26b2-4829-ad73-cd29f10fd3c6" />
+<p align="center">
+  <img width="31%" alt="Termux tools screen" src="https://github.com/user-attachments/assets/7b0a2e06-26b2-4829-ad73-cd29f10fd3c6" />
+</p>
 
 
 ### AI Agent Workspace
@@ -99,8 +111,10 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Keep project-specific workspace memory and task context
 - Build reusable automation flows around your own projects
 
-<img width="1018" height="2048" alt="image" src="https://github.com/user-attachments/assets/cab59f56-eb7f-4d2c-9619-e479c2a8ec8e" />
-<img width="1115" height="2272" alt="image" src="https://github.com/user-attachments/assets/5b026fbb-7bc7-4478-9f18-e5f0b7142815" />
+<p align="center">
+  <img width="31%" alt="AI agent workspace screen" src="https://github.com/user-attachments/assets/cab59f56-eb7f-4d2c-9619-e479c2a8ec8e" />
+  <img width="31%" alt="AI agent session screen" src="https://github.com/user-attachments/assets/5b026fbb-7bc7-4478-9f18-e5f0b7142815" />
+</p>
 
 
 ### PDF, Video, And Summary Tools
@@ -110,9 +124,11 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Use Ollama and/or llama.cpp-compatible remote backends for summary generation
 - Tune prompts, context limits, output length, and related summary parameters per workflow
 
-<img width="1013" height="2048" alt="image" src="https://github.com/user-attachments/assets/a360e96d-b887-4b35-bf67-99df7d12b5bb" />
-<img width="1009" height="2048" alt="image" src="https://github.com/user-attachments/assets/bc79cd17-20a7-41f4-a56f-fc33becbc10b" />
-<img width="998" height="2048" alt="image" src="https://github.com/user-attachments/assets/5ec398cc-c178-4388-a4c3-802b4edb93a9" />
+<p align="center">
+  <img width="31%" alt="PDF summary screen" src="https://github.com/user-attachments/assets/a360e96d-b887-4b35-bf67-99df7d12b5bb" />
+  <img width="31%" alt="Remote summary backend screen" src="https://github.com/user-attachments/assets/bc79cd17-20a7-41f4-a56f-fc33becbc10b" />
+  <img width="31%" alt="Summary output screen" src="https://github.com/user-attachments/assets/5ec398cc-c178-4388-a4c3-802b4edb93a9" />
+</p>
 
 
 
@@ -131,7 +147,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Use FastSDCPU in Termux/proot workflows for additional image-generation setups
 - Experiment with A1111-style web UI workflows through the Termux tools area
 
-<img width="1004" height="2048" alt="image" src="https://github.com/user-attachments/assets/e624aee3-8533-4345-a610-f8931ab89ee7" />
+<p align="center">
+  <img width="31%" alt="Image generation screen" src="https://github.com/user-attachments/assets/e624aee3-8533-4345-a610-f8931ab89ee7" />
+</p>
 
 ### Offline Knowledge, Sharing, And Utilities
 
