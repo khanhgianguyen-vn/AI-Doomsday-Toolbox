@@ -232,6 +232,12 @@ If this project helps you, you can support development here:
 - [Ko-fi](https://ko-fi.com/L3L61QAJ1S)
 - [PayPal](https://paypal.me/ManuelG815)
 
+## Disclaimer
+
+This project is provided as-is, without any guarantee that it will be error-free, fit for a particular purpose, or safe for every workflow. You are responsible for how you use it, including any commands, model workflows, remote connections, generated output, or automation built on top of it.
+
+The author is not responsible for misuse of the app, data loss, device issues, network exposure, third-party tool behavior, or damage caused by incorrect configuration, generated content, or user actions.
+
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
