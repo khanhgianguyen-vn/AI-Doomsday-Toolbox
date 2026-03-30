@@ -30,6 +30,7 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Termux + proot tool environment with install helpers, SSH workflows, in-app webview access, and file management
 - AI agent workspace with custom tools, custom agents, and project memory
 - Tama virtual pet systems with adventures, farming, chat, and persistent memories
+- Android share-intent support for PDFs, videos, images, and audio files
 
 ## Features
 
@@ -47,7 +48,11 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 ### Local AI Chat
 
 - Chat with local LLMs on Android
+- Support GGUF-based llama.cpp workflows
 - Connect to llama.cpp-compatible servers and llama-server backends through a native in-app chat UI
+- OpenAI-compatible local server mode on port `8080`
+- Multiple model support with switching from the app interface
+- Optional LAN-visible server behavior through settings when needed
 - Use Ollama-compatible workflows where they fit best for your setup
 - Keep inference on-device or on your own local network instead of relying on cloud chat
 
@@ -135,7 +140,9 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 ### Audio, Video, And Subtitle Tools
 
 - Transcribe audio and video with Whisper
+- Support multiple languages and model sizes from lightweight to larger accuracy-focused options
 - Summarize video content after transcription
+- Extract audio from videos with FFmpeg as part of summarization/transcription workflows
 - Burn subtitles into video with styling controls such as font, color, and position
 - Process media directly from Android share intents
 
@@ -143,7 +150,10 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 ### Image Generation And Upscaling
 
 - Generate images with Stable Diffusion workflows directly on Android
+- Includes SD 1.5, SD 2.1, SDXL, and FLUX-oriented workflows
+- Adjustable generation settings such as steps, CFG scale, dimensions, and tiling
 - Upscale images and videos with RealESRGAN-based tools
+- Multiple scale factors are available depending on the selected model
 - Use FastSDCPU in Termux/proot workflows for additional image-generation setups
 - Experiment with A1111-style web UI workflows through the Termux tools area
 
@@ -154,8 +164,13 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 ### Offline Knowledge, Sharing, And Utilities
 
 - Browse offline knowledge bases with Kiwix and ZIM file support
-- Share models and files over LAN
-- Create and manage notes
+- Download ZIM files through the catalog or import them from internal storage
+- Built-in Kiwix server support on port `8888`
+- Optional LAN access so other devices on your network can connect to shared content
+- Share models and ZIM files over LAN with web UI and QR-based connection flows
+- Export shared files to storage when needed
+- Create and manage notes with Markdown support
+- Automatic note creation for summaries and transcription workflows
 - Use Android share intents to send PDFs, videos, images, and audio into the app’s processing flows
 
 ### Tama Virtual Pet
@@ -188,6 +203,22 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - [AUTOMATIC1111 / stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
 - [EasyDataset](https://github.com/ConardLi/easy-dataset)
 - [Termux](https://github.com/termux)
+
+### Android Stack
+
+- Kotlin with Jetpack Compose for the UI
+- Room for local persistence
+- NanoHTTPD for embedded local servers
+- ZXing for QR code generation
+- ML Kit for OCR
+- Apache PDFBox for PDF handling
+
+### Architecture
+
+- Native binaries built for `arm64-v8a`
+- Foreground services for long-running AI tasks
+- Unified notification flows for background processing
+- SAF-based file handling for imports and exports
 
 ## Getting Started
 
@@ -224,6 +255,14 @@ KEYSTORE_PASSWORD=your_keystore_password \
 KEY_PASSWORD=your_key_password \
 ./gradlew :app:bundleRelease
 ```
+
+### Models And Content
+
+Models and large offline content are managed separately inside the app. The project includes workflows for downloading, importing, and organizing models and ZIM content based on the feature you want to use.
+
+## Contributing
+
+Contributions are welcome. If you want to improve a feature, fix a bug, or help with documentation, pull requests are appreciated.
 
 ## Support
 
