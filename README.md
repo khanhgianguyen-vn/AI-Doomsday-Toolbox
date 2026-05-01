@@ -2,6 +2,8 @@
 
 **An offline AI toolbox for Android that turns one phone, or a cluster of old phones, into a local AI workstation.**
 
+Access our new wiki and read all about the app https://adt.manube.org/
+
 Run local LLMs, Whisper transcription, image generation, distributed inference, dataset creation, offline knowledge tools, and AI-powered utilities directly on Android. The project is built for people who care about privacy, edge AI, on-device AI, distributed compute, and squeezing useful work out of old phones instead of leaving them in a drawer.
 
 [![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
