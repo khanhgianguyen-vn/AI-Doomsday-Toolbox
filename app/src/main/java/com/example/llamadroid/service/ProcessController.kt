@@ -1,6 +1,8 @@
 package com.example.llamadroid.service
 
 import android.util.Log
+import com.example.llamadroid.LlamaApplication
+import com.example.llamadroid.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,6 +22,14 @@ class ProcessController {
     @Volatile
     var stoppedIntentionally = false
         private set
+
+    internal fun resolveExitState(exitCode: Int, errorMessage: String): ServerState {
+        return if (stoppedIntentionally) {
+            ServerState.Stopped
+        } else {
+            ServerState.Error(errorMessage)
+        }
+    }
     
 
     fun getCommand(binaryPath: String, config: LlamaConfig): List<String> {
@@ -344,6 +354,10 @@ class ProcessController {
             // Process exited
             val exitCode = process?.waitFor() ?: -1
             DebugLog.log("ProcessController: Process exited with code $exitCode")
+            process = null
+            val appContext = LlamaApplication.instance
+            val exitMessage = appContext.getString(R.string.llama_server_process_exited_unexpectedly, exitCode)
+            LlamaService.Companion.updateState(resolveExitState(exitCode, exitMessage))
         } catch (e: Exception) {
             DebugLog.log("ProcessController: FAILED - ${e.message}")
             Log.e("ProcessController", "Failed to start", e)

@@ -22,8 +22,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
+import com.example.llamadroid.R
 import com.example.llamadroid.tama.adventure.DungeonType
+import com.example.llamadroid.tama.adventure.localizedName
 import com.example.llamadroid.tama.db.TamaDatabase
 import com.example.llamadroid.ui.navigation.Screen
 import com.example.llamadroid.data.SettingsRepository
@@ -45,6 +49,7 @@ fun DungeonScreen(
     database: TamaDatabase,
     settingsRepository: SettingsRepository
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var completedDungeonCount by remember { mutableStateOf(0) }
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -67,19 +72,19 @@ fun DungeonScreen(
             TopAppBar(
                 title = { 
                     Text(
-                        "⚔️ DUNGEONS",
+                        stringResource(R.string.adventure_dungeons_title),
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.action_settings))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -98,7 +103,7 @@ fun DungeonScreen(
         ) {
             // Header
             Text(
-                text = "Choose your fate...",
+                text = stringResource(R.string.adventure_choose_your_fate),
                 color = DungeonGold.copy(alpha = 0.7f),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 14.sp,
@@ -127,7 +132,11 @@ fun DungeonScreen(
             
             // Progress indicator
             Text(
-                text = "Dungeons completed: $completedDungeonCount/${DungeonType.entries.size - 1}",
+                text = stringResource(
+                    R.string.adventure_dungeons_completed,
+                    completedDungeonCount,
+                    DungeonType.entries.size - 1
+                ),
                 color = Color.Gray,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
@@ -152,6 +161,7 @@ fun DungeonCard(
     isUnlocked: Boolean,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     val cardColor = if (isUnlocked) {
         Brush.horizontalGradient(
             colors = listOf(DungeonMist, DungeonDark)
@@ -190,7 +200,7 @@ fun DungeonCard(
                 // Info
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = dungeon.displayName,
+                        text = dungeon.localizedName(context),
                         color = if (isUnlocked) DungeonGold else Color.Gray,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
@@ -198,8 +208,11 @@ fun DungeonCard(
                     )
                     
                     Text(
-                        text = if (dungeon.isRandom) "Random theme each time" 
-                               else "Unlock order: ${dungeon.unlockOrder}",
+                        text = if (dungeon.isRandom) {
+                            stringResource(R.string.adventure_random_theme_each_time)
+                        } else {
+                            stringResource(R.string.adventure_unlock_order, dungeon.unlockOrder)
+                        },
                         color = if (isUnlocked) Color.LightGray else Color.Gray,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp
@@ -212,7 +225,7 @@ fun DungeonCard(
                 if (!isUnlocked) {
                     Icon(
                         Icons.Default.Lock,
-                        contentDescription = "Locked",
+                        contentDescription = stringResource(R.string.adventure_locked),
                         tint = Color.Gray,
                         modifier = Modifier.size(24.dp)
                     )

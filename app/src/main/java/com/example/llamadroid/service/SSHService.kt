@@ -1,6 +1,9 @@
 package com.example.llamadroid.service
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import com.example.llamadroid.data.model.TermuxTools
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.util.DebugLog
 import com.jcraft.jsch.ChannelExec
@@ -8,6 +11,7 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,24 +19,26 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.Properties
 
 data class SSHConfig(
     val host: String = "127.0.0.1",
-    val port: Int = 8022,
+    val port: Int = 8025,
     val user: String = "root",
     val password: String = "",
     val privateKeyPath: String? = null
 )
 
 /**
- * SSH Service for connecting to Termux proot Debian SSH.
+ * SSH Service for connecting to the Ubuntu SSH server used by Termux tools.
  * Uses SINGLETON pattern to persist connection across navigation.
- * 
- * Default proot Debian SSH setup:
- * - Port: 8022 (Termux SSHD inside proot)
+ *
+ * Default/example setup:
+ * - Host: user-configurable
+ * - Port: 8025 by default, but user-configurable
  * - User: root
- * - Auth: password via `passwd`
+ * - Auth: password or optional key
  */
 class SSHService(private val context: Context) {
     
@@ -58,6 +64,9 @@ class SSHService(private val context: Context) {
         // Tools running state (persists across navigation)
         private val _runningTools = MutableStateFlow<Set<String>>(emptySet())
         val runningTools: StateFlow<Set<String>> = _runningTools.asStateFlow()
+
+        private val _installedTools = MutableStateFlow<Set<String>>(emptySet())
+        val installedTools: StateFlow<Set<String>> = _installedTools.asStateFlow()
         
         // Per-tool output tracking (persists across navigation)
         private val _toolOutputs = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -68,6 +77,10 @@ class SSHService(private val context: Context) {
 
         fun setRunningTools(tools: Set<String>) {
             _runningTools.value = tools
+        }
+
+        fun setInstalledTools(tools: Set<String>) {
+            _installedTools.value = tools
         }
         
         fun appendToolOutput(toolId: String, text: String) {
@@ -106,8 +119,11 @@ class SSHService(private val context: Context) {
         // Singleton session (survives navigation)
         private var session: Session? = null
         private val jsch = JSch()
+        private val lanAddressRegex = Regex("""\b(?:\d{1,3}\.){3}\d{1,3}\b""")
+        private val toolLogTailJobs = mutableMapOf<String, Job>()
+        private val toolLogTailSessions = mutableMapOf<String, Session>()
         
-        const val DEFAULT_PORT = 8022
+        const val DEFAULT_PORT = 8025
         const val DEFAULT_HOST = "127.0.0.1"
         private const val SSH_SERVER_ALIVE_INTERVAL_MS = 15_000
         private const val SSH_SERVER_ALIVE_COUNT_MAX = 6
@@ -138,6 +154,9 @@ class SSHService(private val context: Context) {
             if (!connected && _isConnected.value) {
                 // Server disconnected while we thought we were connected
                 _isConnected.value = false
+                _runningTools.value = emptySet()
+                _installedTools.value = emptySet()
+                stopAllToolLogTails()
                 DebugLog.log("SSH: Connection lost (detected)")
             }
             return connected
@@ -193,6 +212,20 @@ class SSHService(private val context: Context) {
                 message.contains("session is down") ||
                 message.contains("channel is not opened")
         }
+
+        fun stopToolLogTail(toolId: String) {
+            val job = toolLogTailJobs.remove(toolId) ?: return
+            job.cancel()
+            toolLogTailSessions.remove(toolId)?.let { tailSession ->
+                try {
+                    tailSession.disconnect()
+                } catch (_: Exception) {}
+            }
+        }
+
+        private fun stopAllToolLogTails() {
+            toolLogTailJobs.keys.toList().forEach(::stopToolLogTail)
+        }
     }
     
     private val settingsRepo = SettingsRepository(context)
@@ -226,6 +259,7 @@ class SSHService(private val context: Context) {
             session?.connect()
             _isConnected.value = true
             _output.value = "Connected to ${config.host}:${config.port}\n"
+            refreshInstalledToolsNow()
             DebugLog.log("SSH: Connected successfully")
             
             Result.success(Unit)
@@ -258,9 +292,14 @@ class SSHService(private val context: Context) {
                 }
 
                 val output = outputStream.toString()
+                val exitStatus = channel.exitStatus
                 channel.disconnect()
 
-                Result.success(output)
+                if (exitStatus == 0) {
+                    Result.success(output)
+                } else {
+                    Result.failure(Exception(output.ifBlank { "Command exited with code $exitStatus" }))
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -290,6 +329,156 @@ class SSHService(private val context: Context) {
         val retriedSession = session ?: return@withContext Result.failure(firstError ?: Exception("SSH reconnect failed"))
         runExec(retriedSession)
     }
+
+    suspend fun refreshInstalledToolsNow(): Set<String> = withContext(Dispatchers.IO) {
+        if (!checkConnection()) {
+            setInstalledTools(emptySet())
+            return@withContext emptySet()
+        }
+
+        val detected = mutableSetOf<String>()
+        TermuxTools.allTools.forEach { tool ->
+            val output = executeQuiet(tool.installCheckCommand)?.trim()
+            if (output == "installed") {
+                detected.add(tool.id)
+            }
+        }
+        setInstalledTools(detected)
+        detected
+    }
+
+    suspend fun uploadToRemotePath(
+        localFile: File,
+        remotePath: String,
+        onProgress: ((Long, Long) -> Unit)? = null
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!localFile.exists()) {
+            return@withContext Result.failure(Exception("Local upload staging file is missing"))
+        }
+        if (!localFile.canRead()) {
+            return@withContext Result.failure(Exception("Local upload staging file is not readable"))
+        }
+
+        val parentPath = remotePath.substringBeforeLast("/", missingDelimiterValue = "/").ifBlank { "/" }
+        val tempRemotePath = "$remotePath.upload.${System.currentTimeMillis()}.tmp"
+        val mainHandler = Handler(Looper.getMainLooper())
+        val totalBytes = localFile.length().coerceAtLeast(0L)
+        val uploadConfig = _config.value
+
+        fun postProgress(sent: Long, total: Long = totalBytes) {
+            onProgress ?: return
+            mainHandler.post {
+                onProgress.invoke(sent.coerceAtLeast(0L), total.coerceAtLeast(0L))
+            }
+        }
+
+        fun runExecUploadAttempt(): Result<Unit> {
+            var uploadSession: Session? = null
+            var channel: ChannelExec? = null
+            return try {
+                uploadSession = createConfiguredSession(uploadConfig)
+                uploadSession.connect(30_000)
+                channel = uploadSession.openChannel("exec") as ChannelExec
+                val uploadScript = """
+                    set -e
+                    mkdir -p ${shellQuote(parentPath)}
+                    rm -f ${shellQuote(tempRemotePath)}
+                    cat > ${shellQuote(tempRemotePath)}
+                    mv -f ${shellQuote(tempRemotePath)} ${shellQuote(remotePath)}
+                """.trimIndent()
+                channel.setCommand("bash -lc ${shellQuote(uploadScript)}")
+
+                val remoteStdin = channel.outputStream.buffered()
+                val remoteStdout = channel.inputStream
+                val remoteStderr = channel.extInputStream
+                channel.connect(30_000)
+
+                postProgress(0L, totalBytes)
+                localFile.inputStream().buffered().use { input ->
+                    val buffer = ByteArray(256 * 1024)
+                    var sentBytes = 0L
+                    var reportedBytes = -1L
+                    var reportedAtMs = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (read == 0) continue
+                        remoteStdin.write(buffer, 0, read)
+                        sentBytes += read
+                        val now = System.currentTimeMillis()
+                        val shouldReport = sentBytes == totalBytes ||
+                            sentBytes - reportedBytes >= 256 * 1024 ||
+                            now - reportedAtMs >= 200
+                        if (shouldReport) {
+                            reportedBytes = sentBytes
+                            reportedAtMs = now
+                            postProgress(sentBytes, totalBytes)
+                        }
+                    }
+                }
+                remoteStdin.flush()
+                remoteStdin.close()
+
+                val stdout = ByteArrayOutputStream()
+                val stderr = ByteArrayOutputStream()
+                val readBuffer = ByteArray(8 * 1024)
+                while (true) {
+                    while (remoteStdout.available() > 0) {
+                        val read = remoteStdout.read(readBuffer, 0, readBuffer.size)
+                        if (read < 0) break
+                        stdout.write(readBuffer, 0, read)
+                    }
+                    while (remoteStderr.available() > 0) {
+                        val read = remoteStderr.read(readBuffer, 0, readBuffer.size)
+                        if (read < 0) break
+                        stderr.write(readBuffer, 0, read)
+                    }
+                    if (channel.isClosed) {
+                        if (remoteStdout.available() > 0 || remoteStderr.available() > 0) continue
+                        break
+                    }
+                    Thread.sleep(100)
+                }
+
+                val exitStatus = channel.exitStatus
+                if (exitStatus == 0) {
+                    postProgress(totalBytes, totalBytes)
+                    Result.success(Unit)
+                } else {
+                    val output = listOf(stdout.toString(), stderr.toString())
+                        .joinToString("\n")
+                        .trim()
+                    Result.failure(Exception(output.ifBlank { "SSH upload exited with code $exitStatus" }))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            } finally {
+                try {
+                    channel?.disconnect()
+                } catch (_: Exception) {}
+                try {
+                    uploadSession?.disconnect()
+                } catch (_: Exception) {}
+            }
+        }
+
+        if (uploadConfig.password.isBlank() && uploadConfig.privateKeyPath == null) {
+            return@withContext Result.failure(Exception("Missing SSH credentials"))
+        }
+
+        val firstAttempt = runExecUploadAttempt()
+        val firstError = firstAttempt.exceptionOrNull()
+        if (firstAttempt.isSuccess || !isRecoverableSessionFailure(firstError)) {
+            return@withContext firstAttempt
+        }
+
+        val retryResult = runExecUploadAttempt()
+        if (retryResult.isSuccess) {
+            retryResult
+        } else {
+            Result.failure(retryResult.exceptionOrNull() ?: firstError ?: Exception("SSH upload failed"))
+        }
+    }
     
     /**
      * Execute a command quietly and return output string (or null on error).
@@ -297,6 +486,30 @@ class SSHService(private val context: Context) {
      */
     suspend fun executeQuiet(command: String): String? {
         return executeCommand(command).getOrNull()
+    }
+
+    suspend fun detectLanAddress(): String? {
+        val detectionCommands = listOf(
+            "hostname -I 2>/dev/null || true",
+            "ip route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \\([0-9.]*\\).*/\\1/p'",
+            "ip -o -4 addr show up scope global 2>/dev/null || true",
+            """python3 -c 'import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("8.8.8.8", 80)); print(s.getsockname()[0]); s.close()' 2>/dev/null || true""",
+            "ifconfig 2>/dev/null || true",
+            "getprop dhcp.wlan0.ipaddress 2>/dev/null || true",
+            "/system/bin/getprop dhcp.wlan0.ipaddress 2>/dev/null || true"
+        )
+
+        detectionCommands.forEach { command ->
+            val output = executeQuiet(command).orEmpty()
+            lanAddressRegex.findAll(output)
+                .map { it.value }
+                .firstOrNull { ip ->
+                    !ip.startsWith("127.") && ip != "0.0.0.0"
+                }
+                ?.let { return it }
+        }
+
+        return null
     }
     
     /**
@@ -358,7 +571,11 @@ class SSHService(private val context: Context) {
             _currentCommand.value = ""
             
             DebugLog.log("SSH: Command completed with exit code $exitStatus")
-            Result.success(exitStatus)
+            if (exitStatus == 0) {
+                Result.success(exitStatus)
+            } else {
+                Result.failure(Exception("Command exited with code $exitStatus"))
+            }
         } catch (e: Exception) {
             DebugLog.log("SSH: Command failed - ${e.message}")
             appendOutput("\n[Error] ${e.message}\n")
@@ -376,7 +593,12 @@ class SSHService(private val context: Context) {
      * Execute a command and stream output to per-tool StateFlow.
      * Each tool gets its own output channel.
      */
-    suspend fun executeCommandForTool(toolId: String, command: String): Result<Int> = withContext(Dispatchers.IO) {
+    suspend fun executeCommandForTool(
+        toolId: String,
+        command: String,
+        followLogFile: String? = null,
+        clearExistingOutput: Boolean = false
+    ): Result<Int> = withContext(Dispatchers.IO) {
         if (!checkConnection()) {
             appendToolOutput(toolId, "\n[Error] Not connected to SSH server\n")
             return@withContext Result.failure(Exception("Not connected"))
@@ -385,6 +607,10 @@ class SSHService(private val context: Context) {
         val currentSession = session!!
         
         try {
+            stopToolLogTail(toolId)
+            if (clearExistingOutput) {
+                clearToolOutput(toolId)
+            }
             DebugLog.log("SSH[$toolId]: Executing: $command")
             setToolExecuting(toolId, true)
             appendToolOutput(toolId, "\n\$ $command\n")
@@ -425,9 +651,17 @@ class SSHService(private val context: Context) {
             
             appendToolOutput(toolId, "\n[Exit code: $exitStatus]\n")
             setToolExecuting(toolId, false)
+
+            if (exitStatus == 0 && !followLogFile.isNullOrBlank()) {
+                startToolLogTail(toolId, followLogFile)
+            }
             
             DebugLog.log("SSH[$toolId]: Command completed with exit code $exitStatus")
-            Result.success(exitStatus)
+            if (exitStatus == 0) {
+                Result.success(exitStatus)
+            } else {
+                Result.failure(Exception("Command exited with code $exitStatus"))
+            }
         } catch (e: Exception) {
             DebugLog.log("SSH[$toolId]: Command failed - ${e.message}")
             appendToolOutput(toolId, "\n[Error] ${e.message}\n")
@@ -436,6 +670,80 @@ class SSHService(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    private fun startToolLogTail(toolId: String, logFile: String) {
+        stopToolLogTail(toolId)
+        val tailConfig = _config.value
+
+        val job = persistentScope.launch {
+            var tailSession: Session? = null
+            var channel: ChannelExec? = null
+            try {
+                appendToolOutput(toolId, "\n[Following log: $logFile]\n")
+                val currentTailSession = createConfiguredSession(tailConfig)
+                tailSession = currentTailSession
+                currentTailSession.connect(30_000)
+                toolLogTailSessions[toolId] = currentTailSession
+
+                channel = currentTailSession.openChannel("exec") as ChannelExec
+                channel.setCommand("bash -lc 'touch \"$logFile\" 2>/dev/null || true; tail -n +1 -F \"$logFile\"'")
+                val inputStream = channel.inputStream
+                val errorStream = channel.extInputStream
+                channel.connect(10000)
+
+                val buffer = ByteArray(1024)
+                while (true) {
+                    while (inputStream.available() > 0) {
+                        val read = inputStream.read(buffer, 0, buffer.size)
+                        if (read < 0) break
+                        appendToolOutput(toolId, String(buffer, 0, read))
+                    }
+
+                    while (errorStream.available() > 0) {
+                        val read = errorStream.read(buffer, 0, buffer.size)
+                        if (read < 0) break
+                        appendToolOutput(toolId, "[stderr] ${String(buffer, 0, read)}")
+                    }
+
+                    if (channel.isClosed) {
+                        if (inputStream.available() > 0 || errorStream.available() > 0) continue
+                        break
+                    }
+                    Thread.sleep(200)
+                }
+            } catch (e: Exception) {
+                appendToolOutput(toolId, "\n[Log follow failed] ${e.message ?: "Unknown error"}\n")
+            } finally {
+                try {
+                    channel?.disconnect()
+                } catch (_: Exception) {}
+                try {
+                    tailSession?.disconnect()
+                } catch (_: Exception) {}
+                toolLogTailSessions.remove(toolId)
+                if (toolLogTailJobs[toolId] == this.coroutineContext[Job]) {
+                    toolLogTailJobs.remove(toolId)
+                }
+            }
+        }
+        toolLogTailJobs[toolId] = job
+    }
+
+    private fun createConfiguredSession(config: SSHConfig): Session {
+        return jsch.getSession(config.user, config.host, config.port).apply {
+            if (config.privateKeyPath != null) {
+                jsch.addIdentity(config.privateKeyPath)
+            } else {
+                setPassword(config.password)
+            }
+            val props = Properties()
+            props["StrictHostKeyChecking"] = "no"
+            setConfig(props)
+            configureSession(this)
+        }
+    }
+
+    private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
     
     /**
      * Execute multiple commands sequentially. Shows confirmation for each.
@@ -462,7 +770,8 @@ class SSHService(private val context: Context) {
         persistentScope.launch {
             appendOutput("\n=== Installing $toolName (${commands.size} steps) ===\n")
             appendOutput("⚠️ This will continue even if you navigate away\n\n")
-            
+
+            var failedStep: Int? = null
             for ((index, command) in commands.withIndex()) {
                 appendOutput("[Step ${index + 1}/${commands.size}]\n")
                 _currentCommand.value = command
@@ -470,11 +779,17 @@ class SSHService(private val context: Context) {
                 val result = executeCommandStreaming(command)
                 if (result.isFailure) {
                     appendOutput("\n❌ Installation failed at step ${index + 1}\n")
+                    failedStep = index + 1
                     break
                 }
             }
-            
-            appendOutput("\n=== $toolName installation complete ===\n")
+
+            if (failedStep == null) {
+                appendOutput("\n=== $toolName installation complete ===\n")
+            } else {
+                appendOutput("\n=== $toolName installation stopped after step $failedStep ===\n")
+            }
+            refreshInstalledToolsNow()
         }
     }
     
@@ -482,11 +797,14 @@ class SSHService(private val context: Context) {
      * Disconnect from SSH server.
      */
     fun disconnect() {
+        stopAllToolLogTails()
         session?.disconnect()
         session = null
         _isConnected.value = false
         _isExecuting.value = false
         _currentCommand.value = ""
+        _runningTools.value = emptySet()
+        _installedTools.value = emptySet()
         appendOutput("\n[Disconnected]\n")
         DebugLog.log("SSH: Disconnected")
     }

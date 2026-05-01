@@ -1,6 +1,8 @@
 package com.example.llamadroid.data.db
 
 import androidx.room.*
+import com.example.llamadroid.data.SettingsRepository
+import com.example.llamadroid.service.OllamaService
 
 /**
  * Dataset generation database entities
@@ -20,12 +22,20 @@ data class DatasetProjectEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val createdAt: Long = System.currentTimeMillis(),
-    // Server config - uses existing llama.cpp server (started from Dashboard)
+    val backend: String = SettingsRepository.PDF_BACKEND_LLAMA_SERVER,
+    // llama-server config - uses existing llama.cpp server (started from Dashboard)
     val serverUrl: String = "http://127.0.0.1:8080",  // URL for API calls (default llama.cpp port)
+    // Ollama config
+    val ollamaUrl: String = OllamaService.DEFAULT_URL,
+    val ollamaModel: String? = null,
+    val ollamaNumCtx: Int = 4096,
+    val ollamaThreads: Int = 4,
+    val ollamaMmap: Boolean = false,
     // Per-request API settings
     val temperature: Float = 0.7f,
     val maxTokens: Int = 512,
     val useCoT: Boolean = false,
+    val finalLanguage: String = "",
     val chunkSize: Int = 1000,  // Only used during source import
     val questionsPerChunk: Int = 5
 )

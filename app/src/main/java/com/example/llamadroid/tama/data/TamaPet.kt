@@ -1,6 +1,7 @@
 package com.example.llamadroid.tama.data
 
 import java.util.UUID
+import java.util.Calendar
 import kotlinx.serialization.Serializable
 import com.example.llamadroid.tama.data.InventoryItem
 
@@ -12,8 +13,9 @@ import com.example.llamadroid.tama.data.InventoryItem
 data class TamaPet(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
-    val species: String = "creature",
+    val species: String = PetSpeciesLine.DRAGON.id,
     val birthTimestamp: Long = System.currentTimeMillis(),
+    val stageProgressStartTime: Long = birthTimestamp,
     val lastDecayTime: Long = System.currentTimeMillis(),  // For stat decay
     val stage: GrowthStage = GrowthStage.EGG,
     val stats: PetStats = PetStats(),
@@ -24,18 +26,67 @@ data class TamaPet(
     val ownerBondLevel: Float = 50f,
     val educationLevel: Float = 0f,
     val currentLocationId: String = "home",
+    val homeRoomId: String = TamaRoomCatalog.PRINCIPAL_ROOM_ID,
+    val leftDecorationId: String? = null,
+    val rightDecorationId: String? = null,
+    val growthLocked: Boolean = false,
+    val growthLockStartedAt: Long? = null,
     val money: Long = 100,
     val inventory: List<InventoryItem> = emptyList(),
     // Activity states (persist when app closed)
     val currentActivity: ActivityType = ActivityType.NONE,
+    val currentWorkJobId: String? = null,
     val activityStartTime: Long? = null,
     val isSleeping: Boolean = false,
     val sleepStartTime: Long? = null,
+    val lastDailyDreamDate: String? = null,
+    val pendingDreamAlbumId: String? = null,
+    val currentParkEncounter: TamaParkEncounter? = null,
+    val currentAmbientNpc: TamaAmbientNpcState? = null,
+    val lastRecyclerEncounterDate: String? = null,
+    val nextPoopAt: Long? = null,
+    val poopCreatedAt: Long? = null,
+    val poopCount: Int = 0,
+    val lastPoopMiscareAt: Long? = null,
     val lastSleepWarningTime: Long? = null,
+    val overnightAwakeDateKey: String? = null,
+    val overnightAwakeAccumulatedMs: Long = 0L,
     val miscareCount: Int = 0,
     val isMad: Boolean = false,
     val discoveredLocationIds: Set<String> = setOf("home")
 )
+
+const val TAMA_MISCARE_HEALTH_PENALTY = 20f
+
+fun TamaPet.isHealthForcedAngry(): Boolean = stats.health < 50f
+
+fun TamaPet.isEffectivelyMad(): Boolean = isMad || isHealthForcedAngry()
+
+fun TamaPet.isPoopGenerationPaused(): Boolean {
+    return isSleeping || when (currentActivity) {
+        ActivityType.WORKING,
+        ActivityType.STUDYING,
+        ActivityType.RELAXING -> true
+        else -> false
+    }
+}
+
+fun isSleepStatFreezeWindow(now: Long = System.currentTimeMillis()): Boolean {
+    val calendar = Calendar.getInstance().apply { timeInMillis = now }
+    val hour = calendar.get(Calendar.HOUR_OF_DAY)
+    return hour >= 22 || hour < 8
+}
+
+fun TamaPet.applyMiscarePenalty(happinessPenalty: Float = 15f): TamaPet {
+    return copy(
+        miscareCount = miscareCount + 1,
+        isMad = true,
+        stats = stats.copy(
+            health = (stats.health - TAMA_MISCARE_HEALTH_PENALTY).coerceIn(0f, 100f),
+            happiness = (stats.happiness - happinessPenalty).coerceIn(0f, 100f)
+        )
+    )
+}
 
 /**
  * Activities that persist when app is closed.
@@ -49,30 +100,49 @@ enum class ActivityType {
 }
 
 /**
- * Growth stages based on real time since birth.
- * Transitions specified by user:
- * Egg: 1 minute
- * Baby: 1 hour
- * Child: 24 hours
- * Teen: 24 hours
- * Adult: 24 hours
- * Senior: 1 week
+ * Growth stages with explicit per-stage durations.
+ * `durationInStageMillis` is the hidden timer that determines when this stage evolves.
+ * User-visible pet age is tracked separately through `birthTimestamp`.
  */
 @Serializable
-enum class GrowthStage(val displayName: String, val minAgeHours: Float) {
-    EGG("Egg", 0f),
-    BABY("Baby", 1f/60f),    // 1 minute
-    CHILD("Child", 1f),      // 1 hour (evolution to Child happens after 1 hour of Baby stage)
-    TEEN("Teen", 25f),       // 24h as Child
-    ADULT("Adult", 49f),     // 24h as Teen
-    SENIOR("Senior", 73f);   // 24h as Adult (Wait, user said 1 week for senior? "Senior: 1 week" might mean it stays senior for a week or evolves AFTER a week. Re-reading: "Egg: 1m, Baby: 1h, Child: 24h, Teen: 24h, Adult: 24h, Senior: 1 week". 
-                             // I will assume it evolves TO Senior after another 24h, and stays Senior for a week.)
-    
+enum class GrowthStage(
+    val displayName: String,
+    val durationInStageMillis: Long?
+) {
+    EGG("Egg", 60_000L),
+    BABY("Baby", 60L * 60L * 1000L),
+    CHILD("Child", 48L * 60L * 60L * 1000L),
+    TEEN("Teen", 48L * 60L * 60L * 1000L),
+    ADULT("Adult", 48L * 60L * 60L * 1000L),
+    SENIOR("Senior", null);
+
     companion object {
+        @Deprecated(
+            message = "Do not infer live Tama stage from lifetime age. Use persisted stage plus stageProgressStartTime instead.",
+            replaceWith = ReplaceWith("error(\"Legacy-only helper\")")
+        )
         fun fromAgeHours(ageHours: Float): GrowthStage {
-            return GrowthStage.entries.reversed().firstOrNull { ageHours >= it.minAgeHours } ?: EGG
+            val totalAgeMillis = (ageHours * 60f * 60f * 1000f).toLong().coerceAtLeast(0L)
+            var elapsed = totalAgeMillis
+            for (stage in entries) {
+                val duration = stage.durationInStageMillis ?: return stage
+                if (elapsed < duration) return stage
+                elapsed -= duration
+            }
+            return SENIOR
         }
+
+        fun durationUntilNextStageMillis(stage: GrowthStage): Long? = stage.durationInStageMillis
     }
+}
+
+fun GrowthStage.canWork(): Boolean = when (this) {
+    GrowthStage.TEEN,
+    GrowthStage.ADULT,
+    GrowthStage.SENIOR -> true
+    GrowthStage.EGG,
+    GrowthStage.BABY,
+    GrowthStage.CHILD -> false
 }
 
 /**
@@ -100,6 +170,7 @@ enum class Mood(val emoji: String) {
     HAPPY("🙂"),
     NEUTRAL("😐"),
     SAD("😢"),
+    SLEEPY("🥱"),
     ANGRY("😠"),
     SICK("🤒"),
     SLEEPING("😴")

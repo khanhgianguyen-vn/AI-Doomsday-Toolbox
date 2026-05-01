@@ -1,8 +1,13 @@
 package com.example.llamadroid.service
 
+import android.os.Parcelable
+import com.example.llamadroid.sd.SdLoraApplyMode
+import kotlinx.parcelize.Parcelize
+
 /**
  * Configuration for stable-diffusion.cpp image generation
  */
+@Parcelize
 data class SDConfig(
     val modelPath: String,
     val prompt: String,
@@ -29,11 +34,22 @@ data class SDConfig(
     val vaeTileSize: String = "32x32",
     val vaeRelativeTileSize: String = "",
     val tensorTypeRules: String = "",
-    // FLUX-specific components (required when isFluxModel = true)
+    val cacheMode: SdCacheMode? = null,
+    val cacheOption: String = "",
+    val scmMask: String = "",
+    val scmPolicy: SdCacheScmPolicy? = null,
+    // Backward-compatible hint kept while older UI paths are migrated.
     val isFluxModel: Boolean = false,
-    val vaePath: String? = null,      // --vae
-    val clipLPath: String? = null,    // --clip_l
-    val t5xxlPath: String? = null,    // --t5xxl
+    // Family metadata and components
+    val modelFamily: String? = null,
+    val modelVariant: String? = null,
+    val vaePath: String? = null,
+    val taePath: String? = null,
+    val clipLPath: String? = null,
+    val clipGPath: String? = null,
+    val t5xxlPath: String? = null,
+    val llmPath: String? = null,
+    val llmVisionPath: String? = null,
     // ControlNet (optional)
     val controlNetPath: String? = null,
     val controlImagePath: String? = null,
@@ -41,9 +57,34 @@ data class SDConfig(
     // LoRA (optional)
     val loraPath: String? = null,
     val loraStrength: Float = 1.0f,
+    val loraApplyMode: SdLoraApplyMode? = null,
+    // PhotoMaker (optional)
+    val photoMakerPath: String? = null,
+    // Family-specific runtime flags
+    val flowShift: Float? = null,
+    val diffusionFa: Boolean = false,
+    val mmap: Boolean = false,
+    val vaeConvDirect: Boolean = false,
+    val qwenImageZeroCondT: Boolean = false,
+    val chromaDisableDitMask: Boolean = false,
     // Quantization type for stable-diffusion.cpp (--type)
     val quantizationType: String = ""
-)
+) : Parcelable
+
+@Parcelize
+data class SDWorkflowConfig(
+    val txt2imgConfig: SDConfig,
+    val upscaleConfig: SDConfig
+) : Parcelable
+
+@Parcelize
+data class SDUpscaleConfig(
+    val modelPath: String,
+    val inputImagePath: String,
+    val outputPath: String,
+    val upscaleRepeats: Int = 1,
+    val threads: Int = -1
+) : Parcelable
 
 enum class SamplingMethod(val cliName: String) {
     EULER("euler"),

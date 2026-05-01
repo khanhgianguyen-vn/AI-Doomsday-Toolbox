@@ -220,6 +220,7 @@ private fun CustomToolEditorDialog(
     var exampleUsage by remember { mutableStateOf(tool?.exampleUsage ?: "") }
     var parameters by remember { mutableStateOf(tool?.parametersJson ?: "{}") }
     var requiredParams by remember { mutableStateOf(tool?.requiredParamsJson ?: "[]") }
+    var workingDirectory by remember { mutableStateOf(tool?.workingDirectory ?: ".") }
     var needsApproval by remember { mutableStateOf(tool?.needsApproval ?: true) }
     
     val isEditing = tool != null
@@ -259,10 +260,11 @@ private fun CustomToolEditorDialog(
                         onClick = {
                             name = "get_weather"
                             description = "Get the current weather for a city."
-                            commandTemplate = "curl -s 'https://wttr.in/{city}?format=3'"
+                            commandTemplate = "curl -s https://wttr.in/{city}?format=3"
                             parameters = "{\"city\": \"string\"}"
                             requiredParams = "[\"city\"]"
                             exampleUsage = "tool_call=get_weather(city=\"London\")"
+                            workingDirectory = "."
                         },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     ) {
@@ -306,6 +308,16 @@ private fun CustomToolEditorDialog(
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 4,
                         supportingText = { Text(stringResource(R.string.agent_tool_template_desc)) }
+                    )
+
+                    OutlinedTextField(
+                        value = workingDirectory,
+                        onValueChange = { workingDirectory = it },
+                        label = { Text(stringResource(R.string.agent_tool_working_dir_label)) },
+                        placeholder = { Text(stringResource(R.string.agent_tool_working_dir_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        supportingText = { Text(stringResource(R.string.agent_tool_working_dir_desc)) }
                     )
                     
                     OutlinedTextField(
@@ -361,6 +373,7 @@ private fun CustomToolEditorDialog(
                             parametersJson = parameters,
                             requiredParamsJson = requiredParams,
                             exampleUsage = exampleUsage,
+                            workingDirectory = workingDirectory.ifBlank { "." },
                             needsApproval = needsApproval,
                             isEnabled = tool?.isEnabled ?: true,
                             createdAt = tool?.createdAt ?: System.currentTimeMillis(),

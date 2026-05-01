@@ -41,6 +41,7 @@ data class AgentMessageEntity(
     val conversationId: Long,
     val role: String,  // "user", "assistant", "tool", "system"
     val content: String,
+    val imagePath: String? = null,
     val thinking: String? = null,
     val toolName: String? = null,
     val toolCallId: String? = null,

@@ -18,7 +18,6 @@ import java.io.FileOutputStream
  * At runtime, the best available tier is selected based on CPU features.
  */
 class BinaryRepository(private val context: Context) {
-
     companion object {
         private const val TAG = "BinaryRepository"
         
@@ -50,7 +49,6 @@ class BinaryRepository(private val context: Context) {
         private const val PREFS_NAME = "llamadroid_settings"
         private const val KEY_PREFERRED_TIER = "preferred_cpu_tier"
 
-        
         // Required shared libraries (not tiered, always same version)
         val SHARED_LIBS = listOf(
             "libllama.so",
@@ -63,6 +61,18 @@ class BinaryRepository(private val context: Context) {
             "libggml-cpu.so.0.so",
             "libwhisper.so.1.so"
         )
+
+        internal fun buildBinarySearchTiers(selectedTier: String, deviceTier: String): List<String> {
+            val preferred = tiersForSelectionStatic(selectedTier)
+            val deviceFallbacks = tiersForSelectionStatic(deviceTier)
+            return (preferred + deviceFallbacks).distinct()
+        }
+
+        private fun tiersForSelectionStatic(tier: String): List<String> = when (tier) {
+            "armv9" -> listOf("armv9", "dotprod", "baseline")
+            "dotprod" -> listOf("dotprod", "baseline")
+            else -> listOf("baseline")
+        }
     }
     
     private var cachedTier: String? = null
@@ -87,6 +97,12 @@ class BinaryRepository(private val context: Context) {
         return cachedTier!!
     }
 
+    private fun tiersForSelection(tier: String): List<String> = when (tier) {
+        "armv9" -> listOf("armv9", "dotprod", "baseline")
+        "dotprod" -> listOf("dotprod", "baseline")
+        else -> listOf("baseline")
+    }
+
     /**
      * Get path to a tiered binary, with fallback to lower tiers.
      * 
@@ -106,24 +122,27 @@ class BinaryRepository(private val context: Context) {
      * @return File path to the binary, or null if not found
      */
     fun getTieredBinary(name: String): File? {
-        // Ensure native libs module is installed
-        if (!DynamicFeatureManager.isNativeLibsReady(context)) {
-            Log.w(TAG, "Native libs module not installed yet")
-            return null
-        }
+        return getTieredBinary(name, getTier())
+    }
 
-        val tier = getTier()
+    private fun getTieredBinary(name: String, selectedTier: String): File? {
+        val deviceTier = getTier()
+        val tiersToTry = buildBinarySearchTiers(selectedTier, deviceTier)
+        return findTieredBinary(name, selectedTier, tiersToTry)
+    }
+
+    private fun findTieredBinary(
+        name: String,
+        selectedTier: String,
+        tiersToTry: List<String>
+    ): File? {
+        if (!DynamicFeatureManager.isNativeLibsReady(context)) {
+            Log.w(TAG, "Native libs modules not fully ready yet; probing available paths for $name anyway")
+        }
         
         // 1. Check nativeLibraryDir (System installed) - EXECUTE DIRECTLY FROM HERE
         // Android 10+ restricts W^X, so we must execute from read-only system paths if possible.
         val nativeLibDir = context.applicationInfo.nativeLibraryDir
-        
-        // Try tiers from best to worst (fallback chain)
-        val tiersToTry = when (tier) {
-            "armv9" -> listOf("armv9", "dotprod", "baseline")
-            "dotprod" -> listOf("dotprod", "baseline")
-            else -> listOf("baseline")
-        }
         
         // Strategy 1: Check main APK native lib dir (where splits are merged/symlinked on some OS versions)
         for (tryTier in tiersToTry) {
@@ -138,13 +157,15 @@ class BinaryRepository(private val context: Context) {
         
         // Strategy 2: Check Feature Module Contexts (Split APKs)
         // On some devices, splits have their own nativeLibraryDir. We must execute from THERE.
-        val currentTier = getTier()
-        val featurePackages = listOf(
-            "com.example.llamadroid.feature.llm.$currentTier",
-            "com.example.llamadroid.feature.media.$currentTier",
-            "com.example.llamadroid.feature.kiwix.$currentTier",
-            "com.example.llamadroid.feature.upscaler"
-        )
+        val featureSearchTiers = tiersToTry
+        val featurePackages = buildList {
+            featureSearchTiers.forEach { tier ->
+                add("com.example.llamadroid.feature.llm.$tier")
+                add("com.example.llamadroid.feature.media.$tier")
+                add("com.example.llamadroid.feature.kiwix.$tier")
+            }
+            add("com.example.llamadroid.feature.upscaler")
+        }.distinct()
 
         for (pkgName in featurePackages) {
             try {
@@ -170,11 +191,13 @@ class BinaryRepository(private val context: Context) {
         
         // Strategy 3: Check Legacy Split Directories (Backup for older Android versions)
         try {
-            val splitDirs = listOf(
-                "feature_llm_$currentTier",
-                "feature_kiwix_$currentTier", 
-                "feature_media_$currentTier"
-            )
+            val splitDirs = buildList {
+                featureSearchTiers.forEach { tier ->
+                    add("feature_llm_$tier")
+                    add("feature_kiwix_$tier")
+                    add("feature_media_$tier")
+                }
+            }.distinct()
 
             for (splitName in splitDirs) {
                 val splitDir = File(context.filesDir.parent, "split_$splitName")
@@ -212,7 +235,7 @@ class BinaryRepository(private val context: Context) {
             }
         }
 
-        Log.w(TAG, "Binary not found: $name (tried tiers: $tiersToTry)")
+        Log.w(TAG, "Binary not found: $name (selected tier: $selectedTier, tried tiers: $tiersToTry)")
         return null
     }
 
@@ -270,7 +293,7 @@ class BinaryRepository(private val context: Context) {
      * Get ffprobe binary (tiered).
      */
     fun getFFprobeBinary(): File? = getTieredBinary("ffprobe")
-    
+
     /**
      * Get whisper-cli binary (tiered).
      */
@@ -300,7 +323,7 @@ class BinaryRepository(private val context: Context) {
      * Get llama-bench binary (tiered) for benchmarking.
      */
     fun getLlamaBenchBinary(): File? = getTieredBinary("llama-bench")
-    
+
     /**
      * Get kiwix-serve binary (for serving ZIM files).
      * Note: kiwix binaries may not be tiered yet - fall back to non-tiered if needed
@@ -489,7 +512,7 @@ class BinaryRepository(private val context: Context) {
     // Check if critical binaries are present
     private fun areCriticalBinariesPresent(binaries: Set<String>): Boolean {
         // Just check for a few key ones to decide if we need fallback
-        return binaries.any { it.startsWith("libllama") } && 
+        return binaries.any { it.startsWith("libllama") } &&
                binaries.any { it.startsWith("libffmpeg") }
     }
 
@@ -515,42 +538,35 @@ class BinaryRepository(private val context: Context) {
             key
         }
 
-        fileGroups.forEach { (key, groupFiles) ->
-            var bestFile: File? = null
+        fileGroups.forEach { (_, groupFiles) ->
             val isTiered = groupFiles.any { f -> 
                 val n = f.name
                 n.contains("_baseline.so") || n.contains("_dotprod.so") || n.contains("_armv9.so")
             }
-            
-            if (isTiered) {
-                for (tier in tiers) {
-                    val match = groupFiles.find { it.name.endsWith("_$tier.so") }
-                    if (match != null) {
-                        bestFile = match
-                        break
-                    }
+
+            val bestFile = if (isTiered) {
+                tiers.firstNotNullOfOrNull { tier ->
+                    groupFiles.find { it.name.endsWith("_$tier.so") }
                 }
             } else {
-                bestFile = groupFiles.firstOrNull()
-            }
-            
-            if (bestFile != null) {
-                val destFile = File(destDir, bestFile!!.name)
-                try {
-                    // Only copy if size differs or missing (simple check)
-                    // Or if we want to ensure executable bit?
-                    // Files in nativeLibraryDir are not writable/executable by us usually?
-                    // We copy to filesDir to make them executable if needed (though shared libs usually don't need +x unless executed directly)
-                    // Binaries like ffmpeg DO need +x.
-                    if (!destFile.exists() || destFile.length() != bestFile!!.length()) {
-                        bestFile!!.copyTo(destFile, overwrite = true)
-                        destFile.setExecutable(true)
-                        Log.v(TAG, "Copied ${bestFile!!.name} from ${sourceDir.absolutePath}")
-                    }
-                    deployedFiles.add(bestFile!!.name)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to copy ${bestFile!!.name}", e)
+                groupFiles.firstOrNull()
+            } ?: return@forEach
+
+            val destFile = File(destDir, bestFile.name)
+            try {
+                // Only copy if size differs or missing (simple check)
+                // Or if we want to ensure executable bit?
+                // Files in nativeLibraryDir are not writable/executable by us usually?
+                // We copy to filesDir to make them executable if needed (though shared libs usually don't need +x unless executed directly)
+                // Binaries like ffmpeg DO need +x.
+                if (!destFile.exists() || destFile.length() != bestFile.length()) {
+                    bestFile.copyTo(destFile, overwrite = true)
+                    destFile.setExecutable(true)
+                    Log.v(TAG, "Copied ${bestFile.name} from ${sourceDir.absolutePath}")
                 }
+                deployedFiles.add(bestFile.name)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to copy ${bestFile.name}", e)
             }
         }
         return deployedFiles
@@ -590,40 +606,33 @@ class BinaryRepository(private val context: Context) {
                 key
             }
 
-            fileGroups.forEach { (key, groupEntries) ->
-                var bestEntry: java.util.zip.ZipEntry? = null
+            fileGroups.forEach { (_, groupEntries) ->
                 val isTiered = groupEntries.any { e ->
                     val n = File(e.name).name
                     n.contains("_baseline.so") || n.contains("_dotprod.so") || n.contains("_armv9.so")
                 }
 
-                if (isTiered) {
-                     for (tier in tiers) {
-                        val match = groupEntries.find { File(it.name).name.endsWith("_$tier.so") }
-                        if (match != null) {
-                            bestEntry = match
-                            break
-                        }
+                val bestEntry = if (isTiered) {
+                    tiers.firstNotNullOfOrNull { tier ->
+                        groupEntries.find { File(it.name).name.endsWith("_$tier.so") }
                     }
                 } else {
-                    bestEntry = groupEntries.firstOrNull()
-                }
+                    groupEntries.firstOrNull()
+                } ?: return@forEach
 
-                if (bestEntry != null) {
-                     val filename = File(bestEntry!!.name).name
-                     val destFile = File(destDir, filename)
-                     
-                     if (!destFile.exists() || destFile.length() != bestEntry!!.size) {
-                         zip.getInputStream(bestEntry).use { input ->
-                             FileOutputStream(destFile).use { output ->
-                                 input.copyTo(output)
-                             }
-                         }
-                         destFile.setExecutable(true)
-                         Log.v(TAG, "Extracted $filename")
-                     }
-                     deployedFiles.add(filename)
+                val filename = File(bestEntry.name).name
+                val destFile = File(destDir, filename)
+
+                if (!destFile.exists() || destFile.length() != bestEntry.size) {
+                    zip.getInputStream(bestEntry).use { input ->
+                        FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    destFile.setExecutable(true)
+                    Log.v(TAG, "Extracted $filename")
                 }
+                deployedFiles.add(filename)
             }
 
         } finally {
@@ -671,36 +680,29 @@ class BinaryRepository(private val context: Context) {
                         key
                     }
                     
-                    fileGroups.forEach { (key, groupFiles) ->
-                         var bestFile: File? = null
-                         val isTiered = groupFiles.any { f -> 
+                    fileGroups.forEach groupLoop@ { (_, groupFiles) ->
+                        val isTiered = groupFiles.any { f ->
                             val n = f.name
                             n.contains("_baseline.so") || n.contains("_dotprod.so") || n.contains("_armv9.so")
                         }
-                        
-                        if (isTiered) {
-                            for (tier in tiers) {
-                                val match = groupFiles.find { it.name.endsWith("_$tier.so") }
-                                if (match != null) {
-                                    bestFile = match
-                                    break
-                                }
+
+                        val bestFile = if (isTiered) {
+                            tiers.firstNotNullOfOrNull { tier ->
+                                groupFiles.find { it.name.endsWith("_$tier.so") }
                             }
                         } else {
-                            bestFile = groupFiles.firstOrNull()
-                        }
-                        
-                        if (bestFile != null) {
-                            val destFile = File(destDir, bestFile!!.name)
-                            try {
-                                if (!destFile.exists() || destFile.length() != bestFile!!.length()) {
-                                    bestFile!!.copyTo(destFile, overwrite = true)
-                                    destFile.setExecutable(true)
-                                }
-                                deployedFiles.add(bestFile!!.name)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Legacy copy failed for ${bestFile!!.name}", e)
+                            groupFiles.firstOrNull()
+                        } ?: return@groupLoop
+
+                        val destFile = File(destDir, bestFile.name)
+                        try {
+                            if (!destFile.exists() || destFile.length() != bestFile.length()) {
+                                bestFile.copyTo(destFile, overwrite = true)
+                                destFile.setExecutable(true)
                             }
+                            deployedFiles.add(bestFile.name)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Legacy copy failed for ${bestFile.name}", e)
                         }
                     }
                 }
@@ -710,4 +712,5 @@ class BinaryRepository(private val context: Context) {
         }
         return deployedFiles
     }
+
 }

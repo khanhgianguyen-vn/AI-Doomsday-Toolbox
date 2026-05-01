@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_note_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/widget_note_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#F5F7FF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1">
+
+        <ListView
+            android:id="@+id/widget_note_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:cacheColorHint="@android:color/transparent"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="6dp"
+            android:fadingEdge="none"
+            android:overScrollMode="never"
+            android:scrollbarStyle="insideInset" />
+
+        <TextView
+            android:id="@+id/widget_note_empty"
+            style="@style/WidgetNoteText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/widget_note_text_bubble"
+            android:gravity="center"
+            android:textColor="#D5DAEA" />
+    </FrameLayout>
+</LinearLayout>

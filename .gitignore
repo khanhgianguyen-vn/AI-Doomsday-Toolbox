@@ -88,3 +88,9 @@ Delete/
 
 # Local docs not intended for GitHub
 docs/
+AGENTS.md
+
+# Local sprite-generation tooling and outputs
+tools/
+generated/
+comfyui-output/

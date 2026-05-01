@@ -28,6 +28,7 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import com.example.llamadroid.service.SSHService
 import com.example.llamadroid.data.model.TermuxTools
+import com.example.llamadroid.ui.components.AppScreenScaffold
 import kotlinx.coroutines.launch
 
 /**
@@ -75,76 +76,53 @@ fun TermuxWebViewScreen(
         canGoBack = webView.canGoBack()
     }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Column {
-                        Text(decodedTitle, fontWeight = FontWeight.Bold)
-                        Text(
-                            decodedUrl,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+    AppScreenScaffold(
+        title = decodedTitle,
+        subtitle = decodedUrl,
+        actions = {
+            IconButton(
+                onClick = {
+                    if (webView.canGoBack()) {
+                        webView.goBack()
+                        canGoBack = webView.canGoBack()
                     }
                 },
-                navigationIcon = {
-                    Row {
-                        // Internal back button - goes back within WebView
-                        IconButton(
-                            onClick = { 
-                                if (webView.canGoBack()) {
-                                    webView.goBack()
-                                    canGoBack = webView.canGoBack()
-                                }
-                            },
-                            enabled = canGoBack
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack, 
-                                stringResource(R.string.webview_back_page),
-                                tint = if (canGoBack) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                            )
+                enabled = canGoBack
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    stringResource(R.string.webview_back_page),
+                    tint = if (canGoBack) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                )
+            }
+            IconButton(onClick = {
+                isLoading = true
+                hasError = false
+                webView.reload()
+            }) {
+                Icon(Icons.Default.Refresh, stringResource(R.string.action_reload))
+            }
+            IconButton(onClick = { navController.popBackStack() }) {
+                Icon(Icons.Default.Home, stringResource(R.string.webview_exit_status))
+            }
+            IconButton(onClick = {
+                WebViewHolder.destroy(decodedUrl)
+                if (toolId != "none") {
+                    TermuxTools.getTool(toolId)?.let { tool ->
+                        scope.launch {
+                            sshService.executeCommand(tool.stopCommand)
                         }
-                    }
-                },
-                actions = {
-                    // Reload button
-                    IconButton(onClick = {
-                        isLoading = true
-                        hasError = false
-                        webView.reload()
-                    }) {
-                        Icon(Icons.Default.Refresh, stringResource(R.string.action_reload))
-                    }
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.Home, stringResource(R.string.webview_exit_status))
-                    }
-                    // Close button - destroys WebView
-                    IconButton(onClick = {
-                        WebViewHolder.destroy(decodedUrl)
-                        
-                        // Also trigger stop command if toolId is provided
-                        if (toolId != "none") {
-                            TermuxTools.getTool(toolId)?.let { tool ->
-                                scope.launch {
-                                    sshService.executeCommand(tool.stopCommand)
-                                }
-                            }
-                        }
-                        
-                        navController.popBackStack()
-                    }) {
-                        Icon(Icons.Default.Close, stringResource(R.string.webview_close_stop), tint = MaterialTheme.colorScheme.error)
                     }
                 }
-            )
+                navController.popBackStack()
+            }) {
+                Icon(Icons.Default.Close, stringResource(R.string.webview_close_stop), tint = MaterialTheme.colorScheme.error)
+            }
         }
-    ) { padding ->
+    ) { _ ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
         ) {
             // Persistent WebView
             AndroidView(

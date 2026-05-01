@@ -352,7 +352,7 @@ class BenchmarkService(private val context: Context) {
         
         try {
             // Start notification
-            val (taskId, notification) = UnifiedNotificationManager.startTaskForForeground(
+            val (taskId, _) = UnifiedNotificationManager.startTaskForForeground(
                 UnifiedNotificationManager.TaskType.BENCHMARK,
                 "Benchmarking $modelName"
             )

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Refresh
@@ -23,7 +22,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.service.RemoteSummaryMetadata
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -70,8 +67,6 @@ fun RemoteSummaryBackendEditor(
     var showModelMenu by rememberSaveable { mutableStateOf(false) }
     var isRefreshingMetadata by rememberSaveable { mutableStateOf(false) }
     var metadataMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    var urlFieldFocused by rememberSaveable { mutableStateOf(false) }
-
     fun mergeSelectedModel(models: List<String>): List<String> {
         if (ollamaModel.isNullOrBlank() || models.contains(ollamaModel)) return models
         return listOf(ollamaModel) + models
@@ -111,12 +106,6 @@ fun RemoteSummaryBackendEditor(
         }
     }
 
-    LaunchedEffect(backend, currentUrl, urlFieldFocused) {
-        if (!urlFieldFocused || currentUrl.isBlank()) return@LaunchedEffect
-        delay(500)
-        refreshMetadata()
-    }
-
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -151,29 +140,27 @@ fun RemoteSummaryBackendEditor(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            OutlinedTextField(
-                value = currentUrl,
-                onValueChange = {
-                    if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
-                        onLlamaServerUrlChange(it)
+                OutlinedTextField(
+                    value = currentUrl,
+                    onValueChange = {
+                        if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                            onLlamaServerUrlChange(it)
                     } else {
                         onOllamaUrlChange(it)
                     }
                 },
-                label = {
-                    Text(
-                        if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
-                            stringResource(R.string.pdf_llama_server_url_label)
-                        } else {
-                            stringResource(R.string.pdf_ollama_url_label)
-                        }
-                    )
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { urlFieldFocused = it.isFocused },
-                singleLine = true
-            )
+                    label = {
+                        Text(
+                            if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                                stringResource(R.string.pdf_llama_server_url_label)
+                            } else {
+                                stringResource(R.string.pdf_ollama_url_label)
+                            }
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
 
             Spacer(modifier = Modifier.height(8.dp))
 

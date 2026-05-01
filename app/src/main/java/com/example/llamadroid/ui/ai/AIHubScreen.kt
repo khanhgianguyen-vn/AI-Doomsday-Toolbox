@@ -1,6 +1,5 @@
 package com.example.llamadroid.ui.ai
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -11,16 +10,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
+import com.example.llamadroid.ui.components.AppContentColumn
+import com.example.llamadroid.ui.components.AppHubCard
+import com.example.llamadroid.ui.components.AppPageBackground
+import com.example.llamadroid.ui.components.AppPageHeader
 import com.example.llamadroid.ui.navigation.Screen
 
 data class AIToolItem(
@@ -57,6 +55,26 @@ fun AIHubScreen(navController: NavController) {
                 Color(0xFF1976D2).copy(alpha = 0.3f)
             ),
             route = Screen.ImageGen.route
+        ),
+        AIToolItem(
+            emoji = "🧠",
+            title = stringResource(R.string.ai_onnx_image_gen),
+            description = stringResource(R.string.ai_onnx_image_gen_desc),
+            gradientColors = listOf(
+                Color(0xFFFFA726).copy(alpha = 0.15f),
+                Color(0xFFFB8C00).copy(alpha = 0.3f)
+            ),
+            route = Screen.OnnxImageGen.route
+        ),
+        AIToolItem(
+            emoji = "🎥",
+            title = stringResource(R.string.ai_video_gen),
+            description = stringResource(R.string.ai_video_gen_desc),
+            gradientColors = listOf(
+                Color(0xFFE53935).copy(alpha = 0.15f),
+                Color(0xFFC62828).copy(alpha = 0.3f)
+            ),
+            route = Screen.VideoGen.route
         ),
         AIToolItem(
             emoji = "🎙️",
@@ -180,127 +198,41 @@ fun AIHubScreen(navController: NavController) {
         )
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                )
-            )
-    ) {
-        // Header
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                "🤖 " + stringResource(R.string.ai_hub_title),
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 32.sp
-                )
-            )
-            Text(
-                stringResource(R.string.ai_hub_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        // 2-column grid
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(aiTools) { item ->
-                AISquareCard(
-                    emoji = item.emoji,
-                    title = item.title,
-                    description = item.description,
-                    gradientColors = item.gradientColors,
-                    enabled = item.route.isNotEmpty(),
-                    onClick = { 
-                        if (item.route.isNotEmpty()) {
-                            navController.navigate(item.route) 
-                        }
-                    }
+    AppPageBackground {
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppContentColumn(
+                modifier = Modifier.fillMaxWidth(),
+                bottomPadding = 0.dp,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppPageHeader(
+                    eyebrow = "AI",
+                    title = "🤖 " + stringResource(R.string.ai_hub_title),
+                    subtitle = stringResource(R.string.ai_hub_subtitle)
                 )
             }
-        }
-    }
-}
 
-@Composable
-private fun AISquareCard(
-    emoji: String,
-    title: String,
-    description: String,
-    gradientColors: List<Color>,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .aspectRatio(1f) // Square
-            .then(if (enabled) Modifier.clickable { onClick() } else Modifier),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (enabled) 
-                MaterialTheme.colorScheme.surface 
-            else 
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (enabled) 4.dp else 0.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(brush = Brush.verticalGradient(gradientColors))
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Emoji
-                Text(
-                    emoji,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontSize = 48.sp
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // Title
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (enabled) 
-                        MaterialTheme.colorScheme.onSurface 
-                    else 
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
-                
-                // Description
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                        alpha = if (enabled) 1f else 0.5f
-                    ),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                items(aiTools) { item ->
+                    AppHubCard(
+                        emoji = item.emoji,
+                        title = item.title,
+                        description = item.description,
+                        gradientColors = item.gradientColors,
+                        modifier = Modifier.aspectRatio(1f),
+                        onClick = {
+                            if (item.route.isNotEmpty()) {
+                                navController.navigate(item.route)
+                            }
+                        }
+                    )
+                }
             }
         }
     }

@@ -33,9 +33,15 @@ interface DatasetDao {
     
     @Query("SELECT * FROM dataset_sources WHERE projectId = :projectId ORDER BY addedAt DESC")
     fun getSourcesForProject(projectId: Long): Flow<List<DatasetSourceEntity>>
+
+    @Query("SELECT * FROM dataset_sources WHERE projectId = :projectId ORDER BY addedAt DESC")
+    suspend fun getSourcesForProjectSync(projectId: Long): List<DatasetSourceEntity>
     
     @Query("SELECT * FROM dataset_sources WHERE id = :id")
     suspend fun getSource(id: Long): DatasetSourceEntity?
+
+    @Query("SELECT * FROM dataset_sources WHERE projectId = :projectId AND uri = :uri LIMIT 1")
+    suspend fun getSourceByProjectAndUri(projectId: Long, uri: String): DatasetSourceEntity?
     
     @Insert
     suspend fun insertSource(source: DatasetSourceEntity): Long
@@ -53,6 +59,9 @@ interface DatasetDao {
     
     @Query("SELECT * FROM dataset_chunks WHERE projectId = :projectId ORDER BY sourceId, chunkIndex")
     fun getChunksForProject(projectId: Long): Flow<List<DatasetChunkEntity>>
+
+    @Query("SELECT * FROM dataset_chunks WHERE projectId = :projectId ORDER BY sourceId, chunkIndex")
+    suspend fun getChunksForProjectSync(projectId: Long): List<DatasetChunkEntity>
     
     @Query("SELECT * FROM dataset_chunks WHERE sourceId = :sourceId ORDER BY chunkIndex")
     fun getChunksForSource(sourceId: Long): Flow<List<DatasetChunkEntity>>
@@ -74,6 +83,9 @@ interface DatasetDao {
     
     @Delete
     suspend fun deleteChunk(chunk: DatasetChunkEntity)
+
+    @Query("DELETE FROM dataset_chunks WHERE id IN (:chunkIds)")
+    suspend fun deleteChunksByIds(chunkIds: List<Long>)
     
     @Query("DELETE FROM dataset_chunks WHERE sourceId = :sourceId")
     suspend fun deleteChunksForSource(sourceId: Long)
@@ -88,6 +100,9 @@ interface DatasetDao {
     
     @Query("SELECT * FROM dataset_qa WHERE projectId = :projectId ORDER BY chunkId, id")
     fun getQAForProject(projectId: Long): Flow<List<DatasetQAEntity>>
+
+    @Query("SELECT * FROM dataset_qa WHERE projectId = :projectId ORDER BY chunkId, id")
+    suspend fun getQAForProjectSync(projectId: Long): List<DatasetQAEntity>
     
     @Query("SELECT * FROM dataset_qa WHERE chunkId = :chunkId ORDER BY id")
     fun getQAForChunk(chunkId: Long): Flow<List<DatasetQAEntity>>

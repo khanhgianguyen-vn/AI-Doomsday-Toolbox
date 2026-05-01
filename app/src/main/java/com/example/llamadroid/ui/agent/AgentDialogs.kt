@@ -32,6 +32,8 @@ import com.example.llamadroid.R
 import com.example.llamadroid.service.AgentService
 import com.example.llamadroid.service.OllamaService
 import com.example.llamadroid.data.SettingsRepository
+import com.example.llamadroid.ui.components.DraftFloatTextField
+import com.example.llamadroid.ui.components.DraftIntTextField
 
 @Composable
 fun ModelSelectorDialog(
@@ -137,7 +139,7 @@ fun SetupInfoDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     
-    // One-line install command - configures SSH on port 8023 (separate from Termux tools port 8022)
+    // One-line install command - configures SSH on port 8023 (separate from Termux tools port 8025)
     val oneLineInstall = """pkg install proot-distro -y && proot-distro install ubuntu --override-alias ai-agent && proot-distro login ai-agent --isolated -- bash -c "apt update && apt install -y openssh-server git ripgrep python3 nodejs npm curl wget && mkdir -p /run/sshd && sed -i 's/#Port 22/Port 8023/' /etc/ssh/sshd_config && echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config && echo 'root:agent' | chpasswd && mkdir -p /workspace""""
     
     // Start command - uses port 8023
@@ -549,38 +551,6 @@ fun ConnectionSettingsDialog(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // Context length (num_ctx)
-                val numCtx by settingsRepo.ollamaNumCtx.collectAsState()
-                var numCtxText by remember { mutableStateOf(numCtx.toString()) }
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.ollama_context_tokens_label), fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    OutlinedTextField(
-                        value = numCtxText,
-                        onValueChange = { newText ->
-                            numCtxText = newText
-                            newText.toIntOrNull()?.let { value ->
-                                if (value in 128..131072) {
-                                    settingsRepo.setOllamaNumCtx(value)
-                                    ollamaService.setNumCtx(value)
-                                }
-                            }
-                        },
-                        modifier = Modifier.width(100.dp),
-                        textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
-                        singleLine = true
-                    )
-                }
-                Text(stringResource(R.string.ollama_context_tokens_desc), fontSize = 10.sp, color = Color.Gray)
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(12.dp))
-
                 // Auto Mode Toggle
                 val autoMode by settingsRepo.autoMode.collectAsState()
                 Row(
@@ -602,6 +572,7 @@ fun ConnectionSettingsDialog(
                 
                 // Backend Selector (Ollama / llama-server)
                 val agentBackend by settingsRepo.agentBackend.collectAsState()
+                val isAgentLlamaServer = SettingsRepository.isLlamaServerBackend(agentBackend)
                 val llamaServerUrl by settingsRepo.llamaServerUrl.collectAsState()
                 var showBackendDropdown by remember { mutableStateOf(false) }
                 
@@ -611,7 +582,7 @@ fun ConnectionSettingsDialog(
                 
                 Box {
                     OutlinedButton(onClick = { showBackendDropdown = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (agentBackend == "llama-server") "llama-server" else "Ollama")
+                        Text(if (isAgentLlamaServer) "llama-server" else "Ollama")
                     }
                     DropdownMenu(expanded = showBackendDropdown, onDismissRequest = { showBackendDropdown = false }) {
                         DropdownMenuItem(text = { Text("Ollama") }, onClick = {
@@ -625,7 +596,7 @@ fun ConnectionSettingsDialog(
                     }
                 }
                 
-                if (agentBackend == "llama-server") {
+                if (isAgentLlamaServer) {
                     Spacer(modifier = Modifier.height(4.dp))
                     var editedLlamaUrl by remember { mutableStateOf(llamaServerUrl) }
                     OutlinedTextField(
@@ -702,8 +673,12 @@ fun ConnectionSettingsDialog(
 fun AgentSettingsDialog(
     settingsRepository: SettingsRepository,
     availableModels: List<String>,
+    availableImageGenerationModels: List<String>,
     onDismiss: () -> Unit
 ) {
+    val agentBackend by settingsRepository.agentBackend.collectAsState()
+    val llamaServerModelLabel by settingsRepository.agentLlamaServerModelLabel.collectAsState()
+    val llamaServerContextLabel by settingsRepository.agentLlamaServerContextLabel.collectAsState()
     val orchestratorModel by settingsRepository.agentOrchestratorModel.collectAsState()
     val coderModel by settingsRepository.agentCoderModel.collectAsState()
     val reviewerModel by settingsRepository.agentReviewerModel.collectAsState()
@@ -718,6 +693,16 @@ fun AgentSettingsDialog(
     val coderCtx by settingsRepository.agentCoderCtx.collectAsState()
     val reviewerCtx by settingsRepository.agentReviewerCtx.collectAsState()
     val executorCtx by settingsRepository.agentExecutorCtx.collectAsState()
+    val orchestratorVisionEnabled by settingsRepository.agentOrchestratorVisionEnabled.collectAsState()
+    val coderVisionEnabled by settingsRepository.agentCoderVisionEnabled.collectAsState()
+    val reviewerVisionEnabled by settingsRepository.agentReviewerVisionEnabled.collectAsState()
+    val executorVisionEnabled by settingsRepository.agentExecutorVisionEnabled.collectAsState()
+    val summarizerVisionEnabled by settingsRepository.agentSummarizerVisionEnabled.collectAsState()
+    val imageGenerationToolEnabled by settingsRepository.agentImageGenerationToolEnabled.collectAsState()
+    val imageGenerationModel by settingsRepository.agentImageGenerationModel.collectAsState()
+    val imageGenerationSteps by settingsRepository.agentImageGenerationSteps.collectAsState()
+    val imageGenerationCfg by settingsRepository.agentImageGenerationCfg.collectAsState()
+    val imageGenerationResolution by settingsRepository.agentImageGenerationResolution.collectAsState()
     
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -748,6 +733,9 @@ fun AgentSettingsDialog(
                     description = stringResource(R.string.agent_orchestrator_desc),
                     selectedModel = orchestratorModel,
                     availableModels = availableModels,
+                    backend = agentBackend,
+                    llamaServerModelLabel = llamaServerModelLabel,
+                    llamaServerContextLabel = llamaServerContextLabel,
                     onModelChange = { settingsRepository.setAgentOrchestratorModel(it) },
                     prompt = orchestratorPrompt,
                     onPromptChange = { settingsRepository.setAgentOrchestratorPrompt(it) },
@@ -755,7 +743,9 @@ fun AgentSettingsDialog(
                     contextSize = orchestratorCtx,
                     onContextSizeChange = { settingsRepository.setAgentOrchestratorCtx(it) },
                     thinkingEnabled = orchestratorThinking,
-                    onThinkingChange = { settingsRepository.setAgentOrchestratorThinkingEnabled(it) }
+                    onThinkingChange = { settingsRepository.setAgentOrchestratorThinkingEnabled(it) },
+                    visionEnabled = orchestratorVisionEnabled,
+                    onVisionChange = { settingsRepository.setAgentOrchestratorVisionEnabled(it) }
                 )
                 
                 val coderThinking by settingsRepository.agentCoderThinkingEnabled.collectAsState()
@@ -765,6 +755,9 @@ fun AgentSettingsDialog(
                     description = stringResource(R.string.agent_coder_desc),
                     selectedModel = coderModel,
                     availableModels = availableModels,
+                    backend = agentBackend,
+                    llamaServerModelLabel = llamaServerModelLabel,
+                    llamaServerContextLabel = llamaServerContextLabel,
                     onModelChange = { settingsRepository.setAgentCoderModel(it) },
                     prompt = coderPrompt,
                     onPromptChange = { settingsRepository.setAgentCoderPrompt(it) },
@@ -773,6 +766,8 @@ fun AgentSettingsDialog(
                     onContextSizeChange = { settingsRepository.setAgentCoderCtx(it) },
                     thinkingEnabled = coderThinking,
                     onThinkingChange = { settingsRepository.setAgentCoderThinkingEnabled(it) },
+                    visionEnabled = coderVisionEnabled,
+                    onVisionChange = { settingsRepository.setAgentCoderVisionEnabled(it) },
                     isEnabled = "CODER" !in disabledAgents,
                     onEnabledChange = { AgentService.setBuiltInAgentEnabled("CODER", it) }
                 )
@@ -784,6 +779,9 @@ fun AgentSettingsDialog(
                     description = stringResource(R.string.agent_reviewer_desc),
                     selectedModel = reviewerModel,
                     availableModels = availableModels,
+                    backend = agentBackend,
+                    llamaServerModelLabel = llamaServerModelLabel,
+                    llamaServerContextLabel = llamaServerContextLabel,
                     onModelChange = { settingsRepository.setAgentReviewerModel(it) },
                     prompt = reviewerPrompt,
                     onPromptChange = { settingsRepository.setAgentReviewerPrompt(it) },
@@ -792,6 +790,8 @@ fun AgentSettingsDialog(
                     onContextSizeChange = { settingsRepository.setAgentReviewerCtx(it) },
                     thinkingEnabled = reviewerThinking,
                     onThinkingChange = { settingsRepository.setAgentReviewerThinkingEnabled(it) },
+                    visionEnabled = reviewerVisionEnabled,
+                    onVisionChange = { settingsRepository.setAgentReviewerVisionEnabled(it) },
                     isEnabled = "REVIEWER" !in disabledAgents,
                     onEnabledChange = { AgentService.setBuiltInAgentEnabled("REVIEWER", it) }
                 )
@@ -804,6 +804,9 @@ fun AgentSettingsDialog(
                     description = stringResource(R.string.agent_executor_desc),
                     selectedModel = executorModel,
                     availableModels = availableModels,
+                    backend = agentBackend,
+                    llamaServerModelLabel = llamaServerModelLabel,
+                    llamaServerContextLabel = llamaServerContextLabel,
                     onModelChange = { settingsRepository.setAgentExecutorModel(it) },
                     prompt = executorPrompt,
                     onPromptChange = { settingsRepository.setAgentExecutorPrompt(it) },
@@ -812,6 +815,8 @@ fun AgentSettingsDialog(
                     onContextSizeChange = { settingsRepository.setAgentExecutorCtx(it) },
                     thinkingEnabled = executorThinking,
                     onThinkingChange = { settingsRepository.setAgentExecutorThinkingEnabled(it) },
+                    visionEnabled = executorVisionEnabled,
+                    onVisionChange = { settingsRepository.setAgentExecutorVisionEnabled(it) },
                     isEnabled = "EXECUTOR" !in disabledAgents,
                     onEnabledChange = { AgentService.setBuiltInAgentEnabled("EXECUTOR", it) }
                 )
@@ -827,6 +832,9 @@ fun AgentSettingsDialog(
                     description = stringResource(R.string.agent_summarizer_desc),
                     selectedModel = summarizerModel,
                     availableModels = availableModels,
+                    backend = agentBackend,
+                    llamaServerModelLabel = llamaServerModelLabel,
+                    llamaServerContextLabel = llamaServerContextLabel,
                     onModelChange = { settingsRepository.setAgentSummarizerModel(it) },
                     prompt = summarizerPrompt,
                     onPromptChange = { settingsRepository.setAgentSummarizerPrompt(it) },
@@ -835,9 +843,145 @@ fun AgentSettingsDialog(
                     onContextSizeChange = { settingsRepository.setAgentSummarizerCtx(it) },
                     thinkingEnabled = summarizerThinking,
                     onThinkingChange = { settingsRepository.setAgentSummarizerThinkingEnabled(it) },
+                    visionEnabled = summarizerVisionEnabled,
+                    onVisionChange = { settingsRepository.setAgentSummarizerVisionEnabled(it) },
                     isEnabled = "SUMMARIZER" !in disabledAgents,
                     onEnabledChange = { AgentService.setBuiltInAgentEnabled("SUMMARIZER", it) }
                 )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = stringResource(R.string.agent_image_generation_settings_title),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.agent_image_generation_settings_desc),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    settingsRepository.setAgentImageGenerationToolEnabled(!imageGenerationToolEnabled)
+                                }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.agent_image_generation_tool_enabled),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = stringResource(R.string.agent_image_generation_tool_enabled_desc),
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = imageGenerationToolEnabled,
+                                onCheckedChange = settingsRepository::setAgentImageGenerationToolEnabled,
+                                modifier = Modifier.scale(0.8f)
+                            )
+                        }
+
+                        AnimatedVisibility(visible = imageGenerationToolEnabled) {
+                            Column {
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                        var imageModelExpanded by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = imageModelExpanded,
+                            onExpandedChange = { imageModelExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = imageGenerationModel.orEmpty(),
+                                onValueChange = { settingsRepository.setAgentImageGenerationModel(it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                label = { Text(stringResource(R.string.agent_image_generation_model_label)) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = imageModelExpanded) },
+                                singleLine = true
+                            )
+                            ExposedDropdownMenu(
+                                expanded = imageModelExpanded,
+                                onDismissRequest = { imageModelExpanded = false }
+                            ) {
+                                availableImageGenerationModels.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = { Text(model) },
+                                        onClick = {
+                                            settingsRepository.setAgentImageGenerationModel(model)
+                                            imageModelExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DraftIntTextField(
+                                value = imageGenerationSteps,
+                                onValueChange = settingsRepository::setAgentImageGenerationSteps,
+                                label = { Text(stringResource(R.string.agent_image_generation_steps_label)) },
+                                modifier = Modifier.weight(1f),
+                                blankValue = imageGenerationSteps
+                            )
+                            DraftFloatTextField(
+                                value = imageGenerationCfg,
+                                onValueChange = settingsRepository::setAgentImageGenerationCfg,
+                                label = { Text(stringResource(R.string.agent_image_generation_cfg_label)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        var resolutionExpanded by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = resolutionExpanded,
+                            onExpandedChange = { resolutionExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = imageGenerationResolution,
+                                onValueChange = {},
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                readOnly = true,
+                                label = { Text(stringResource(R.string.agent_image_generation_resolution_label)) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = resolutionExpanded) },
+                                singleLine = true
+                            )
+                            ExposedDropdownMenu(
+                                expanded = resolutionExpanded,
+                                onDismissRequest = { resolutionExpanded = false }
+                            ) {
+                                listOf("128x128", "256x256", "384x384", "512x512", "640x640", "768x768", "896x896", "1024x1024").forEach { resolution ->
+                                    DropdownMenuItem(
+                                        text = { Text(resolution) },
+                                        onClick = {
+                                            settingsRepository.setAgentImageGenerationResolution(resolution)
+                                            resolutionExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                            }
+                        }
+                    }
+                }
                 
                 // Web Search Settings
                 val webSearchEnabled by settingsRepository.agentWebSearchEnabled.collectAsState()
@@ -905,45 +1049,33 @@ fun AgentSettingsDialog(
                                 
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     // Max results
-                                    OutlinedTextField(
-                                        value = webSearchMaxResults.toString(),
-                                        onValueChange = { 
-                                            if (it.isEmpty()) settingsRepository.setAgentWebSearchMaxResults(0)
-                                            else it.toIntOrNull()?.let { num -> settingsRepository.setAgentWebSearchMaxResults(num) }
-                                        },
+                                    DraftIntTextField(
+                                        value = webSearchMaxResults,
+                                        onValueChange = settingsRepository::setAgentWebSearchMaxResults,
                                         label = { Text(stringResource(R.string.agent_websearch_max_results)) },
                                         modifier = Modifier.weight(1f),
-                                        singleLine = true,
-                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                        blankValue = 0
                                     )
                                     
                                     // Max chars
-                                    OutlinedTextField(
-                                        value = webSearchMaxChars.toString(),
-                                        onValueChange = { 
-                                            if (it.isEmpty()) settingsRepository.setAgentWebSearchMaxChars(0)
-                                            else it.toIntOrNull()?.let { num -> settingsRepository.setAgentWebSearchMaxChars(num) }
-                                        },
+                                    DraftIntTextField(
+                                        value = webSearchMaxChars,
+                                        onValueChange = settingsRepository::setAgentWebSearchMaxChars,
                                         label = { Text(stringResource(R.string.agent_websearch_max_chars)) },
                                         modifier = Modifier.weight(1f),
-                                        singleLine = true,
-                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                        blankValue = 0
                                     )
                                 }
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
                                 // Context size
-                                OutlinedTextField(
-                                    value = webSearchNumCtx.toString(),
-                                    onValueChange = { 
-                                        if (it.isEmpty()) settingsRepository.setAgentWebSearchNumCtx(0)
-                                        else it.toIntOrNull()?.let { num -> settingsRepository.setAgentWebSearchNumCtx(num) }
-                                    },
+                                DraftIntTextField(
+                                    value = webSearchNumCtx,
+                                    onValueChange = settingsRepository::setAgentWebSearchNumCtx,
                                     label = { Text(stringResource(R.string.agent_websearch_context)) },
                                     modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                    blankValue = 0
                                 )
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -1046,45 +1178,33 @@ fun AgentSettingsDialog(
                                 
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     // Max results
-                                    OutlinedTextField(
-                                        value = kiwixMaxResults.toString(),
-                                        onValueChange = { 
-                                            if (it.isEmpty()) settingsRepository.setAgentKiwixMaxResults(0)
-                                            else it.toIntOrNull()?.let { num -> settingsRepository.setAgentKiwixMaxResults(num) }
-                                        },
+                                    DraftIntTextField(
+                                        value = kiwixMaxResults,
+                                        onValueChange = settingsRepository::setAgentKiwixMaxResults,
                                         label = { Text(stringResource(R.string.agent_kiwix_max_results)) },
                                         modifier = Modifier.weight(1f),
-                                        singleLine = true,
-                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                        blankValue = 0
                                     )
                                     
                                     // Max chars
-                                    OutlinedTextField(
-                                        value = kiwixMaxChars.toString(),
-                                        onValueChange = { 
-                                            if (it.isEmpty()) settingsRepository.setAgentKiwixMaxChars(0)
-                                            else it.toIntOrNull()?.let { num -> settingsRepository.setAgentKiwixMaxChars(num) }
-                                        },
+                                    DraftIntTextField(
+                                        value = kiwixMaxChars,
+                                        onValueChange = settingsRepository::setAgentKiwixMaxChars,
                                         label = { Text(stringResource(R.string.agent_kiwix_max_chars)) },
                                         modifier = Modifier.weight(1f),
-                                        singleLine = true,
-                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                        blankValue = 0
                                     )
                                 }
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
                                 // Context size
-                                OutlinedTextField(
-                                    value = kiwixNumCtx.toString(),
-                                    onValueChange = { 
-                                        if (it.isEmpty()) settingsRepository.setAgentKiwixNumCtx(0)
-                                        else it.toIntOrNull()?.let { num -> settingsRepository.setAgentKiwixNumCtx(num) }
-                                    },
+                                DraftIntTextField(
+                                    value = kiwixNumCtx,
+                                    onValueChange = settingsRepository::setAgentKiwixNumCtx,
                                     label = { Text(stringResource(R.string.agent_kiwix_context)) },
                                     modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                                    blankValue = 0
                                 )
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -1127,6 +1247,9 @@ fun AgentConfigCard(
     description: String,
     selectedModel: String,
     availableModels: List<String>,
+    backend: String,
+    llamaServerModelLabel: String?,
+    llamaServerContextLabel: String?,
     onModelChange: (String) -> Unit,
     prompt: String,
     onPromptChange: (String) -> Unit,
@@ -1135,6 +1258,8 @@ fun AgentConfigCard(
     onContextSizeChange: (Int) -> Unit,
     thinkingEnabled: Boolean,
     onThinkingChange: (Boolean) -> Unit,
+    visionEnabled: Boolean,
+    onVisionChange: (Boolean) -> Unit,
     isEnabled: Boolean = true,
     onEnabledChange: ((Boolean) -> Unit)? = null
 ) {
@@ -1173,123 +1298,166 @@ fun AgentConfigCard(
             
             // Only show settings when enabled
             AnimatedVisibility(visible = isEnabled) {
-            Column {
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Thinking Toggle Row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().clickable { onThinkingChange(!thinkingEnabled) }.padding(vertical = 4.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.agent_thinking_enabled), style = MaterialTheme.typography.bodyMedium)
-                    Text(stringResource(R.string.agent_thinking_enabled_desc), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(
-                    checked = thinkingEnabled,
-                    onCheckedChange = onThinkingChange,
-                    modifier = Modifier.scale(0.8f)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Model dropdown
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = it }
-            ) {
-                OutlinedTextField(
-                    value = selectedModel,
-                    onValueChange = { onModelChange(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                    label = { Text(stringResource(R.string.agent_model_label)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    singleLine = true
-                )
-                
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    availableModels.forEach { model ->
-                        DropdownMenuItem(
-                            text = { Text(model) },
-                            onClick = {
-                                onModelChange(model)
-                                expanded = false
-                            }
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { onThinkingChange(!thinkingEnabled) }.padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.agent_thinking_enabled), style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.agent_thinking_enabled_desc), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = thinkingEnabled,
+                            onCheckedChange = onThinkingChange,
+                            modifier = Modifier.scale(0.8f)
                         )
                     }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Context Size Input
-            OutlinedTextField(
-                value = contextSize.toString(),
-                onValueChange = { 
-                    if (it.isEmpty()) onContextSizeChange(0)
-                    else it.toIntOrNull()?.let { num -> onContextSizeChange(num) }
-                },
-                label = { Text(stringResource(R.string.agent_context_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Prompt toggle
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showPrompt = !showPrompt },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    stringResource(R.string.agent_system_prompt),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Icon(
-                    if (showPrompt) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
-                    contentDescription = if (showPrompt) stringResource(R.string.action_hide) else stringResource(R.string.action_show),
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            
-            // Collapsible prompt editor
-            AnimatedVisibility(visible = showPrompt) {
-                Column {
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { onVisionChange(!visionEnabled) }.padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.agent_vision_enabled), style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.agent_vision_enabled_desc), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = visionEnabled,
+                            onCheckedChange = onVisionChange,
+                            modifier = Modifier.scale(0.8f)
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = prompt,
-                        onValueChange = onPromptChange,
+
+                    if (SettingsRepository.isLlamaServerBackend(backend)) {
+                        Text(
+                            text = stringResource(R.string.pdf_llama_server_model_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = llamaServerModelLabel ?: stringResource(R.string.agent_llama_server_value_unavailable),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.agent_llama_server_role_model_note,
+                                selectedModel
+                            ),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        llamaServerContextLabel?.let { contextLabel ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.pdf_llama_server_context_label),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = contextLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = selectedModel,
+                                onValueChange = { onModelChange(it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                label = { Text(stringResource(R.string.agent_model_label)) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                singleLine = true
+                            )
+
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                availableModels.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = { Text(model) },
+                                        onClick = {
+                                            onModelChange(model)
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    DraftIntTextField(
+                        value = contextSize,
+                        onValueChange = onContextSizeChange,
+                        label = { Text(stringResource(R.string.agent_context_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        blankValue = 0
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 100.dp, max = 200.dp),
-                        label = { Text(stringResource(R.string.agent_prompt_label)) },
-                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        maxLines = 10
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TextButton(
-                        onClick = onResetPrompt,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp)
+                            .clickable { showPrompt = !showPrompt },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(stringResource(R.string.agent_reset_default), fontSize = 11.sp)
+                        Text(
+                            stringResource(R.string.agent_system_prompt),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Icon(
+                            if (showPrompt) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                            contentDescription = if (showPrompt) stringResource(R.string.action_hide) else stringResource(R.string.action_show),
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    AnimatedVisibility(visible = showPrompt) {
+                        Column {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = prompt,
+                                onValueChange = onPromptChange,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 100.dp, max = 200.dp),
+                                label = { Text(stringResource(R.string.agent_prompt_label)) },
+                                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                maxLines = 10
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            TextButton(
+                                onClick = onResetPrompt,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text(stringResource(R.string.agent_reset_default), fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             }
-            }
-            } // end AnimatedVisibility
         }
     }
 }

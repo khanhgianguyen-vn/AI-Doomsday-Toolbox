@@ -231,8 +231,10 @@ private fun CustomAgentEditorDialog(
     var emoji by remember { mutableStateOf(agent?.emoji ?: "🤖") }
     var systemPrompt by remember { mutableStateOf(agent?.systemPrompt ?: "") }
     var modelOverride by remember { mutableStateOf(agent?.model ?: "") }
+    var allowedToolsJson by remember { mutableStateOf(agent?.allowedToolsJson ?: "[]") }
     var exampleUsage by remember { mutableStateOf(agent?.exampleUsage ?: "") }
     var canDelegate by remember { mutableStateOf(agent?.canDelegateToOthers ?: false) }
+    var visionEnabled by remember { mutableStateOf(agent?.visionEnabled ?: false) }
     
     val isEditing = agent != null
     
@@ -273,8 +275,10 @@ private fun CustomAgentEditorDialog(
                             displayName = "Internet Researcher"
                             emoji = "🌐"
                             systemPrompt = "You are the Internet Researcher agent. Your job is to search the web for information and provide concise summaries to the Orchestrator."
+                            allowedToolsJson = "[\"web_search\", \"fetch_url\", \"read_file\", \"read_memory\", \"write_memory\", \"list_memory\", \"finish_task\"]"
                             exampleUsage = "Use the RESEARCHER agent when you need up-to-date information from the internet."
                             canDelegate = false
+                            visionEnabled = false
                         },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     ) {
@@ -340,6 +344,16 @@ private fun CustomAgentEditorDialog(
                         singleLine = true,
                         supportingText = { Text("e.g., qwen2.5-coder:7b") } // This is an example model name, keeping as literal but could be localized if needed.
                     )
+
+                    OutlinedTextField(
+                        value = allowedToolsJson,
+                        onValueChange = { allowedToolsJson = it },
+                        label = { Text(stringResource(R.string.agent_agent_allowed_tools_label)) },
+                        placeholder = { Text(stringResource(R.string.agent_agent_allowed_tools_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                        supportingText = { Text(stringResource(R.string.agent_agent_allowed_tools_desc)) }
+                    )
                     
                     OutlinedTextField(
                         value = exampleUsage,
@@ -362,6 +376,18 @@ private fun CustomAgentEditorDialog(
                             onCheckedChange = { canDelegate = it }
                         )
                     }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(stringResource(R.string.agent_vision_enabled))
+                        Switch(
+                            checked = visionEnabled,
+                            onCheckedChange = { visionEnabled = it }
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -375,8 +401,10 @@ private fun CustomAgentEditorDialog(
                             emoji = emoji.ifBlank { "🤖" },
                             systemPrompt = systemPrompt,
                             model = modelOverride.ifBlank { null },
+                            allowedToolsJson = allowedToolsJson.ifBlank { "[]" },
                             exampleUsage = exampleUsage,
                             canDelegateToOthers = canDelegate,
+                            visionEnabled = visionEnabled,
                             isEnabled = agent?.isEnabled ?: true,
                             createdAt = agent?.createdAt ?: System.currentTimeMillis(),
                             updatedAt = System.currentTimeMillis()

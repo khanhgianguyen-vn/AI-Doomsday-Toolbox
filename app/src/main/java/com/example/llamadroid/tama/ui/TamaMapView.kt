@@ -13,14 +13,27 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import coil.compose.AsyncImage
+import com.example.llamadroid.R
+import com.example.llamadroid.tama.data.TamaAmbientNpcCatalog
 import com.example.llamadroid.tama.data.TamaLocation
 import com.example.llamadroid.tama.data.LocationType
+import com.example.llamadroid.tama.data.localizedDescription
+import com.example.llamadroid.tama.data.localizedName
+
+private const val UNKNOWN_LOCATION_ICON_ASSET = "tama/map/unknown.png"
 
 /**
  * Map view showing locations in a city grid.
@@ -88,10 +101,11 @@ fun TamaMapView(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            LegendItem("🏠", "Home")
-            LegendItem("🏪", "Shop")
-            LegendItem("🌳", "Park")
-            LegendItem("❓", "Unknown")
+            LegendItem(LocationType.HOME.mapIconAssetPath, stringResource(R.string.tama_location_home))
+            LegendItem(LocationType.SHOP.mapIconAssetPath, stringResource(R.string.tama_location_shop))
+            LegendItem(LocationType.ARCADE.mapIconAssetPath, stringResource(R.string.tama_location_arcade))
+            LegendItem(LocationType.PARK.mapIconAssetPath, stringResource(R.string.tama_location_park))
+            LegendItem(UNKNOWN_LOCATION_ICON_ASSET, stringResource(R.string.tama_location_unknown))
         }
     }
 }
@@ -123,19 +137,18 @@ fun LocationTile(
         contentAlignment = Alignment.Center
     ) {
         if (location != null) {
-            Text(
-                text = if (isDiscovered) location.type.emoji else "❓",
-                fontSize = 16.sp,
-                color = if (isDiscovered) TamaDark else Color.Gray
+            TamaMapIcon(
+                assetPath = if (isDiscovered) location.type.mapIconAssetPath else UNKNOWN_LOCATION_ICON_ASSET,
+                size = 108.dp
             )
         }
     }
 }
 
 @Composable
-fun LegendItem(emoji: String, label: String) {
+fun LegendItem(assetPath: String, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(emoji, fontSize = 12.sp)
+        TamaMapIcon(assetPath = assetPath, size = 68.dp)
         Spacer(modifier = Modifier.width(2.dp))
         Text(
             text = label,
@@ -156,81 +169,158 @@ fun LocationDetailsDialog(
     petEnergy: Int,
     travelCost: Int,
     onTravel: () -> Unit,
+    onArcade: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    val context = LocalContext.current
+    val ambientNpc = remember(location.type) { TamaAmbientNpcCatalog.forLocation(location.type) }
+    TamaPopupDialog(
+        title = location.type.localizedName(context),
+        backgroundAsset = when (location.type) {
+            LocationType.HOME -> "tama/backgrounds/bedroom.png"
+            LocationType.SHOP -> "tama/backgrounds/shop.png"
+            LocationType.SCHOOL -> "tama/backgrounds/classroom.png"
+            LocationType.WORKPLACE -> "tama/backgrounds/workplace.png"
+            LocationType.PARK -> "tama/backgrounds/park.png"
+            LocationType.HOSPITAL -> "tama/backgrounds/hospital.png"
+            LocationType.ARCADE -> "tama/backgrounds/arcade_location.png"
+            LocationType.ALCHEMIST -> "tama/backgrounds/alchemist.png"
+            LocationType.FARM -> "tama/backgrounds/farm.png"
+            LocationType.DUNGEON -> "tama/backgrounds/dungeon.png"
+            else -> "tama/backgrounds/principal_room.png"
+        },
+        compact = true,
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(location.type.emoji, fontSize = 24.sp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = location.name,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        },
-        text = {
-            Column {
-                Text(
-                    text = location.description,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp
-                )
-                
+        bodyContent = {
+            ambientNpc?.let { npc ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = TamaLight.copy(alpha = 0.98f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, TamaDark.copy(alpha = 0.18f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = "file:///android_asset/${npc.assetPath}",
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            contentScale = ContentScale.Fit,
+                            filterQuality = FilterQuality.None
+                        )
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = TamaAmbientNpcCatalog.resolveName(LocalContext.current, npc.id),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TamaDark,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = npc.lines.firstOrNull()?.resolve(LocalContext.current.resources.configuration.locales[0]).orEmpty(),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = TamaDark,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
-                
-                if (!isCurrentLocation) {
-                    Text(
-                        text = "⚡ Travel cost: $travelCost energy",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = if (petEnergy >= travelCost) TamaAccent else Color.Red
-                    )
-                } else {
-                    Text(
-                        text = "📍 You are here",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = Color(0xFF4CAF50)
-                    )
-                }
-                
-                // Show location-specific info
-                if (location.type == LocationType.SHOP && location.shopInventory != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "🛍️ ${location.shopInventory.size} items available",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp
-                    )
-                }
-                
-                if (location.type == LocationType.WORKPLACE && location.jobs != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "💼 ${location.jobs.size} jobs available",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp
-                    )
-                }
+            }
+
+            Text(
+                text = location.type.localizedDescription(context),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp,
+                color = TamaDark
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (!isCurrentLocation) {
+                Text(
+                    text = stringResource(R.string.tama_travel_cost, travelCost),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = if (petEnergy >= travelCost) TamaDark else Color.Red
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.tama_you_are_here),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = Color(0xFF2E7D32)
+                )
+            }
+
+            if (location.type == LocationType.SHOP && location.shopInventory != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.tama_location_shop_items, location.shopInventory.size),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = TamaMutedText
+                )
+            }
+
+            if (location.type == LocationType.WORKPLACE && location.jobs != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.tama_location_work_jobs, location.jobs.size),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = TamaMutedText
+                )
+            }
+
+            if (location.type == LocationType.ARCADE) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.tama_arcade_location_desc),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = TamaMutedText
+                )
             }
         },
-        confirmButton = {
+        footerContent = {
             if (!isCurrentLocation) {
                 TextButton(
                     onClick = onTravel,
                     enabled = petEnergy >= travelCost
                 ) {
-                    Text("Travel Here")
+                    Text(stringResource(R.string.tama_travel_here))
+                }
+            } else if (location.type == LocationType.ARCADE) {
+                TextButton(onClick = onArcade) {
+                    Text(stringResource(R.string.tama_btn_arcade))
                 }
             }
-        },
-        dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.action_close))
             }
         }
+    )
+}
+
+@Composable
+fun TamaMapIcon(
+    assetPath: String,
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    AsyncImage(
+        model = "file:///android_asset/$assetPath",
+        contentDescription = null,
+        modifier = modifier.size(size),
+        contentScale = ContentScale.Fit,
+        filterQuality = FilterQuality.None
     )
 }

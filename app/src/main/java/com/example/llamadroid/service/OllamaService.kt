@@ -3,10 +3,15 @@ package com.example.llamadroid.service
 import android.content.Context
 import com.example.llamadroid.util.AIConstants
 import com.example.llamadroid.util.DebugLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.atomic.AtomicInteger
@@ -32,18 +37,8 @@ class OllamaService(private val context: Context) {
     companion object {
         private const val TAG = "OllamaService"
         const val DEFAULT_URL = AIConstants.Urls.OLLAMA_DEFAULT
-
-        // Flag to abort ongoing HTTP requests
-        @Volatile
-        var shouldStop = false
-        
-        fun stop() {
-            shouldStop = true
-        }
-        
-        fun resetStop() {
-            shouldStop = false
-        }
+        private const val CHAT_READ_TIMEOUT_MS = 0
+        private const val CHAT_KEEP_ALIVE = "30m"
 
         // STATIC connection state - persists across screen navigations
         private val _isConnected = MutableStateFlow(false)
@@ -61,6 +56,137 @@ class OllamaService(private val context: Context) {
 
         private val connectionProbeMutex = Mutex()
         private val activeChatRequests = AtomicInteger(0)
+        private val activeConnectionsByJob = mutableMapOf<Job, MutableSet<HttpURLConnection>>()
+        private val activeConnectionsLock = Any()
+
+        private fun registerConnection(job: Job?, connection: HttpURLConnection) {
+            if (job == null) return
+            synchronized(activeConnectionsLock) {
+                val connections = activeConnectionsByJob.getOrPut(job) {
+                    job.invokeOnCompletion { stop(job) }
+                    mutableSetOf()
+                }
+                connections += connection
+            }
+        }
+
+        private fun unregisterConnection(job: Job?, connection: HttpURLConnection) {
+            if (job == null) return
+            synchronized(activeConnectionsLock) {
+                val connections = activeConnectionsByJob[job] ?: return
+                connections.remove(connection)
+                if (connections.isEmpty()) {
+                    activeConnectionsByJob.remove(job)
+                }
+            }
+        }
+
+        fun stop(job: Job) {
+            val connections = synchronized(activeConnectionsLock) {
+                activeConnectionsByJob.remove(job)?.toList().orEmpty()
+            }
+            connections.forEach { connection ->
+                runCatching { connection.disconnect() }
+            }
+        }
+
+        fun stop() {
+            val connections = synchronized(activeConnectionsLock) {
+                activeConnectionsByJob.values.flatMap { it.toList() }.also { activeConnectionsByJob.clear() }
+            }
+            connections.forEach { connection ->
+                runCatching { connection.disconnect() }
+            }
+        }
+
+        fun resetStop() = Unit
+
+        internal fun buildChatRequestJson(
+            model: String,
+            messages: List<ChatMessage>,
+            tools: List<AgentTool>,
+            thinkingEnabled: Boolean,
+            useMmap: Boolean,
+            numThreads: Int,
+            numCtx: Int
+        ): JSONObject = JSONObject().apply {
+            put("model", model)
+            put("stream", true)
+            put("think", thinkingEnabled)
+            put("keep_alive", CHAT_KEEP_ALIVE)
+
+            put("messages", JSONArray().apply {
+                for (msg in messages) {
+                    put(JSONObject().apply {
+                        put("role", msg.role)
+                        put("content", msg.content)
+                        if (!msg.thinking.isNullOrEmpty()) {
+                            put("thinking", msg.thinking)
+                        }
+                        msg.toolCallId?.let { put("tool_call_id", it) }
+                        msg.images?.takeIf { it.isNotEmpty() }?.let { imgs ->
+                            put("images", JSONArray(imgs.map(::normalizeImagePayloadForRequest)))
+                        }
+                        msg.toolCalls?.takeIf { it.isNotEmpty() }?.let { calls ->
+                            put("tool_calls", JSONArray().apply {
+                                for (tc in calls) {
+                                    put(JSONObject().apply {
+                                        put("id", tc.id ?: "call_${System.nanoTime()}")
+                                        put("type", "function")
+                                        put("function", JSONObject().apply {
+                                            put("name", tc.name)
+                                            put("arguments", JSONObject(tc.arguments as Map<*, *>))
+                                        })
+                                    })
+                                }
+                            })
+                        }
+                    })
+                }
+            })
+
+            if (tools.isNotEmpty()) {
+                put("tools", JSONArray().apply {
+                    for (tool in tools) {
+                        put(JSONObject().apply {
+                            put("type", "function")
+                            put("function", JSONObject().apply {
+                                put("name", tool.name)
+                                put("description", tool.description)
+                                put("parameters", JSONObject().apply {
+                                    put("type", "object")
+                                    put("properties", JSONObject().apply {
+                                        for ((paramName, paramDesc) in tool.parameters) {
+                                            put(paramName, JSONObject().apply {
+                                                put("type", "string")
+                                                put("description", paramDesc)
+                                            })
+                                        }
+                                    })
+                                    put("required", JSONArray(tool.requiredParams))
+                                })
+                            })
+                        })
+                    }
+                })
+            }
+
+            put("options", JSONObject().apply {
+                put("use_mmap", useMmap)
+                put("num_thread", numThreads)
+                put("num_ctx", numCtx)
+            })
+        }
+
+        private fun normalizeImagePayloadForRequest(image: String): String {
+            val marker = "base64,"
+            val markerIndex = image.indexOf(marker, ignoreCase = true)
+            return if (markerIndex >= 0) {
+                image.substring(markerIndex + marker.length)
+            } else {
+                image
+            }
+        }
     }
     
     // Instance-specific state for URL configuration
@@ -127,7 +253,13 @@ class OllamaService(private val context: Context) {
         val toolCalls: List<ToolCall>? = null,
         val toolCallId: String? = null,
         val images: List<String>? = null,  // Base64 encoded images for vision
+        val imagePath: String? = null,
         val thinking: String? = null,      // Internal thought process
+        val audioPath: String? = null,
+        val audioDurationMs: Long? = null,
+        val transcriptionStatus: String? = null,
+        val transcribedText: String? = null,
+        val transcriptionError: String? = null,
         val isSuspicious: Boolean = false, // Security flag for commands
         val toolName: String? = null,      // Name of tool for approval messages
         val needsApproval: Boolean = false, // Flag for tool call approval
@@ -138,8 +270,51 @@ class OllamaService(private val context: Context) {
     data class ChatResponse(
         val message: ChatMessage,
         val done: Boolean,
-        val toolCalls: List<ToolCall>? = null
+        val toolCalls: List<ToolCall>? = null,
+        val usage: ChatUsage? = null
     )
+
+    data class ChatUsage(
+        val promptTokens: Int? = null,
+        val completionTokens: Int? = null,
+        val totalTokens: Int? = null,
+        val totalDurationNs: Long? = null,
+        val evalDurationNs: Long? = null,
+        val backend: String? = null
+    )
+
+    private fun normalizeOllamaImagePayload(image: String): String {
+        val marker = "base64,"
+        val markerIndex = image.indexOf(marker, ignoreCase = true)
+        return if (markerIndex >= 0) {
+            image.substring(markerIndex + marker.length)
+        } else {
+            image
+        }
+    }
+
+    private suspend fun <T> withTrackedConnection(
+        connection: HttpURLConnection,
+        block: suspend (HttpURLConnection) -> T
+    ): T {
+        val job = currentCoroutineContext()[Job]
+        registerConnection(job, connection)
+        return try {
+            block(connection)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (!currentCoroutineContext().isActive) {
+                val cancellation = CancellationException("Ollama request cancelled")
+                cancellation.initCause(e)
+                throw cancellation
+            }
+            throw e
+        } finally {
+            unregisterConnection(job, connection)
+            runCatching { connection.disconnect() }
+        }
+    }
     
     suspend fun checkConnection(): Boolean = withContext(Dispatchers.IO) {
         if (activeChatRequests.get() > 0) {
@@ -263,10 +438,9 @@ class OllamaService(private val context: Context) {
         messages: List<ChatMessage>,
         tools: List<AgentTool> = emptyList(),
         thinkingEnabled: Boolean = true,
+        numCtxOverride: Int? = null,
         onChunk: (String?, String?) -> Unit = { _, _ -> }
     ): Result<ChatResponse> = withContext(Dispatchers.IO) {
-        // Reset stop flag at start of each new request
-        shouldStop = false
         activeChatRequests.incrementAndGet()
         var sawStreamOutput = false
         val guardedOnChunk: (String?, String?) -> Unit = { chunk, thinkingChunk ->
@@ -285,7 +459,7 @@ class OllamaService(private val context: Context) {
                     },
                     shouldRetry = { !sawStreamOutput }
                 ) {
-                    performChatWithToolsStreaming(model, messages, tools, thinkingEnabled, guardedOnChunk)
+                    performChatWithToolsStreaming(model, messages, tools, thinkingEnabled, numCtxOverride, guardedOnChunk)
                 }
             }
             _isConnected.value = true
@@ -294,6 +468,8 @@ class OllamaService(private val context: Context) {
             }
             _isRecovering.value = false
             Result.success(chatResponse)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val recoverable = RemoteBackendResilience.isRecoverable(e)
             if (recoverable) {
@@ -308,196 +484,138 @@ class OllamaService(private val context: Context) {
         }
     }
 
-    private fun performChatWithToolsStreaming(
+    private suspend fun performChatWithToolsStreaming(
         model: String,
         messages: List<ChatMessage>,
         tools: List<AgentTool>,
         thinkingEnabled: Boolean,
+        numCtxOverride: Int?,
         onChunk: (String?, String?) -> Unit
     ): ChatResponse {
         val url = URL("${_baseUrl.value}/api/chat")
         val conn = url.openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.doOutput = true
-        conn.connectTimeout = 30000
-        conn.readTimeout = 1800000 // 30 minutes for long reasoning models
+        return withTrackedConnection(conn) { trackedConn ->
+            trackedConn.requestMethod = "POST"
+            trackedConn.setRequestProperty("Content-Type", "application/json")
+            trackedConn.setRequestProperty("Connection", "keep-alive")
+            trackedConn.doOutput = true
+            trackedConn.connectTimeout = 30000
+            trackedConn.readTimeout = CHAT_READ_TIMEOUT_MS
 
-        val requestJson = JSONObject().apply {
-            put("model", model)
-            put("stream", true)
-            put("think", thinkingEnabled)
+            val requestJson = buildChatRequestJson(
+                model = model,
+                messages = messages,
+                tools = tools,
+                thinkingEnabled = thinkingEnabled,
+                useMmap = _useMmap.value,
+                numThreads = _numThreads.value,
+                numCtx = AgentRuntimeSupport.resolveChatNumCtx(_numCtx.value, numCtxOverride)
+            )
 
-            val messagesArray = JSONArray()
-            for (msg in messages) {
-                messagesArray.put(JSONObject().apply {
-                    put("role", msg.role)
-                    put("content", msg.content)
-                    if (!msg.thinking.isNullOrEmpty()) {
-                        put("thinking", msg.thinking)
-                    }
-                    msg.images?.let { imgs ->
-                        if (imgs.isNotEmpty()) put("images", JSONArray(imgs))
-                    }
-                    msg.toolCalls?.let { calls ->
-                        if (calls.isNotEmpty()) {
-                            val tcArray = JSONArray()
-                            for (tc in calls) {
-                                tcArray.put(JSONObject().apply {
-                                    put("function", JSONObject().apply {
-                                        put("name", tc.name)
-                                        put("arguments", JSONObject(tc.arguments as Map<*, *>))
-                                    })
-                                })
-                            }
-                            put("tool_calls", tcArray)
-                        }
-                    }
-                })
+            OutputStreamWriter(trackedConn.outputStream).use { it.write(requestJson.toString()); it.flush() }
+
+            val fullContent = StringBuilder()
+            val fullThinking = StringBuilder()
+            var toolCalls: MutableList<ToolCall>? = null
+            var usage: ChatUsage? = null
+            var insideThinkTag = false
+
+            if (trackedConn.responseCode != 200) {
+                val errorBody = try {
+                    trackedConn.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                } catch (_: Exception) {
+                    "HTTP ${trackedConn.responseCode}"
+                }
+                throw Exception("Ollama error: $errorBody")
             }
-            put("messages", messagesArray)
 
-            if (tools.isNotEmpty()) {
-                val toolsArray = JSONArray()
-                for (tool in tools) {
-                    toolsArray.put(JSONObject().apply {
-                        put("type", "function")
-                        put("function", JSONObject().apply {
-                            put("name", tool.name)
-                            put("description", tool.description)
-                            put("parameters", JSONObject().apply {
-                                put("type", "object")
-                                put("properties", JSONObject().apply {
-                                    for ((paramName, paramDesc) in tool.parameters) {
-                                        put(paramName, JSONObject().apply {
-                                            put("type", "string")
-                                            put("description", paramDesc)
-                                        })
+            BufferedReader(InputStreamReader(trackedConn.inputStream)).use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    currentCoroutineContext().ensureActive()
+                    val jsonLine = line ?: continue
+                    val chunk = JSONObject(jsonLine)
+                    parseUsageChunk(chunk)?.let { usage = it }
+                    val message = chunk.optJSONObject("message") ?: continue
+                    val content = message.optString("content", "").takeUnless { it.equals("null", ignoreCase = true) }.orEmpty()
+                    val thinkingField = message.optString("thinking", message.optString("reasoning_content", ""))
+                        .takeUnless { it.equals("null", ignoreCase = true) }
+                        .orEmpty()
+
+                    if (thinkingField.isNotEmpty()) {
+                        fullThinking.append(thinkingField)
+                        onChunk(null, thinkingField)
+                    }
+
+                    if (content.isNotEmpty()) {
+                        var remaining = content
+
+                        while (remaining.isNotEmpty()) {
+                            if (!insideThinkTag) {
+                                if (remaining.contains("<think>")) {
+                                    val parts = remaining.split("<think>", limit = 2)
+                                    if (parts[0].isNotEmpty()) {
+                                        fullContent.append(parts[0])
+                                        onChunk(parts[0], null)
                                     }
-                                })
-                                put("required", JSONArray(tool.requiredParams))
-                            })
-                        })
-                    })
-                }
-                put("tools", toolsArray)
-            }
-        }
-
-        requestJson.put("options", JSONObject().apply {
-            put("use_mmap", _useMmap.value)
-            put("num_thread", _numThreads.value)
-            put("num_ctx", _numCtx.value)
-        })
-
-        OutputStreamWriter(conn.outputStream).use { it.write(requestJson.toString()); it.flush() }
-
-        val fullContent = StringBuilder()
-        val fullThinking = StringBuilder()
-        var toolCalls: MutableList<ToolCall>? = null
-        var insideThinkTag = false
-
-        if (conn.responseCode != 200) {
-            val errorBody = try {
-                conn.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
-            } catch (_: Exception) {
-                "HTTP ${conn.responseCode}"
-            } finally {
-                try { conn.disconnect() } catch (_: Exception) {}
-            }
-            throw Exception("Ollama error: $errorBody")
-        }
-
-        BufferedReader(InputStreamReader(conn.inputStream)).use { reader ->
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                if (shouldStop) {
-                    DebugLog.log("[$TAG] stop requested, breaking stream loop")
-                    conn.disconnect()
-                    throw Exception("Stopped by user")
-                }
-                val chunk = JSONObject(line)
-                val message = chunk.optJSONObject("message") ?: continue
-                val content = message.optString("content", "")
-                val thinkingField = message.optString("thinking", message.optString("reasoning_content", ""))
-
-                if (thinkingField.isNotEmpty()) {
-                    fullThinking.append(thinkingField)
-                    onChunk(null, thinkingField)
-                }
-
-                if (content.isNotEmpty()) {
-                    var remaining = content
-
-                    while (remaining.isNotEmpty()) {
-                        if (!insideThinkTag) {
-                            if (remaining.contains("<think>")) {
-                                val parts = remaining.split("<think>", limit = 2)
-                                if (parts[0].isNotEmpty()) {
-                                    fullContent.append(parts[0])
-                                    onChunk(parts[0], null)
+                                    insideThinkTag = true
+                                    remaining = if (parts.size > 1) parts[1] else ""
+                                } else {
+                                    fullContent.append(remaining)
+                                    onChunk(remaining, null)
+                                    remaining = ""
                                 }
-                                insideThinkTag = true
-                                remaining = if (parts.size > 1) parts[1] else ""
                             } else {
-                                fullContent.append(remaining)
-                                onChunk(remaining, null)
-                                remaining = ""
-                            }
-                        } else {
-                            if (remaining.contains("</think>")) {
-                                val parts = remaining.split("</think>", limit = 2)
-                                if (parts[0].isNotEmpty()) {
-                                    fullThinking.append(parts[0])
-                                    onChunk(null, parts[0])
+                                if (remaining.contains("</think>")) {
+                                    val parts = remaining.split("</think>", limit = 2)
+                                    if (parts[0].isNotEmpty()) {
+                                        fullThinking.append(parts[0])
+                                        onChunk(null, parts[0])
+                                    }
+                                    insideThinkTag = false
+                                    remaining = if (parts.size > 1) parts[1] else ""
+                                } else {
+                                    fullThinking.append(remaining)
+                                    onChunk(null, remaining)
+                                    remaining = ""
                                 }
-                                insideThinkTag = false
-                                remaining = if (parts.size > 1) parts[1] else ""
-                            } else {
-                                fullThinking.append(remaining)
-                                onChunk(null, remaining)
-                                remaining = ""
                             }
                         }
                     }
-                }
 
-                val tcArray = message.optJSONArray("tool_calls")
-                if (tcArray != null) {
-                    if (toolCalls == null) toolCalls = mutableListOf()
-                    for (i in 0 until tcArray.length()) {
-                        val tcObj = tcArray.getJSONObject(i)
-                        val id = tcObj.optString("id")
-                        val funcObj = tcObj.getJSONObject("function")
-                        val name = funcObj.getString("name")
-                        val argsObj = funcObj.getJSONObject("arguments")
-                        val args = mutableMapOf<String, String>()
-                        argsObj.keys().forEach { args[it] = argsObj.get(it).toString() }
+                    val tcArray = message.optJSONArray("tool_calls")
+                    if (tcArray != null) {
+                        if (toolCalls == null) toolCalls = mutableListOf()
+                        for (i in 0 until tcArray.length()) {
+                            val tcObj = tcArray.getJSONObject(i)
+                            val id = tcObj.optString("id")
+                            val funcObj = tcObj.getJSONObject("function")
+                            val name = funcObj.getString("name")
+                            val argsObj = funcObj.getJSONObject("arguments")
+                            val args = mutableMapOf<String, String>()
+                            argsObj.keys().forEach { args[it] = argsObj.get(it).toString() }
 
-                        DebugLog.log("[$TAG] Detected tool call: $name (id: $id)")
-                        toolCalls?.add(ToolCall(name, args, id))
+                            DebugLog.log("[$TAG] Detected tool call: $name (id: $id)")
+                            toolCalls?.add(ToolCall(name, args, id))
+                        }
                     }
                 }
             }
-        }
 
-        try {
-            conn.disconnect()
-        } catch (_: Exception) {
-        }
+            DebugLog.log("[$TAG] Stream finished. Detected ${toolCalls?.size ?: 0} tool calls.")
 
-        DebugLog.log("[$TAG] Stream finished. Detected ${toolCalls?.size ?: 0} tool calls.")
-
-        return ChatResponse(
-            message = ChatMessage(
-                role = "assistant",
-                content = fullContent.toString(),
+            ChatResponse(
+                message = ChatMessage(
+                    role = "assistant",
+                    content = fullContent.toString(),
+                    toolCalls = toolCalls,
+                    thinking = fullThinking.toString().ifEmpty { null }
+                ),
+                done = true,
                 toolCalls = toolCalls,
-                thinking = fullThinking.toString().ifEmpty { null }
-            ),
-            done = true,
-            toolCalls = toolCalls
-        )
+                usage = usage
+            )
+        }
     }
 
     /**
@@ -508,162 +626,194 @@ class OllamaService(private val context: Context) {
         messages: List<ChatMessage>,
         tools: List<AgentTool> = emptyList(),
         thinkingEnabled: Boolean = true,
+        numCtxOverride: Int? = null,
         onChunk: (String) -> Unit = {}
     ): Result<ChatResponse> = withContext(Dispatchers.IO) {
+        activeChatRequests.incrementAndGet()
         try {
             val url = URL("${_baseUrl.value}/api/chat")
             val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.doOutput = true
-            conn.connectTimeout = 30000
-            conn.readTimeout = 1800000 // 30 minutes
-            
-            // Build request
-            val requestJson = JSONObject().apply {
-                put("model", model)
-                put("stream", true)
-                put("think", thinkingEnabled)
-                
-                // Messages
-                val messagesArray = JSONArray()
-                for (msg in messages) {
-                    val msgObj = JSONObject().apply {
-                        put("role", msg.role)
-                        put("content", msg.content)
-                        
-                        msg.toolCallId?.let { put("tool_call_id", it) }
-                        
-                        msg.toolCalls?.let { calls ->
-                            val callsArray = JSONArray()
-                            for (call in calls) {
-                                callsArray.put(JSONObject().apply {
-                                    put("id", call.id)
-                                    put("type", "function")
-                                    put("function", JSONObject().apply {
-                                        put("name", call.name)
-                                        put("arguments", JSONObject(call.arguments))
+            val response = withTrackedConnection(conn) { trackedConn ->
+                trackedConn.requestMethod = "POST"
+                trackedConn.setRequestProperty("Content-Type", "application/json")
+                trackedConn.setRequestProperty("Connection", "keep-alive")
+                trackedConn.doOutput = true
+                trackedConn.connectTimeout = 30000
+                trackedConn.readTimeout = CHAT_READ_TIMEOUT_MS
+
+                // Build request
+                val requestJson = JSONObject().apply {
+                    put("model", model)
+                    put("stream", true)
+                    put("think", thinkingEnabled)
+                    put("keep_alive", CHAT_KEEP_ALIVE)
+
+                    // Messages
+                    val messagesArray = JSONArray()
+                    for (msg in messages) {
+                        val msgObj = JSONObject().apply {
+                            put("role", msg.role)
+                            put("content", msg.content)
+
+                            msg.toolCallId?.let { put("tool_call_id", it) }
+
+                            msg.toolCalls?.let { calls ->
+                                val callsArray = JSONArray()
+                                for (call in calls) {
+                                    callsArray.put(JSONObject().apply {
+                                        put("id", call.id)
+                                        put("type", "function")
+                                        put("function", JSONObject().apply {
+                                            put("name", call.name)
+                                            put("arguments", JSONObject(call.arguments))
+                                        })
+                                    })
+                                }
+                                put("tool_calls", callsArray)
+                            }
+
+                            msg.images?.let { imgs ->
+                                val imgsArray = JSONArray()
+                                imgs.forEach { imgsArray.put(normalizeOllamaImagePayload(it)) }
+                                put("images", imgsArray)
+                            }
+                        }
+                        messagesArray.put(msgObj)
+                    }
+                    put("messages", messagesArray)
+
+                    // Tools (if any)
+                    if (tools.isNotEmpty()) {
+                        val toolsArray = JSONArray()
+                        for (tool in tools) {
+                            val toolObj = JSONObject().apply {
+                                put("type", "function")
+                                put("function", JSONObject().apply {
+                                    put("name", tool.name)
+                                    put("description", tool.description)
+                                    put("parameters", JSONObject().apply {
+                                        put("type", "object")
+                                        put("properties", JSONObject().apply {
+                                            for ((paramName, paramDesc) in tool.parameters) {
+                                                put(paramName, JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", paramDesc)
+                                                })
+                                            }
+                                        })
+                                        put("required", JSONArray(tool.requiredParams))
                                     })
                                 })
                             }
-                            put("tool_calls", callsArray)
+                            toolsArray.put(toolObj)
                         }
-                        
-                        msg.images?.let { imgs ->
-                            val imgsArray = JSONArray()
-                            imgs.forEach { imgsArray.put(it) }
-                            put("images", imgsArray)
-                        }
+                        put("tools", toolsArray)
                     }
-                    messagesArray.put(msgObj)
                 }
-                put("messages", messagesArray)
-                
-                // Tools (if any)
-                if (tools.isNotEmpty()) {
-                    val toolsArray = JSONArray()
-                    for (tool in tools) {
-                        val toolObj = JSONObject().apply {
-                            put("type", "function")
-                            put("function", JSONObject().apply {
-                                put("name", tool.name)
-                                put("description", tool.description)
-                                put("parameters", JSONObject().apply {
-                                    put("type", "object")
-                                    put("properties", JSONObject().apply {
-                                        for ((paramName, paramDesc) in tool.parameters) {
-                                            put(paramName, JSONObject().apply {
-                                                put("type", "string")
-                                                put("description", paramDesc)
-                                            })
+
+                // Add runtime options (mmap, threads, context)
+                requestJson.put("options", JSONObject().apply {
+                    put("use_mmap", _useMmap.value)
+                    put("num_thread", _numThreads.value)
+                    put("num_ctx", AgentRuntimeSupport.resolveChatNumCtx(_numCtx.value, numCtxOverride))
+                })
+
+                // Send request
+                OutputStreamWriter(trackedConn.outputStream).use { writer ->
+                    writer.write(requestJson.toString())
+                    writer.flush()
+                }
+
+                // Read streaming response
+                val fullContent = StringBuilder()
+                var toolCalls: List<ToolCall>? = null
+                var usage: ChatUsage? = null
+
+                BufferedReader(InputStreamReader(trackedConn.inputStream)).use { reader ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        currentCoroutineContext().ensureActive()
+                        line?.let { jsonLine ->
+                            try {
+                                val chunk = JSONObject(jsonLine)
+                                parseUsageChunk(chunk)?.let { usage = it }
+                                val message = chunk.optJSONObject("message")
+                                val content = message?.optString("content", "") ?: ""
+
+                                if (content.isNotEmpty()) {
+                                    fullContent.append(content)
+                                    onChunk(content)
+                                }
+
+                                // Check for tool calls
+                                val toolCallsArray = message?.optJSONArray("tool_calls")
+                                if (toolCallsArray != null && toolCallsArray.length() > 0) {
+                                    toolCalls = mutableListOf<ToolCall>().apply {
+                                        for (i in 0 until toolCallsArray.length()) {
+                                            val tc = toolCallsArray.getJSONObject(i)
+                                            val id = tc.optString("id")
+                                            val function = tc.getJSONObject("function")
+                                            val args = function.optJSONObject("arguments")
+                                            add(ToolCall(
+                                                name = function.getString("name"),
+                                                arguments = args?.let { argsObj ->
+                                                    val map = mutableMapOf<String, String>()
+                                                    argsObj.keys().forEach { key ->
+                                                        map[key] = argsObj.optString(key, "")
+                                                    }
+                                                    map
+                                                } ?: emptyMap(),
+                                                id = id
+                                            ))
                                         }
-                                    })
-                                    put("required", JSONArray(tool.requiredParams))
-                                })
-                            })
-                        }
-                        toolsArray.put(toolObj)
-                    }
-                    put("tools", toolsArray)
-                }
-            }
-            
-            // Add runtime options (mmap, threads, context)
-            requestJson.put("options", JSONObject().apply {
-                put("use_mmap", _useMmap.value)
-                put("num_thread", _numThreads.value)
-                put("num_ctx", _numCtx.value)
-            })
-            
-            // Send request
-            OutputStreamWriter(conn.outputStream).use { writer ->
-                writer.write(requestJson.toString())
-                writer.flush()
-            }
-            
-            // Read streaming response
-            val fullContent = StringBuilder()
-            var toolCalls: List<ToolCall>? = null
-            
-            BufferedReader(InputStreamReader(conn.inputStream)).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    line?.let { jsonLine ->
-                        try {
-                            val chunk = JSONObject(jsonLine)
-                            val message = chunk.optJSONObject("message")
-                            val content = message?.optString("content", "") ?: ""
-                            
-                            if (content.isNotEmpty()) {
-                                fullContent.append(content)
-                                onChunk(content)
-                            }
-                            
-                            // Check for tool calls
-                            val toolCallsArray = message?.optJSONArray("tool_calls")
-                            if (toolCallsArray != null && toolCallsArray.length() > 0) {
-                                toolCalls = mutableListOf<ToolCall>().apply {
-                                    for (i in 0 until toolCallsArray.length()) {
-                                        val tc = toolCallsArray.getJSONObject(i)
-                                        val id = tc.optString("id")
-                                        val function = tc.getJSONObject("function")
-                                        val args = function.optJSONObject("arguments")
-                                        add(ToolCall(
-                                            name = function.getString("name"),
-                                            arguments = args?.let { argsObj ->
-                                                val map = mutableMapOf<String, String>()
-                                                argsObj.keys().forEach { key ->
-                                                    map[key] = argsObj.optString(key, "")
-                                                }
-                                                map
-                                            } ?: emptyMap(),
-                                            id = id
-                                        ))
                                     }
                                 }
+                            } catch (e: Exception) {
+                                // Skip malformed chunks
                             }
-                        } catch (e: Exception) {
-                            // Skip malformed chunks
                         }
                     }
                 }
+
+                ChatResponse(
+                    message = ChatMessage(
+                        role = "assistant",
+                        content = fullContent.toString(),
+                        toolCalls = toolCalls
+                    ),
+                    done = true,
+                    toolCalls = toolCalls,
+                    usage = usage
+                )
             }
-            
-            conn.disconnect()
-            
-            Result.success(ChatResponse(
-                message = ChatMessage(
-                    role = "assistant",
-                    content = fullContent.toString(),
-                    toolCalls = toolCalls
-                ),
-                done = true,
-                toolCalls = toolCalls
-            ))
+
+            Result.success(response)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DebugLog.log("[$TAG] Chat failed: ${e.message}")
             Result.failure(e)
+        } finally {
+            activeChatRequests.decrementAndGet()
         }
+    }
+
+    private fun parseUsageChunk(chunk: JSONObject): ChatUsage? {
+        val promptTokens = chunk.optInt("prompt_eval_count").takeIf { it > 0 }
+        val completionTokens = chunk.optInt("eval_count").takeIf { it > 0 }
+        val totalTokens = when {
+            promptTokens != null && completionTokens != null -> promptTokens + completionTokens
+            else -> null
+        }
+        if (promptTokens == null && completionTokens == null && totalTokens == null) return null
+        return ChatUsage(
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            totalTokens = totalTokens,
+            totalDurationNs = chunk.optLong("total_duration").takeIf { it > 0L },
+            evalDurationNs = chunk.optLong("eval_duration").takeIf { it > 0L },
+            backend = "ollama"
+        )
     }
     
     /**
@@ -677,7 +827,7 @@ class OllamaService(private val context: Context) {
             conn.setRequestProperty("Content-Type", "application/json")
             conn.doOutput = true
             conn.connectTimeout = 30000
-            conn.readTimeout = (AIConstants.Timeouts.OLLAMA_MODEL_PULL_MINUTES * 60 * 1000).toInt()  // 5 minutes timeout for downloads to prevent hanging
+            conn.readTimeout = (AIConstants.Timeouts.OLLAMA_MODEL_PULL_MINUTES * 60 * 1000).toInt()
             
             val requestJson = JSONObject().apply {
                 put("name", modelName)

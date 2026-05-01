@@ -69,6 +69,9 @@ class ModelShareService : Service() {
     
     override fun onDestroy() {
         stopServer()
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -140,6 +143,8 @@ class ModelShareService : Service() {
         _isRunning.value = false
         _serverUrls.value = emptyList()
         Log.i(TAG, "Server stopped")
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
     }
     
     /**

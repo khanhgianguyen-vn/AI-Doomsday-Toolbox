@@ -29,8 +29,7 @@ import com.example.llamadroid.R
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import java.io.File
-import com.example.llamadroid.util.AssetPackManagerUtil
-import com.example.llamadroid.util.AssetPackManagerUtil.AssetPack
+import com.example.llamadroid.util.UpscalerAssetPackSupport
 
 /**
  * Video Upscaler Screen using realsr-ncnn/realcugan-ncnn
@@ -42,10 +41,10 @@ fun VideoUpscalerScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     val settingsRepo = remember { SettingsRepository(context) }
     
-    // Check for required asset packs
+    // Check for required upscaler runtime assets
     var hasRequiredAssets by remember {
         mutableStateOf(
-            AssetPackManagerUtil.isReady(context, AssetPack.UPSCALER)
+            UpscalerAssetPackSupport.areModelsReady(context)
         )
     }
     
@@ -76,7 +75,7 @@ fun VideoUpscalerScreen(navController: NavController) {
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            Text("Assets missing. Please restart to download.")
+            Text(stringResource(R.string.feature_upscaler_assets_missing))
         }
         return
     }

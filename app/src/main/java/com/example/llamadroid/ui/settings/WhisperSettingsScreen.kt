@@ -16,6 +16,7 @@ import androidx.navigation.NavController
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
+import com.example.llamadroid.ui.components.AppScreenScaffold
 
 /**
  * Whisper Settings - Thread controls for transcription
@@ -28,23 +29,15 @@ fun WhisperSettingsScreen(navController: NavController) {
     
     val whisperThreads by settingsRepo.whisperThreads.collectAsState()
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.whisper_settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    AppScreenScaffold(
+        title = stringResource(R.string.whisper_settings_title),
+        subtitle = stringResource(R.string.settings_whisper_desc),
+        onBack = { navController.popBackStack() }
+    ) { _ ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Whisper Threads

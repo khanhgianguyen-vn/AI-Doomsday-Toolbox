@@ -205,7 +205,7 @@ fun DatasetScreen(navController: NavController) {
             },
             dismissButton = {
                 TextButton(onClick = { projectToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

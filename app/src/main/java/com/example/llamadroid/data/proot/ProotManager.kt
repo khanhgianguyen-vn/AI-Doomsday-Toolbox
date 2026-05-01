@@ -132,7 +132,7 @@ class ProotManager(private val context: Context) {
             java.io.FileInputStream(tarFile).use { fis ->
                 java.util.zip.GZIPInputStream(fis).use { gzis ->
                     org.apache.commons.compress.archivers.tar.TarArchiveInputStream(gzis).use { tais ->
-                        var entry = tais.nextTarEntry
+                        var entry = tais.nextEntry
                         var fileCount = 0
                         
                         while (entry != null) {
@@ -195,7 +195,7 @@ class ProotManager(private val context: Context) {
                                 onProgress(minOf(processedBytes.toFloat() / totalBytes / 2, 0.95f))
                             }
                             
-                            entry = tais.nextTarEntry
+                            entry = tais.nextEntry
                         }
                         
                         DebugLog.log("ProotManager: Extracted $fileCount files")
@@ -514,7 +514,7 @@ class ProotManager(private val context: Context) {
             }
             
             org.apache.commons.compress.archivers.tar.TarArchiveInputStream(decompressedStream).use { tais ->
-                var entry = tais.nextTarEntry
+                var entry = tais.nextEntry
                 while (entry != null) {
                     val name = entry.name
                     // Look for proot binary and loader
@@ -532,7 +532,7 @@ class ProotManager(private val context: Context) {
                         }
                         DebugLog.log("ProotManager: Extracted loader binary")
                     }
-                    entry = tais.nextTarEntry
+                    entry = tais.nextEntry
                 }
             }
             

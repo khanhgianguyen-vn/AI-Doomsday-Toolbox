@@ -158,11 +158,7 @@ Chunk summaries to unify:"""
             context.getString(R.string.pdf_notification_summarizing, pdfFileName)
         )
         acquireWakeLock(context)
-        RemoteSummaryProtection.acquire(
-            context,
-            context.getString(R.string.pdf_notification_summarizing, pdfFileName),
-            notificationTaskId
-        )
+        RemoteSummaryProtection.acquire(context)
 
         currentJob = serviceScope.launch {
             val settingsRepo = SettingsRepository(context)
@@ -254,7 +250,7 @@ Chunk summaries to unify:"""
             PdfSummaryStateHolder.setIsSummarizing(false)
             currentClient = null
             releaseWakeLock()
-            RemoteSummaryProtection.release(context)
+            RemoteSummaryProtection.release()
             notificationTaskId = null
         }
     }
@@ -272,7 +268,7 @@ Chunk summaries to unify:"""
         PdfSummaryStateHolder.setCancelled(true)
         PdfSummaryStateHolder.setProgressMessage("")
         releaseWakeLock()
-        RemoteSummaryProtection.release(com.example.llamadroid.LlamaApplication.instance)
+        RemoteSummaryProtection.release()
         notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
         notificationTaskId = null
     }

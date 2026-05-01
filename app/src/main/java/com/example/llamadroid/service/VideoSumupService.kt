@@ -106,12 +106,8 @@ object VideoSumupService {
         videoPath: String,
         videoFileName: String,
         whisperModelPath: String,
-        llmModelPath: String,
         language: String = "auto",
         threads: Int = 4,
-        contextSize: Int = 2048,
-        maxTokens: Int = 300,
-        temperature: Float = 0.7f,
         saveToNotes: Boolean = true,
         noteType: NoteType = NoteType.VIDEO_SUMMARY,  // WORKFLOW for workflow calls
         audioSourcePath: String? = null  // Original audio path for workflow notes
@@ -150,11 +146,7 @@ object VideoSumupService {
             UnifiedNotificationManager.TaskType.TRANSCRIPTION,
             context.getString(R.string.video_sumup_notification_title, videoFileName)
         )
-        RemoteSummaryProtection.acquire(
-            context,
-            context.getString(R.string.video_sumup_notification_title, videoFileName),
-            notificationTaskId
-        )
+        RemoteSummaryProtection.acquire(context)
         
         // Acquire wake lock
         try {
@@ -168,7 +160,7 @@ object VideoSumupService {
         
         currentJob = serviceScope.launch {
             try {
-                val result = summarizeVideo(context, videoPath, videoFileName, whisperModelPath, llmModelPath, language, threads, contextSize, maxTokens, temperature, saveToNotes, noteType, audioSourcePath)
+                val result = summarizeVideo(context, videoPath, videoFileName, whisperModelPath, language, threads, saveToNotes, noteType, audioSourcePath)
                 _result.value = result
                 
                 // Complete notification on success
@@ -191,7 +183,7 @@ object VideoSumupService {
             } finally {
                 currentRemoteClient = null
                 releaseWakeLock()
-                RemoteSummaryProtection.release(context)
+                RemoteSummaryProtection.release()
                 notificationTaskId = null
             }
         }
@@ -202,12 +194,8 @@ object VideoSumupService {
         videoPath: String,
         videoFileName: String,
         whisperModelPath: String,
-        llmModelPath: String,
         language: String,
         threads: Int,
-        contextSize: Int,
-        maxTokens: Int,
-        temperature: Float,
         saveToNotes: Boolean,
         noteType: NoteType,
         audioSourcePath: String?
@@ -551,7 +539,7 @@ object VideoSumupService {
         WorkflowStateHolder.setProgress(0f)
         WorkflowStateHolder.setCancelled(true)
         releaseWakeLock()
-        RemoteSummaryProtection.release(com.example.llamadroid.LlamaApplication.instance)
+        RemoteSummaryProtection.release()
     }
     
     fun clearResult() { _result.value = null }

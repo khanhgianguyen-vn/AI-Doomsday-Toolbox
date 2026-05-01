@@ -21,12 +21,15 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import coil.compose.AsyncImage
 import com.example.llamadroid.R
 import com.example.llamadroid.service.AgentService
 import com.example.llamadroid.service.PromptContextSnapshot
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -140,9 +143,11 @@ fun AgentTopBar(
 
 @Composable
 fun ConnectionStatusBar(
-    isOllamaConnected: Boolean,
-    ollamaIsRecovering: Boolean,
-    ollamaHasChecked: Boolean,
+    isBackendConnected: Boolean,
+    backendIsRecovering: Boolean,
+    backendHasChecked: Boolean,
+    backendOfflineMessage: String,
+    backendReconnectingMessage: String,
     agentConnectionStatus: AgentService.Companion.ConnectionStatus,
     retryMessage: String?,
     onRetry: () -> Unit
@@ -151,19 +156,19 @@ fun ConnectionStatusBar(
     val agentHasIssue = agentConnectionStatus == AgentService.Companion.ConnectionStatus.DISCONNECTED ||
         agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING ||
         agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING
-    val ollamaHasIssue = ollamaIsRecovering || (ollamaHasChecked && !isOllamaConnected)
-    
-    if (ollamaHasIssue || agentHasIssue) {
+    val backendHasIssue = backendIsRecovering || (backendHasChecked && !isBackendConnected)
+
+    if (backendHasIssue || agentHasIssue) {
         val message = when {
-            ollamaIsRecovering -> stringResource(R.string.agent_ollama_reconnecting)
-            ollamaHasIssue -> stringResource(R.string.agent_ollama_offline)
+            backendIsRecovering -> backendReconnectingMessage
+            backendHasIssue -> backendOfflineMessage
             agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING -> retryMessage ?: stringResource(R.string.agent_reconnecting)
             agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING -> stringResource(R.string.agent_connecting)
             else -> stringResource(R.string.agent_disconnected)
         }
 
         Surface(
-            color = if (ollamaIsRecovering || agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING || agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING) 
+            color = if (backendIsRecovering || agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING || agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING)
                 MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.9f)
             else 
                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f),
@@ -178,7 +183,7 @@ fun ConnectionStatusBar(
                     modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (ollamaIsRecovering || agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING || agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING) {
+                    if (backendIsRecovering || agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING || agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
                             strokeWidth = 2.dp,
@@ -190,7 +195,7 @@ fun ConnectionStatusBar(
                         text = message,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (ollamaIsRecovering || agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING || agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING)
+                        color = if (backendIsRecovering || agentConnectionStatus == AgentService.Companion.ConnectionStatus.RECONNECTING || agentConnectionStatus == AgentService.Companion.ConnectionStatus.CONNECTING)
                             MaterialTheme.colorScheme.onTertiaryContainer
                         else
                             MaterialTheme.colorScheme.onErrorContainer,
@@ -200,14 +205,77 @@ fun ConnectionStatusBar(
                 }
                 
                 // Show retry button only if disconnected and NOT retrying or if ollama is down
-                if (!ollamaIsRecovering && (agentConnectionStatus == AgentService.Companion.ConnectionStatus.DISCONNECTED || !isOllamaConnected)) {
+                if (!backendIsRecovering && (agentConnectionStatus == AgentService.Companion.ConnectionStatus.DISCONNECTED || !isBackendConnected)) {
                     TextButton(
                         onClick = onRetry,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                         modifier = Modifier.height(28.dp)
                     ) {
-                        Text(stringResource(R.string.action_retry), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            stringResource(R.string.action_retry),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SshConnectionWarningCard(
+    title: String,
+    message: String,
+    onRetry: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (onOpenSettings != null) {
+                    TextButton(onClick = onOpenSettings) {
+                        Text(stringResource(R.string.action_settings))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Button(onClick = onRetry) {
+                    Text(stringResource(R.string.action_retry))
                 }
             }
         }
@@ -295,7 +363,7 @@ fun AgentContextWindowBanner(
     snapshot: PromptContextSnapshot?,
     modifier: Modifier = Modifier
 ) {
-    if (snapshot == null) return
+    if (snapshot == null || snapshot.agentRole != "ORCHESTRATOR") return
 
     var expanded by rememberSaveable { mutableStateOf(true) }
     val detailScrollState = rememberScrollState()
@@ -303,18 +371,27 @@ fun AgentContextWindowBanner(
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     }
 
-    val progress = (snapshot.packedEstimatedTokens.toFloat() / snapshot.contextSize.toFloat()).coerceIn(0f, 1f)
+    val displayedPromptTokens = snapshot.actualPromptTokens ?: snapshot.packedEstimatedTokens
+    val displayedPercentUsed = snapshot.actualPercentUsed ?: snapshot.percentUsed
+    val progress = (displayedPromptTokens.toFloat() / snapshot.contextSize.toFloat()).coerceIn(0f, 1f)
     val containerColor = when {
-        snapshot.percentUsed >= snapshot.thresholdPercent -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)
-        snapshot.percentUsed >= 75 -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.92f)
+        displayedPercentUsed >= snapshot.thresholdPercent -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)
+        displayedPercentUsed >= 75 -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.92f)
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
     }
     val contentColor = when {
-        snapshot.percentUsed >= snapshot.thresholdPercent -> MaterialTheme.colorScheme.onErrorContainer
-        snapshot.percentUsed >= 75 -> MaterialTheme.colorScheme.onTertiaryContainer
+        displayedPercentUsed >= snapshot.thresholdPercent -> MaterialTheme.colorScheme.onErrorContainer
+        displayedPercentUsed >= 75 -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val detailText = when {
+        snapshot.isUsingHardCompactedBasis ->
+            stringResource(
+                R.string.agent_context_usage_hard_compacted_detail,
+                snapshot.rawEstimatedTokens,
+                snapshot.packedEstimatedTokens,
+                snapshot.thresholdPercent
+            )
         snapshot.didCompactHistory || snapshot.omittedCount > 0 ->
             stringResource(
                 R.string.agent_context_usage_compacted_detail,
@@ -348,8 +425,8 @@ fun AgentContextWindowBanner(
                 Text(
                     text = stringResource(
                         R.string.agent_context_usage_label,
-                        snapshot.percentUsed,
-                        snapshot.packedEstimatedTokens,
+                        displayedPercentUsed,
+                        displayedPromptTokens,
                         snapshot.contextSize
                     ),
                     style = MaterialTheme.typography.labelLarge,
@@ -405,6 +482,32 @@ fun AgentContextWindowBanner(
                     style = MaterialTheme.typography.bodySmall,
                     color = contentColor.copy(alpha = 0.88f)
                 )
+                snapshot.actualPromptTokens?.let { actualPromptTokens ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.agent_context_usage_actual_detail,
+                            actualPromptTokens,
+                            snapshot.actualCompletionTokens?.toString() ?: "?",
+                            snapshot.actualTotalTokens?.toString() ?: "?"
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor.copy(alpha = 0.88f)
+                    )
+                }
+                if (snapshot.backend != null && snapshot.model != null && snapshot.calibrationFactor != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.agent_context_usage_calibration_detail,
+                            snapshot.backend,
+                            snapshot.model,
+                            String.format(Locale.US, "%.2f", snapshot.calibrationFactor)
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = contentColor.copy(alpha = 0.88f)
+                    )
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = stringResource(R.string.agent_context_usage_history_title),
@@ -423,10 +526,12 @@ fun AgentContextWindowBanner(
                     snapshot.recentCompactions.forEach { event ->
                         Text(
                             text = stringResource(
-                                R.string.agent_context_usage_history_item,
+                                R.string.agent_context_usage_history_item_verbose,
                                 timeFormatter.format(Date(event.timestamp)),
                                 event.rawEstimatedTokens,
-                                event.packedEstimatedTokens
+                                event.packedEstimatedTokens,
+                                event.omittedCount,
+                                event.compactionPasses
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = contentColor.copy(alpha = 0.88f)
@@ -445,7 +550,11 @@ fun AgentInputBar(
     isLoading: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    canSend: Boolean
+    canSend: Boolean,
+    canAttachImage: Boolean = false,
+    hasImageAttachment: Boolean = false,
+    keyboardPadding: Dp = 0.dp,
+    onAttachImage: (() -> Unit)? = null
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -455,7 +564,7 @@ fun AgentInputBar(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .imePadding()
+            .padding(bottom = keyboardPadding)
     ) {
         Row(
             modifier = Modifier
@@ -463,6 +572,31 @@ fun AgentInputBar(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (onAttachImage != null) {
+                FilledIconButton(
+                    onClick = onAttachImage,
+                    modifier = Modifier.size(44.dp),
+                    enabled = canAttachImage && !isLoading,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (hasImageAttachment) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        contentColor = if (hasImageAttachment) {
+                            MaterialTheme.colorScheme.onTertiary
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        }
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.Image, stringResource(R.string.agent_attach_image), modifier = Modifier.size(20.dp))
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+
             OutlinedTextField(
                 value = inputText,
                 onValueChange = onInputTextChange,
@@ -501,6 +635,52 @@ fun AgentInputBar(
                 } else {
                     Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.action_send), modifier = Modifier.size(22.dp))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AgentImageAttachmentChip(
+    imagePath: String,
+    onPreview: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AsyncImage(
+                model = File(imagePath),
+                contentDescription = stringResource(R.string.agent_image_attachment_title),
+                modifier = Modifier
+                    .size(52.dp)
+                    .clickable(onClick = onPreview),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.agent_image_attachment_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = File(imagePath).name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.llama_remove_attachment))
             }
         }
     }

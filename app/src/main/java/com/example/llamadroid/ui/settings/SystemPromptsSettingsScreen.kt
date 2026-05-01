@@ -20,6 +20,7 @@ import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.SystemPromptEntity
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
+import com.example.llamadroid.ui.components.AppScreenScaffold
 import kotlinx.coroutines.launch
 
 /**
@@ -42,23 +43,15 @@ fun SystemPromptsSettingsScreen(navController: NavController) {
     var newPromptContent by remember { mutableStateOf("") }
     var promptCategory by remember { mutableStateOf("pdf_summary") }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.prompts_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    AppScreenScaffold(
+        title = stringResource(R.string.prompts_title),
+        subtitle = stringResource(R.string.settings_prompts_desc),
+        onBack = { navController.popBackStack() }
+    ) { _ ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // PDF Summary Section

@@ -1,0 +1,28 @@
+package com.example.llamadroid.service
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentForegroundServiceTest {
+    @Test
+    fun `resolveAgentResumeDispatch uses plain resume when service already runs`() {
+        val dispatch = resolveAgentResumeDispatch(isServiceRunning = true)
+
+        assertEquals(AgentForegroundService.ACTION_RESUME_RUNTIME, dispatch.action)
+        assertFalse(dispatch.useForegroundStart)
+        assertFalse(dispatch.recoveryOnly)
+        assertEquals("resume_running", dispatch.startSource)
+    }
+
+    @Test
+    fun `resolveAgentResumeDispatch uses foreground recovery start when service is cold`() {
+        val dispatch = resolveAgentResumeDispatch(isServiceRunning = false)
+
+        assertEquals(AgentForegroundService.ACTION_START_AGENT, dispatch.action)
+        assertTrue(dispatch.useForegroundStart)
+        assertTrue(dispatch.recoveryOnly)
+        assertEquals("resume_cold", dispatch.startSource)
+    }
+}

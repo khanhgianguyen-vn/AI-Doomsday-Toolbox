@@ -30,7 +30,9 @@ fun SettingSliderCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+        shape = AppChromeDefaults.CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = AppChromeDefaults.CardElevation)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -76,7 +78,9 @@ fun SettingSliderCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+        shape = AppChromeDefaults.CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = AppChromeDefaults.CardElevation)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -118,7 +122,9 @@ fun SettingSwitchCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+        shape = AppChromeDefaults.CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = AppChromeDefaults.CardElevation)
     ) {
         Row(
             modifier = Modifier

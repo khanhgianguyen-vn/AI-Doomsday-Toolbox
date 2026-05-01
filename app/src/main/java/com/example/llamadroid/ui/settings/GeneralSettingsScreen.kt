@@ -20,7 +20,10 @@ import androidx.navigation.NavController
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
+import com.example.llamadroid.data.backup.NativeChatNotesBackupManager
+import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.DatabaseBackupManager
+import com.example.llamadroid.ui.components.AppScreenScaffold
 import kotlinx.coroutines.launch
 
 /**
@@ -46,23 +49,15 @@ fun GeneralSettingsScreen(navController: NavController) {
         }
     }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.general_settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    AppScreenScaffold(
+        title = stringResource(R.string.general_settings_title),
+        subtitle = stringResource(R.string.settings_subtitle),
+        onBack = { navController.popBackStack() }
+    ) { _ ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Output Folder
@@ -221,6 +216,7 @@ fun GeneralSettingsScreen(navController: NavController) {
                 var isIgnoringBatteryOptimizations by remember { 
                     mutableStateOf(powerManager.isIgnoringBatteryOptimizations(packageName)) 
                 }
+                val keepScreenAwakeDuringGeneration by settingsRepo.keepScreenAwakeDuringGeneration.collectAsState()
                 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -280,6 +276,33 @@ fun GeneralSettingsScreen(navController: NavController) {
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.general_battery_keep_screen_awake_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    stringResource(R.string.general_battery_keep_screen_awake_desc),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                                )
+                            }
+                            Switch(
+                                checked = keepScreenAwakeDuringGeneration,
+                                onCheckedChange = settingsRepo::setKeepScreenAwakeDuringGeneration
+                            )
+                        }
                         
                         // Always show device-specific help
                         Spacer(modifier = Modifier.height(8.dp))
@@ -305,13 +328,17 @@ fun GeneralSettingsScreen(navController: NavController) {
                 }
             }
 
-            // Database Backup / Restore
+            // Backups
             item {
                 val scope = rememberCoroutineScope()
+                val database = remember { AppDatabase.getDatabase(context) }
                 var isBackingUp by remember { mutableStateOf(false) }
                 var isRestoring by remember { mutableStateOf(false) }
+                var isNativeBackupBusy by remember { mutableStateOf(false) }
                 var showRestoreConfirm by remember { mutableStateOf(false) }
                 var pendingRestoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+                var showNativeImportConfirm by remember { mutableStateOf(false) }
+                var pendingNativeImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
                 // SAF file creator for backup
                 val backupFilePicker = rememberLauncherForActivityResult(
@@ -338,6 +365,51 @@ fun GeneralSettingsScreen(navController: NavController) {
                     uri?.let {
                         pendingRestoreUri = it
                         showRestoreConfirm = true
+                    }
+                }
+
+                val nativeBackupExportPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/zip")
+                ) { uri ->
+                    uri?.let {
+                        isNativeBackupBusy = true
+                        scope.launch {
+                            val result = NativeChatNotesBackupManager.exportToZip(context, database, it)
+                            isNativeBackupBusy = false
+                            result.onSuccess { stats ->
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.llama_backup_export_success,
+                                        stats.chats,
+                                        stats.notes,
+                                        stats.organizerEvents,
+                                        stats.organizerAlarms,
+                                        stats.mediaFiles,
+                                        stats.models
+                                    ),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }.onFailure { error ->
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.llama_backup_export_failed,
+                                        error.message ?: context.getString(R.string.error_generic)
+                                    ),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
+                }
+
+                val nativeBackupImportPicker = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument()
+                ) { uri ->
+                    uri?.let {
+                        pendingNativeImportUri = it
+                        showNativeImportConfirm = true
                     }
                 }
 
@@ -385,6 +457,67 @@ fun GeneralSettingsScreen(navController: NavController) {
                     )
                 }
 
+                if (showNativeImportConfirm && pendingNativeImportUri != null) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showNativeImportConfirm = false
+                            pendingNativeImportUri = null
+                        },
+                        title = { Text(stringResource(R.string.llama_backup_import_confirm_title)) },
+                        text = { Text(stringResource(R.string.llama_backup_import_confirm_message)) },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    val uri = pendingNativeImportUri ?: return@Button
+                                    showNativeImportConfirm = false
+                                    pendingNativeImportUri = null
+                                    isNativeBackupBusy = true
+                                    scope.launch {
+                                        val result = NativeChatNotesBackupManager.importFromZip(context, database, uri)
+                                        isNativeBackupBusy = false
+                                        result.onSuccess { stats ->
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(
+                                                    R.string.llama_backup_import_success,
+                                                    stats.chats,
+                                                    stats.notes,
+                                                    stats.organizerEvents,
+                                                    stats.organizerAlarms,
+                                                    stats.mediaFiles,
+                                                    stats.models
+                                                ),
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }.onFailure { error ->
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(
+                                                    R.string.llama_backup_import_failed,
+                                                    error.message ?: context.getString(R.string.error_generic)
+                                                ),
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(stringResource(R.string.action_import))
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(
+                                onClick = {
+                                    showNativeImportConfirm = false
+                                    pendingNativeImportUri = null
+                                }
+                            ) {
+                                Text(stringResource(R.string.action_cancel))
+                            }
+                        }
+                    )
+                }
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -410,6 +543,17 @@ fun GeneralSettingsScreen(navController: NavController) {
                             }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.backup_database_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            stringResource(R.string.backup_database_desc),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -446,6 +590,57 @@ fun GeneralSettingsScreen(navController: NavController) {
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
                                 Text(if (isRestoring) stringResource(R.string.backup_restoring) else stringResource(R.string.backup_restore_btn))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider()
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.backup_native_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            stringResource(R.string.backup_native_desc),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    nativeBackupExportPicker.launch(NativeChatNotesBackupManager.generateBackupFilename())
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = !isNativeBackupBusy
+                            ) {
+                                if (isNativeBackupBusy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(stringResource(R.string.backup_native_export_btn))
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    nativeBackupImportPicker.launch(
+                                        arrayOf(
+                                            "application/zip",
+                                            "application/octet-stream",
+                                            "application/x-zip-compressed"
+                                        )
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = !isNativeBackupBusy
+                            ) {
+                                Text(stringResource(R.string.backup_native_import_btn))
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))

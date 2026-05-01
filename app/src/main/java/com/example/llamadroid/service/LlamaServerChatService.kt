@@ -3,7 +3,6 @@ package com.example.llamadroid.service
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.example.llamadroid.util.DebugLog
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -31,8 +30,12 @@ class LlamaServerChatService {
     @Volatile
     var shouldStop = false
 
+    @Volatile
+    private var activeConnection: HttpURLConnection? = null
+
     fun stopGeneration() {
         shouldStop = true
+        runCatching { activeConnection?.disconnect() }
     }
 
     /**
@@ -46,12 +49,14 @@ class LlamaServerChatService {
      * @param numCtx context window size (passed as max_tokens hint)
      * @param onChunk streaming callback: (contentDelta, thinkingDelta)
      */
-    suspend fun chatWithToolsStreaming(
+    internal suspend fun chatWithToolsStreaming(
         baseUrl: String,
         messages: List<OllamaService.ChatMessage>,
         tools: List<AgentTool> = emptyList(),
+        modelLabel: String? = null,
         thinkingEnabled: Boolean = true,
         numCtx: Int = 16384,
+        samplingParams: LlamaServerSamplingParams = LlamaServerSamplingParams(),
         onChunk: (String?, String?) -> Unit = { _, _ -> }
     ): Result<OllamaService.ChatResponse> = withContext(Dispatchers.IO) {
         shouldStop = false
@@ -71,7 +76,7 @@ class LlamaServerChatService {
                     },
                     shouldRetry = { !sawStreamOutput }
                 ) {
-                    performChatWithToolsStreaming(baseUrl, messages, tools, thinkingEnabled, numCtx, guardedOnChunk)
+                    performChatWithToolsStreaming(baseUrl, messages, tools, modelLabel, thinkingEnabled, numCtx, samplingParams, guardedOnChunk)
                 }
             }
             Result.success(chatResponse)
@@ -84,248 +89,185 @@ class LlamaServerChatService {
         baseUrl: String,
         messages: List<OllamaService.ChatMessage>,
         tools: List<AgentTool>,
+        modelLabel: String?,
         thinkingEnabled: Boolean,
         numCtx: Int,
+        samplingParams: LlamaServerSamplingParams,
         onChunk: (String?, String?) -> Unit
     ): OllamaService.ChatResponse {
         val url = URL("${baseUrl.trimEnd('/')}/v1/chat/completions")
         val conn = url.openConnection() as HttpURLConnection
+        activeConnection = conn
         conn.requestMethod = "POST"
         conn.setRequestProperty("Content-Type", "application/json")
         conn.doOutput = true
         conn.connectTimeout = 30000
         conn.readTimeout = 1800000 // 30 minutes for long reasoning
 
-        // Build request in OpenAI format
-        val requestJson = JSONObject().apply {
-            put("stream", true)
-            // Model field is required by the API but llama-server ignores it
-            // (it serves whatever model was loaded at startup)
-            put("model", "local-model")
-
-            // Messages array
-            val messagesArray = JSONArray()
-            for (msg in messages) {
-                messagesArray.put(JSONObject().apply {
-                    put("role", msg.role)
-                    put("content", msg.content)
-                    // Include tool_calls for assistant messages
-                    msg.toolCalls?.let { calls ->
-                        if (calls.isNotEmpty()) {
-                            val tcArray = JSONArray()
-                            for (tc in calls) {
-                                tcArray.put(JSONObject().apply {
-                                    put("id", tc.id ?: "call_${System.nanoTime()}")
-                                    put("type", "function")
-                                    put("function", JSONObject().apply {
-                                        put("name", tc.name)
-                                        put("arguments", JSONObject(tc.arguments as Map<*, *>).toString())
-                                    })
-                                })
-                            }
-                            put("tool_calls", tcArray)
-                        }
-                    }
-                    // For tool role messages, include tool_call_id
-                    if (msg.role == "tool" && msg.toolCallId != null) {
-                        put("tool_call_id", msg.toolCallId)
-                    }
-                })
-            }
-            put("messages", messagesArray)
-
-            // Tools in OpenAI format
-            if (tools.isNotEmpty()) {
-                val toolsArray = JSONArray()
-                for (tool in tools) {
-                    toolsArray.put(JSONObject().apply {
-                        put("type", "function")
-                        put("function", JSONObject().apply {
-                            put("name", tool.name)
-                            put("description", tool.description)
-                            put("parameters", JSONObject().apply {
-                                put("type", "object")
-                                put("properties", JSONObject().apply {
-                                    for ((paramName, paramDesc) in tool.parameters) {
-                                        put(paramName, JSONObject().apply {
-                                            put("type", "string")
-                                            put("description", paramDesc)
-                                        })
-                                    }
-                                })
-                                put("required", JSONArray(tool.requiredParams))
-                            })
-                        })
-                    })
-                }
-                put("tools", toolsArray)
-                put("tool_choice", "auto")
-            }
-        }
-
-        // numCtx kept for signature parity / future hinting.
-        if (numCtx > 0) {
-            requestJson.put("max_tokens", numCtx)
-        }
-
-        OutputStreamWriter(conn.outputStream).use { it.write(requestJson.toString()); it.flush() }
-
-        if (conn.responseCode != 200) {
-            val errorBody = try {
-                conn.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
-            } catch (_: Exception) {
-                "HTTP ${conn.responseCode}"
-            } finally {
-                try { conn.disconnect() } catch (_: Exception) {}
-            }
-            throw Exception("llama-server error: $errorBody")
-        }
-
-        // Parse SSE streaming response
-        val fullContent = StringBuilder()
-        val fullThinking = StringBuilder()
-        var insideThinkTag = false
-
-        // Tool calls are assembled incrementally across SSE chunks
-        // Each chunk may contain partial function name or arguments
-        val toolCallBuilders = mutableMapOf<Int, ToolCallBuilder>()
-
-        BufferedReader(InputStreamReader(conn.inputStream)).use { reader ->
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                if (shouldStop) {
-                    DebugLog.log("[$TAG] stop requested, breaking SSE stream")
-                    conn.disconnect()
-                    throw Exception("Stopped by user")
-                }
-
-                val data = line ?: continue
-
-                // SSE format: lines starting with "data: "
-                if (!data.startsWith("data: ")) continue
-                val jsonStr = data.removePrefix("data: ").trim()
-
-                // Stream end signal
-                if (jsonStr == "[DONE]") break
-
-                try {
-                    val chunk = JSONObject(jsonStr)
-                    val choices = chunk.optJSONArray("choices") ?: continue
-                    if (choices.length() == 0) continue
-
-                    val choice = choices.getJSONObject(0)
-                    val delta = choice.optJSONObject("delta") ?: continue
-
-                    // Handle content delta
-                    val content = delta.optString("content", "")
-                    if (content.isNotEmpty()) {
-                        // Parse <think> tags the same way OllamaService does
-                        var remaining = content
-                        while (remaining.isNotEmpty()) {
-                            if (!insideThinkTag) {
-                                if (remaining.contains("<think>")) {
-                                    val parts = remaining.split("<think>", limit = 2)
-                                    if (parts[0].isNotEmpty()) {
-                                        fullContent.append(parts[0])
-                                        onChunk(parts[0], null)
-                                    }
-                                    insideThinkTag = true
-                                    remaining = if (parts.size > 1) parts[1] else ""
-                                } else {
-                                    fullContent.append(remaining)
-                                    onChunk(remaining, null)
-                                    remaining = ""
-                                }
-                            } else {
-                                if (remaining.contains("</think>")) {
-                                    val parts = remaining.split("</think>", limit = 2)
-                                    if (parts[0].isNotEmpty()) {
-                                        fullThinking.append(parts[0])
-                                        if (thinkingEnabled) onChunk(null, parts[0])
-                                    }
-                                    insideThinkTag = false
-                                    remaining = if (parts.size > 1) parts[1] else ""
-                                } else {
-                                    fullThinking.append(remaining)
-                                    if (thinkingEnabled) onChunk(null, remaining)
-                                    remaining = ""
-                                }
-                            }
-                        }
-                    }
-
-                    // Handle reasoning_content field (some models use this instead of <think> tags)
-                    val reasoningContent = delta.optString("reasoning_content", "")
-                    if (reasoningContent.isNotEmpty()) {
-                        fullThinking.append(reasoningContent)
-                        if (thinkingEnabled) onChunk(null, reasoningContent)
-                    }
-
-                    // Handle incremental tool calls
-                    val tcArray = delta.optJSONArray("tool_calls")
-                    if (tcArray != null) {
-                        for (i in 0 until tcArray.length()) {
-                            val tcObj = tcArray.getJSONObject(i)
-                            val index = tcObj.optInt("index", i)
-                            val id = tcObj.optString("id", "")
-                            val funcObj = tcObj.optJSONObject("function")
-
-                            val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
-                            if (id.isNotEmpty()) builder.id = id
-                            if (funcObj != null) {
-                                val name = funcObj.optString("name", "")
-                                val args = funcObj.optString("arguments", "")
-                                if (name.isNotEmpty()) builder.name = name
-                                builder.arguments.append(args)
-                            }
-                        }
-                    }
-
-                    // Check finish_reason
-                    val finishReason = choice.optString("finish_reason", "")
-                    if (finishReason == "stop" || finishReason == "tool_calls") break
-
-                } catch (e: Exception) {
-                    DebugLog.log("[$TAG] SSE parse error: ${e.message} for line: $jsonStr")
-                }
-            }
-        }
-
-        // Assemble final tool calls from builders
-        val toolCalls = if (toolCallBuilders.isNotEmpty()) {
-            toolCallBuilders.entries.sortedBy { it.key }.mapNotNull { (_, builder) ->
-                if (builder.name.isNotEmpty()) {
-                    try {
-                        val argsJson = JSONObject(builder.arguments.toString())
-                        val args = mutableMapOf<String, String>()
-                        argsJson.keys().forEach { key -> args[key] = argsJson.get(key).toString() }
-                        DebugLog.log("[$TAG] Assembled tool call: ${builder.name} (id: ${builder.id})")
-                        OllamaService.ToolCall(builder.name, args, builder.id)
-                    } catch (e: Exception) {
-                        DebugLog.log("[$TAG] Failed to parse tool call args: ${e.message}")
-                        null
-                    }
-                } else null
-            }
-        } else null
+        val requestJson = buildJsonObject(
+            buildLlamaServerChatRequestPayload(
+                messages = messages,
+                tools = tools,
+                model = modelLabel,
+                thinkingEnabled = thinkingEnabled,
+                maxTokens = numCtx,
+                samplingParams = samplingParams
+            )
+        )
 
         try {
-            conn.disconnect()
-        } catch (_: Exception) {
-        }
+            OutputStreamWriter(conn.outputStream).use { it.write(requestJson.toString()); it.flush() }
 
-        DebugLog.log("[$TAG] Stream finished. ${toolCalls?.size ?: 0} tool calls detected.")
+            if (conn.responseCode != 200) {
+                val errorBody = try {
+                    conn.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                } catch (_: Exception) {
+                    "HTTP ${conn.responseCode}"
+                }
+                throw Exception("llama-server error: $errorBody")
+            }
 
-        return OllamaService.ChatResponse(
-            message = OllamaService.ChatMessage(
-                role = "assistant",
-                content = fullContent.toString(),
+            val fullContent = StringBuilder()
+            val fullThinking = StringBuilder()
+            var insideThinkTag = false
+            var usage: OllamaService.ChatUsage? = null
+            val toolCallBuilders = mutableMapOf<Int, ToolCallBuilder>()
+
+            BufferedReader(InputStreamReader(conn.inputStream)).use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    if (shouldStop) {
+                        DebugLog.log("[$TAG] stop requested, breaking SSE stream")
+                        conn.disconnect()
+                        throw Exception("Stopped by user")
+                    }
+
+                    val data = line ?: continue
+                    if (!data.startsWith("data: ")) continue
+                    val jsonStr = data.removePrefix("data: ").trim()
+                    if (jsonStr == "[DONE]") break
+
+                    try {
+                        val chunk = JSONObject(jsonStr)
+                        parseLlamaServerUsage(chunk)?.let { usage = it }
+                        val choices = chunk.optJSONArray("choices") ?: continue
+                        if (choices.length() == 0) continue
+
+                        val choice = choices.getJSONObject(0)
+                        val delta = choice.optJSONObject("delta") ?: continue
+
+                        val content = delta.optString("content", "").takeUnless { it.equals("null", ignoreCase = true) }.orEmpty()
+                        if (content.isNotEmpty()) {
+                            var remaining = content
+                            while (remaining.isNotEmpty()) {
+                                if (!insideThinkTag) {
+                                    if (remaining.contains("<think>")) {
+                                        val parts = remaining.split("<think>", limit = 2)
+                                        if (parts[0].isNotEmpty()) {
+                                            fullContent.append(parts[0])
+                                            onChunk(parts[0], null)
+                                        }
+                                        insideThinkTag = true
+                                        remaining = if (parts.size > 1) parts[1] else ""
+                                    } else {
+                                        fullContent.append(remaining)
+                                        onChunk(remaining, null)
+                                        remaining = ""
+                                    }
+                                } else {
+                                    if (remaining.contains("</think>")) {
+                                        val parts = remaining.split("</think>", limit = 2)
+                                        if (parts[0].isNotEmpty()) {
+                                            fullThinking.append(parts[0])
+                                            if (thinkingEnabled) onChunk(null, parts[0])
+                                        }
+                                        insideThinkTag = false
+                                        remaining = if (parts.size > 1) parts[1] else ""
+                                    } else {
+                                        fullThinking.append(remaining)
+                                        if (thinkingEnabled) onChunk(null, remaining)
+                                        remaining = ""
+                                    }
+                                }
+                            }
+                        }
+
+                        val reasoningContent = delta.optString("reasoning_content", "")
+                            .takeUnless { it.equals("null", ignoreCase = true) }
+                            .orEmpty()
+                        if (reasoningContent.isNotEmpty()) {
+                            fullThinking.append(reasoningContent)
+                            if (thinkingEnabled) onChunk(null, reasoningContent)
+                        }
+
+                        val tcArray = delta.optJSONArray("tool_calls")
+                        if (tcArray != null) {
+                            for (i in 0 until tcArray.length()) {
+                                val tcObj = tcArray.getJSONObject(i)
+                                val index = tcObj.optInt("index", i)
+                                val id = tcObj.optString("id", "")
+                                val funcObj = tcObj.optJSONObject("function")
+
+                                val builder = toolCallBuilders.getOrPut(index) { ToolCallBuilder() }
+                                if (id.isNotEmpty()) builder.id = id
+                                if (funcObj != null) {
+                                    val name = funcObj.optString("name", "")
+                                    val args = funcObj.optString("arguments", "")
+                                    if (name.isNotEmpty()) builder.name = name
+                                    builder.arguments.append(args)
+                                }
+                            }
+                        }
+
+                        val finishReason = choice.optString("finish_reason", "")
+                        if (finishReason == "stop" || finishReason == "tool_calls") break
+                    } catch (e: Exception) {
+                        DebugLog.log("[$TAG] SSE parse error: ${e.message} for line: $jsonStr")
+                    }
+                }
+            }
+
+            val toolCalls = if (toolCallBuilders.isNotEmpty()) {
+                toolCallBuilders.entries.sortedBy { it.key }.mapNotNull { (_, builder) ->
+                    if (builder.name.isNotEmpty()) {
+                        try {
+                            val args = AgentRuntimeSupport.normalizeToolArguments(builder.arguments.toString())
+                            DebugLog.log("[$TAG] Assembled tool call: ${builder.name} (id: ${builder.id})")
+                            OllamaService.ToolCall(builder.name, args, builder.id)
+                        } catch (e: Exception) {
+                            DebugLog.log("[$TAG] Failed to parse tool call args: ${e.message}")
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                }
+            } else {
+                null
+            }
+
+            DebugLog.log("[$TAG] Stream finished. ${toolCalls?.size ?: 0} tool calls detected.")
+
+            return OllamaService.ChatResponse(
+                message = OllamaService.ChatMessage(
+                    role = "assistant",
+                    content = fullContent.toString(),
+                    toolCalls = toolCalls,
+                    thinking = fullThinking.toString().ifEmpty { null }
+                ),
+                done = true,
                 toolCalls = toolCalls,
-                thinking = fullThinking.toString().ifEmpty { null }
-            ),
-            done = true,
-            toolCalls = toolCalls
-        )
+                usage = usage
+            )
+        } finally {
+            if (activeConnection === conn) {
+                activeConnection = null
+            }
+            try {
+                conn.disconnect()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     /**
@@ -367,4 +309,176 @@ class LlamaServerChatService {
         var name: String = ""
         val arguments = StringBuilder()
     }
+}
+
+internal fun buildLlamaServerChatRequestPayload(
+    messages: List<OllamaService.ChatMessage>,
+    tools: List<AgentTool>,
+    model: String? = null,
+    thinkingEnabled: Boolean,
+    maxTokens: Int,
+    samplingParams: LlamaServerSamplingParams = LlamaServerSamplingParams()
+): Map<String, Any?> {
+    val normalizedMessages = normalizeLlamaServerMessageSequence(
+        messages = messages,
+        thinkingEnabled = thinkingEnabled
+    )
+    val payload = linkedMapOf<String, Any?>(
+        "stream" to true,
+        "model" to (model?.ifBlank { null } ?: "local-model"),
+        "stream_options" to mapOf("include_usage" to true),
+        "messages" to normalizedMessages.map { msg ->
+            linkedMapOf<String, Any?>(
+                "role" to msg.role,
+                "content" to if (!msg.imagePath.isNullOrBlank() || !msg.audioPath.isNullOrBlank()) {
+                    buildNativeLlamaUserContent(
+                        userMessage = msg.content,
+                        imagePath = msg.imagePath,
+                        audioPath = msg.audioPath
+                    )
+                } else {
+                    msg.content
+                }
+            ).apply {
+                msg.toolCalls?.takeIf { it.isNotEmpty() }?.let { calls ->
+                    put(
+                        "tool_calls",
+                        calls.map { tc ->
+                            mapOf(
+                                "id" to (tc.id ?: "call_${System.nanoTime()}"),
+                                "type" to "function",
+                                "function" to mapOf(
+                                    "name" to tc.name,
+                                    "arguments" to JSONObject(tc.arguments as Map<*, *>).toString()
+                                )
+                            )
+                        }
+                    )
+                }
+                if (msg.role == "tool" && msg.toolCallId != null) {
+                    put("tool_call_id", msg.toolCallId)
+                }
+            }
+        },
+        "chat_template_kwargs" to mapOf("enable_thinking" to thinkingEnabled)
+    )
+
+    if (maxTokens > 0) {
+        payload["max_tokens"] = maxTokens
+    }
+
+    samplingParams.temperature?.let { payload["temperature"] = it }
+    samplingParams.topP?.let { payload["top_p"] = it }
+    samplingParams.topK?.let { payload["top_k"] = it }
+    samplingParams.minP?.let { payload["min_p"] = it }
+    samplingParams.seed?.let { payload["seed"] = it }
+    samplingParams.repeatPenalty?.let { payload["repeat_penalty"] = it }
+    samplingParams.frequencyPenalty?.let { payload["frequency_penalty"] = it }
+    samplingParams.presencePenalty?.let { payload["presence_penalty"] = it }
+
+    if (tools.isNotEmpty()) {
+        payload["tools"] = tools.map { tool ->
+            mapOf(
+                "type" to "function",
+                "function" to mapOf(
+                    "name" to tool.name,
+                    "description" to tool.description,
+                    "parameters" to mapOf(
+                        "type" to "object",
+                        "properties" to tool.parameters.mapValues { (_, paramDesc) ->
+                            mapOf(
+                                "type" to "string",
+                                "description" to paramDesc
+                            )
+                        },
+                        "required" to tool.requiredParams
+                    )
+                )
+            )
+        }
+        payload["tool_choice"] = "auto"
+    }
+
+    if (!thinkingEnabled) {
+        payload["reasoning_effort"] = "none"
+        payload["reasoning"] = mapOf("effort" to "none")
+    }
+
+    return payload
+}
+
+internal fun normalizeLlamaServerMessageSequence(
+    messages: List<OllamaService.ChatMessage>,
+    thinkingEnabled: Boolean = false
+): List<OllamaService.ChatMessage> {
+    val trimmed = messages.dropLastWhile {
+        it.role == "assistant" && it.content.isBlank() && it.toolCalls.isNullOrEmpty()
+    }
+    if (trimmed.size < 2) {
+        return if (thinkingEnabled) trimmed.dropLastWhile { it.role == "assistant" } else trimmed
+    }
+
+    var firstTrailingAssistant = trimmed.size
+    while (firstTrailingAssistant > 0 && trimmed[firstTrailingAssistant - 1].role == "assistant") {
+        firstTrailingAssistant--
+    }
+    if (trimmed.size - firstTrailingAssistant < 2) {
+        return if (thinkingEnabled) trimmed.dropLastWhile { it.role == "assistant" } else trimmed
+    }
+
+    val prefix = trimmed.take(firstTrailingAssistant)
+    val trailing = trimmed.drop(firstTrailingAssistant)
+    val mergedContent = trailing
+        .mapNotNull { it.content.takeIf(String::isNotBlank) }
+        .joinToString("\n\n")
+    val mergedThinking = trailing
+        .mapNotNull { it.thinking?.takeIf(String::isNotBlank) }
+        .joinToString("\n\n")
+        .takeIf(String::isNotBlank)
+    val last = trailing.last()
+    val merged = prefix + last.copy(
+        content = mergedContent,
+        thinking = mergedThinking,
+        toolCalls = null,
+        toolCallId = null
+    )
+    return if (thinkingEnabled) merged.dropLastWhile { it.role == "assistant" } else merged
+}
+
+data class LlamaServerSamplingParams(
+    val temperature: Float? = null,
+    val topP: Float? = null,
+    val topK: Int? = null,
+    val minP: Float? = null,
+    val seed: Int? = null,
+    val repeatPenalty: Float? = null,
+    val frequencyPenalty: Float? = null,
+    val presencePenalty: Float? = null
+) {
+    companion object {
+        fun fromParams(params: Map<String, Any>): LlamaServerSamplingParams = LlamaServerSamplingParams(
+            temperature = (params["temperature"] as? Number)?.toFloat(),
+            topP = (params["top_p"] as? Number)?.toFloat(),
+            topK = (params["top_k"] as? Number)?.toInt(),
+            minP = (params["min_p"] as? Number)?.toFloat(),
+            seed = (params["seed"] as? Number)?.toInt(),
+            repeatPenalty = (params["repeat_penalty"] as? Number)?.toFloat(),
+            frequencyPenalty = (params["frequency_penalty"] as? Number)?.toFloat(),
+            presencePenalty = (params["presence_penalty"] as? Number)?.toFloat()
+        )
+    }
+}
+
+internal fun parseLlamaServerUsage(chunk: JSONObject): OllamaService.ChatUsage? {
+    val usage = chunk.optJSONObject("usage") ?: return null
+    val promptTokens = usage.optInt("prompt_tokens").takeIf { it > 0 }
+    val completionTokens = usage.optInt("completion_tokens").takeIf { it > 0 }
+    val totalTokens = usage.optInt("total_tokens").takeIf { it > 0 }
+    if (promptTokens == null && completionTokens == null && totalTokens == null) return null
+    return OllamaService.ChatUsage(
+        promptTokens = promptTokens,
+        completionTokens = completionTokens,
+        totalTokens = totalTokens,
+        backend = "llama-server"
+    )
 }

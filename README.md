@@ -17,9 +17,9 @@ Run local LLMs, Whisper transcription, image generation, distributed inference, 
 
 ## Why It's Different
 
-Most Android AI apps focus on one model on one device. AI Doomsday Toolbox goes further: it combines offline AI on Android with distributed inference, local networking tools, phone-to-phone model sharing, and workflows that can reuse old phones as a low-cost Android cluster or pocket edge-compute setup.
+Most Android AI apps focus on one feature. AI Doomsday Toolbox goes further: it combines offline AI on Android with distributed inference, phone-to-phone model sharing, and workflows that can reuse old phones as a low-cost Android cluster or pocket edge-compute setup.
 
-If you are searching for a local LLM on Android, offline AI assistant, mobile HPC experiment, phone cluster, Android distributed compute app, or a way to reuse old phones for edge AI workloads, this project is built in that direction.
+If you are searching for a local LLM on Android, image generation, AI agents to build your projects, offline AI assistant, mobile HPC experiment, phone cluster, Android distributed compute app, or a way to reuse old phones for edge AI workloads, this project is built in that direction.
 
 ## Highlights
 
@@ -93,16 +93,17 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Customize the prompts used for cleaning, question generation, answer generation, and review
 
 
-### Termux Tools And Proot Workflows
+### Termux Tools And Ubuntu SSH Workflows
 
-- Connect to a proot distro over SSH from inside the app
-- Follow in-app setup help for enabling SSH inside the proot environment
-- Install predefined tools such as Ollama, Open WebUI, Big-AGI, Oobabooga text-generation-webui, FastSDCPU, and experimental A1111 workflows
+- Connect to the Ubuntu SSH server from inside the app, with host, port, username, and password entered manually
+- Follow the in-app setup help for installing `proot-distro`, provisioning Ubuntu, and enabling `sshd` inside Ubuntu on the default app port `8025`
+- Install predefined tools such as Ollama, Open WebUI, Big-AGI, Oobabooga text-generation-webui, FastSDCPU, and experimental A1111 workflows with one in-app installer button per tool or the new `Install all` flow
 - Open compatible tools in an in-app webview
 - Manage remote files with the built-in Termux file manager
-- Optionally expose some services outside `localhost` when your workflow needs LAN access
+- Optionally expose each service outside `localhost` when your workflow needs LAN access
+- See the fixed service port directly in the tool cards, and when LAN mode is enabled the cards also show the detected Ubuntu LAN `host:port` target for connecting outside the app
 
-**Note:** A1111 / AUTOMATIC1111 support is still experimental and actively being worked on, same with oobabooga since recent update of their repo.
+**Note:** The Termux tool installers now clone the maintained ManuXD32 forks for Big-AGI (`v2-dev`), FastSDCPU, Oobabooga/textgen, and A1111 to reduce upstream breakage. FastSDCPU installation also prepares the shared MCP runtime, so MCP no longer needs its own separate install step. A1111 / AUTOMATIC1111 support is still experimental, but the current Ubuntu installer now uses Python 3.11, mirrored Stable Diffusion dependencies, clip import verification/repair, and disables the default SD 1.5 auto-download / repeated environment prep on first launch.
 
 <p align="center">
   <img width="31%" alt="Termux tools screen" src="https://github.com/user-attachments/assets/7b0a2e06-26b2-4829-ad73-cd29f10fd3c6" />
@@ -147,13 +148,24 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 - Process media directly from Android share intents
 
 
+### Image And Video Generation
+
+- Generate images with Stable Diffusion workflows directly on Android
+- Generate local `txt2vid` and `img2vid` clips with `stable-diffusion.cpp` video models
+- Tune per-run `stable-diffusion.cpp` caching for `txt2img`, `img2img`, `txt2vid`, and `img2vid` with raw cache options, SCM policy, and SCM mask support
+- Tune video prompts with optional negative prompts, selectable sampling methods, `--cfg-scale`, optional `--flow-shift`, and a `480x832` default output size
+- Manage FLUX diffusion models with a dedicated `vid_gen` badge so video-capable models are easy to spot
+- Save generated videos as AVI + MP4 with metadata, and mirror them to your chosen output folder under `Generated videos`
+- Browse a dedicated video gallery with `txt2vid` / `img2vid` badges, prompt details, sharing, deletion, and copyable generation info
+
 ### Image Generation And Upscaling
 
 - Generate images with Stable Diffusion workflows directly on Android
 - Includes SD 1.5, SD 2.1, SDXL, and FLUX-oriented workflows
-- Adjustable generation settings such as steps, CFG scale, dimensions, and tiling
+- Adjustable generation settings such as steps, CFG scale, dimensions, sampler, seed, tiling, and per-run diffusion caching
 - Upscale images and videos with RealESRGAN-based tools
 - Multiple scale factors are available depending on the selected model
+- Built-in scrollable option guides explain the image and video generation controls and note which features are powered by `stable-diffusion.cpp`
 - Use FastSDCPU in Termux/proot workflows for additional image-generation setups
 - Experiment with A1111-style web UI workflows through the Termux tools area
 
@@ -197,10 +209,10 @@ If you are searching for a local LLM on Android, offline AI assistant, mobile HP
 
 - [Ollama](https://github.com/ollama/ollama)
 - [Open WebUI](https://github.com/open-webui/open-webui)
-- [Big-AGI](https://github.com/enricoros/big-AGI)
-- [Oobabooga text-generation-webui](https://github.com/oobabooga/text-generation-webui)
-- [FastSDCPU](https://github.com/rupeshs/fastsdcpu)
-- [AUTOMATIC1111 / stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
+- [Big-AGI](https://github.com/ManuXD32/big-AGI/tree/v2-dev)
+- [Oobabooga text-generation-webui](https://github.com/ManuXD32/textgen)
+- [FastSDCPU](https://github.com/ManuXD32/fastsdcpu)
+- [AUTOMATIC1111 / stable-diffusion-webui](https://github.com/ManuXD32/stable-diffusion-webui)
 - [EasyDataset](https://github.com/ConardLi/easy-dataset)
 - [Termux](https://github.com/termux)
 

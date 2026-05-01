@@ -33,9 +33,12 @@ class AgentForegroundService : Service() {
         const val ACTION_STOP_ALL_RUNTIME = "stop_all_runtime"
         const val ACTION_UPDATE_STATUS = "update_status"
         const val ACTION_RESUME_RUNTIME = "resume_runtime"
+        const val EXTRA_RECOVERY_ONLY = "recovery_only"
         
         const val EXTRA_STATUS = "status"
         const val EXTRA_FOREGROUND_TASK_ID = "foreground_task_id"
+        const val EXTRA_START_SOURCE = "start_source"
+        private const val IMMEDIATE_FOREGROUND_ID = 96
         
         @Volatile
         private var isRunning = false
@@ -98,12 +101,20 @@ class AgentForegroundService : Service() {
         fun start(
             context: Context,
             status: String = "AI Agent running...",
-            foregroundTaskId: Int? = null
+            foregroundTaskId: Int? = null,
+            recoveryOnly: Boolean = false,
+            startSource: String = "direct"
         ) {
-            ensureRuntime(context)
+            recordBreadcrumb(
+                event = "start_requested",
+                phase = ACTION_START_AGENT,
+                details = "source=$startSource recoveryOnly=$recoveryOnly running=$isRunning"
+            )
             if (isRunning) {
-                // Already running, just update status
                 updateStatus(context, status)
+                if (recoveryOnly) {
+                    requestResume(context)
+                }
                 return
             }
             
@@ -111,6 +122,8 @@ class AgentForegroundService : Service() {
                 action = ACTION_START_AGENT
                 putExtra(EXTRA_STATUS, status)
                 foregroundTaskId?.let { putExtra(EXTRA_FOREGROUND_TASK_ID, it) }
+                putExtra(EXTRA_RECOVERY_ONLY, recoveryOnly)
+                putExtra(EXTRA_START_SOURCE, startSource)
             }
             
             try {
@@ -121,7 +134,19 @@ class AgentForegroundService : Service() {
                 }
             } catch (e: Exception) {
                 DebugLog.log("[$TAG] Failed to start foreground service: ${e.message}")
+                recordBreadcrumb(
+                    event = "start_request_failed",
+                    phase = ACTION_START_AGENT,
+                    details = "source=$startSource error=${e.message}"
+                )
             }
+        }
+
+        fun startForRecovery(
+            context: Context,
+            status: String = "Recovering AI runtime..."
+        ) {
+            start(context, status = status, recoveryOnly = true, startSource = "recovery")
         }
         
         /**
@@ -147,7 +172,7 @@ class AgentForegroundService : Service() {
 
         fun retainRuntime(context: Context, status: String = "AI task running…") {
             runtimeRetainCount.incrementAndGet()
-            start(context, status)
+            start(context, status, startSource = "retain_runtime")
         }
 
         fun releaseRuntime(context: Context) {
@@ -159,15 +184,31 @@ class AgentForegroundService : Service() {
         }
 
         fun requestResume(context: Context) {
-            ensureRuntime(context)
+            val dispatch = resolveAgentResumeDispatch(isRunning)
+            recordBreadcrumb(
+                event = "resume_requested",
+                phase = dispatch.action,
+                details = "running=$isRunning mode=${dispatch.startSource}"
+            )
+            if (dispatch.useForegroundStart) {
+                start(
+                    context = context,
+                    status = context.getString(com.example.llamadroid.R.string.agent_runtime_recovering_jobs),
+                    recoveryOnly = dispatch.recoveryOnly,
+                    startSource = dispatch.startSource
+                )
+                return
+            }
+
             val intent = Intent(context, AgentForegroundService::class.java).apply {
-                action = ACTION_RESUME_RUNTIME
+                action = dispatch.action
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startService(intent)
+            recordBreadcrumb(
+                event = "resume_dispatched",
+                phase = dispatch.action,
+                details = "running=$isRunning mode=${dispatch.startSource}"
+            )
         }
         
         /**
@@ -189,6 +230,21 @@ class AgentForegroundService : Service() {
         fun isServiceRunning(): Boolean = isRunning
 
         fun activeRuntimeCount(): Int = runtimeRetainCount.get()
+
+        private fun recordBreadcrumb(
+            event: String,
+            phase: String? = null,
+            details: String? = null
+        ) {
+            runCatching {
+                GenerationDiagnosticsStore.recordBreadcrumb(
+                    source = "agent_foreground_service",
+                    event = event,
+                    phase = phase,
+                    details = details
+                )
+            }
+        }
     }
 
     inner class LocalBinder : Binder() {
@@ -198,26 +254,45 @@ class AgentForegroundService : Service() {
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var notificationTaskId: Int? = null
+    private var immediateForegroundActive = false
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    @Volatile
+    private var recoveryOnlyStart = false
     
     override fun onCreate() {
         super.onCreate()
         instance = this
-        ensureRuntime(applicationContext)
         DebugLog.log("[$TAG] Service created")
-        scheduleResumeIfNeeded()
     }
     
     override fun onBind(intent: Intent?): IBinder = binder
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_START_AGENT) {
+            startImmediateForeground(
+                status = intent.getStringExtra(EXTRA_STATUS) ?: "AI Agent running...",
+                startSource = intent.getStringExtra(EXTRA_START_SOURCE) ?: "direct"
+            )
+        }
         when (intent?.action) {
             ACTION_START_AGENT -> {
                 val status = intent.getStringExtra(EXTRA_STATUS) ?: "AI Agent running..."
                 val foregroundTaskId = intent.getIntExtra(EXTRA_FOREGROUND_TASK_ID, -1)
                     .takeIf { it >= 0 }
-                startAgentForeground(status, foregroundTaskId)
+                val recoveryOnly = intent.getBooleanExtra(EXTRA_RECOVERY_ONLY, false)
+                val startSource = intent.getStringExtra(EXTRA_START_SOURCE) ?: "direct"
+                recoveryOnlyStart = recoveryOnlyStart || recoveryOnly
+                startAgentForeground(
+                    status = status,
+                    existingTaskId = foregroundTaskId,
+                    startSource = startSource,
+                    requestedAction = ACTION_START_AGENT
+                )
+                ensureRuntime(applicationContext)
+                if (recoveryOnly) {
+                    scheduleResumeIfNeeded(force = true)
+                }
             }
             ACTION_STOP_AGENT -> {
                 stopAgentForeground()
@@ -232,7 +307,15 @@ class AgentForegroundService : Service() {
                 val status = intent.getStringExtra(EXTRA_STATUS) ?: "Working..."
                 updateNotificationStatus(status)
             }
-            ACTION_RESUME_RUNTIME -> scheduleResumeIfNeeded(force = true)
+            ACTION_RESUME_RUNTIME -> {
+                ensureRuntime(applicationContext)
+                recordBreadcrumb(
+                    event = "resume_command_received",
+                    phase = ACTION_RESUME_RUNTIME,
+                    details = "running=$isRunning"
+                )
+                scheduleResumeIfNeeded(force = true)
+            }
         }
         return START_STICKY  // Restart service if killed
     }
@@ -249,8 +332,26 @@ class AgentForegroundService : Service() {
     }
 
     private suspend fun resumePersistedJobs() {
-        val activeJobs = AiRuntimeJobStore.getActiveJobs(applicationContext)
-        if (activeJobs.isEmpty()) return
+        val staleJobs = AiRuntimeJobStore.markStaleActiveJobsTerminal(applicationContext)
+        val activeJobs = AiRuntimeJobStore.getRecoverableJobs(applicationContext)
+        DebugLog.log("[$TAG] Recoverable runtime jobs=${activeJobs.size}, stalePruned=${staleJobs.size}")
+        recordBreadcrumb(
+            event = "runtime_recovery_scan",
+            details = "recoverable=${activeJobs.size} stalePruned=${staleJobs.size}"
+        )
+        if (activeJobs.isEmpty()) {
+            if (recoveryOnlyStart && runtimeRetainCount.get() == 0 && !AgentService.isLoading.value) {
+                DebugLog.log("[$TAG] Recovery found no valid jobs; stopping foreground service")
+                recordBreadcrumb(
+                    event = "runtime_recovery_empty_stop",
+                    details = "recoverable=0 stalePruned=${staleJobs.size}"
+                )
+                withContext(Dispatchers.Main.immediate) {
+                    stopAgentForeground()
+                }
+            }
+            return
+        }
 
         activeJobs.forEach { job ->
             AiRuntimeJobStore.markState(
@@ -283,9 +384,25 @@ class AgentForegroundService : Service() {
                 queueBehindActiveJob = false
             )
         }
+
+        if (recoveryOnlyStart && runtimeRetainCount.get() == 0 && !AgentService.isLoading.value) {
+            DebugLog.log("[$TAG] No active runtime retained after recovery; stopping foreground service")
+            recordBreadcrumb(
+                event = "runtime_recovery_empty_stop",
+                details = "recoverable=${activeJobs.size} retained=0"
+            )
+            withContext(Dispatchers.Main.immediate) {
+                stopAgentForeground()
+            }
+        }
     }
     
-    private fun startAgentForeground(status: String, existingTaskId: Int? = null) {
+    private fun startAgentForeground(
+        status: String,
+        existingTaskId: Int? = null,
+        startSource: String = "direct",
+        requestedAction: String = ACTION_START_AGENT
+    ) {
         if (isRunning) {
             updateNotificationStatus(status)
             return
@@ -317,14 +434,52 @@ class AgentForegroundService : Service() {
         
         try {
             startForeground(taskId, notification)
+            if (immediateForegroundActive && taskId != IMMEDIATE_FOREGROUND_ID) {
+                runCatching {
+                    (getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager)
+                        ?.cancel(IMMEDIATE_FOREGROUND_ID)
+                }
+                immediateForegroundActive = false
+            }
             DebugLog.log("[$TAG] Foreground service started with notification ID: $taskId")
+            recordBreadcrumb(
+                event = "foreground_started",
+                phase = requestedAction,
+                details = "source=$startSource taskId=$taskId recoveryOnly=$recoveryOnlyStart"
+            )
         } catch (e: Exception) {
             DebugLog.log("[$TAG] Failed to start foreground: ${e.message}")
             isRunning = false
+            recordBreadcrumb(
+                event = "foreground_start_failed",
+                phase = requestedAction,
+                details = "source=$startSource error=${e.message}"
+            )
         }
         
         // Update with initial status
         updateNotificationStatus(status)
+    }
+
+    private fun startImmediateForeground(status: String, startSource: String) {
+        if (isRunning || immediateForegroundActive) return
+        try {
+            val notification = UnifiedNotificationManager.createBasicForegroundNotification(status)
+            startForeground(IMMEDIATE_FOREGROUND_ID, notification)
+            immediateForegroundActive = true
+            recordBreadcrumb(
+                event = "foreground_immediate_started",
+                phase = ACTION_START_AGENT,
+                details = "source=$startSource"
+            )
+        } catch (e: Throwable) {
+            DebugLog.log("[$TAG] Immediate foreground start failed: ${e.message}")
+            recordBreadcrumb(
+                event = "foreground_immediate_failed",
+                phase = ACTION_START_AGENT,
+                details = "source=$startSource error=${e.message}"
+            )
+        }
     }
     
     private fun stopAgentForeground() {
@@ -332,6 +487,8 @@ class AgentForegroundService : Service() {
         
         isRunning = false
         resumeTriggered.set(false)
+        recoveryOnlyStart = false
+        immediateForegroundActive = false
         
         // Release wake lock
         releaseWakeLock()
@@ -410,5 +567,30 @@ class AgentForegroundService : Service() {
         notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
         serviceScope.cancel()
         DebugLog.log("[$TAG] Service destroyed")
+    }
+}
+
+internal data class AgentResumeDispatch(
+    val action: String,
+    val useForegroundStart: Boolean,
+    val recoveryOnly: Boolean,
+    val startSource: String
+)
+
+internal fun resolveAgentResumeDispatch(isServiceRunning: Boolean): AgentResumeDispatch {
+    return if (isServiceRunning) {
+        AgentResumeDispatch(
+            action = AgentForegroundService.ACTION_RESUME_RUNTIME,
+            useForegroundStart = false,
+            recoveryOnly = false,
+            startSource = "resume_running"
+        )
+    } else {
+        AgentResumeDispatch(
+            action = AgentForegroundService.ACTION_START_AGENT,
+            useForegroundStart = true,
+            recoveryOnly = true,
+            startSource = "resume_cold"
+        )
     }
 }

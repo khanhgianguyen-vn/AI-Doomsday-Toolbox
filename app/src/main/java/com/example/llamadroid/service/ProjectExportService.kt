@@ -141,6 +141,8 @@ class ProjectExportService(
                 ?: return@withContext Result.failure(Exception("Conversation not found"))
 
             agentService.connect().getOrThrow()
+            AgentService.setCurrentProjectFolder(targetFolder)
+            AgentService.setActiveConversationId(targetConversationId)
             replaceProjectFiles(targetFolder, bundle.files)
 
             StagedFileCache.clear()
@@ -166,7 +168,9 @@ class ProjectExportService(
                 )
             )
 
+            AgentService.clearTransientConversationState()
             AgentService.clearAllSessions()
+            AgentService.setActiveConversationId(targetConversationId)
             AgentService.setCurrentProjectFolder(targetFolder)
             AgentService.setCurrentAgent(
                 runCatching { AgentService.Companion.AgentRole.valueOf(importedRole) }

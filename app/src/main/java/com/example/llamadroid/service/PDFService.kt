@@ -55,29 +55,66 @@ class PDFService(private val context: Context) {
             DebugLog.log("[PDF] Merging ${pdfUris.size} PDFs")
             
             val mergedDoc = PDDocument()
-            
-            pdfUris.forEach { uri ->
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    val doc = PDDocument.load(inputStream)
-                    for (i in 0 until doc.numberOfPages) {
-                        mergedDoc.addPage(doc.getPage(i))
-                    }
-                    // Don't close doc here, pages reference it
+            try {
+                pdfUris.forEach { uri ->
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        val doc = PDDocument.load(inputStream)
+                        try {
+                            for (i in 0 until doc.numberOfPages) {
+                                mergedDoc.importPage(doc.getPage(i))
+                            }
+                        } finally {
+                            doc.close()
+                        }
+                    } ?: throw IllegalStateException("Could not open PDF")
                 }
+
+                // Save to output folder
+                val outputUri = saveToOutputFolder(mergedDoc, "merged_${System.currentTimeMillis()}.pdf")
+
+                DebugLog.log("[PDF] Merge complete: $outputUri")
+                Result.success(outputUri)
+            } finally {
+                mergedDoc.close()
             }
-            
-            // Save to output folder
-            val outputUri = saveToOutputFolder(mergedDoc, "merged_${System.currentTimeMillis()}.pdf")
-            mergedDoc.close()
-            
-            DebugLog.log("[PDF] Merge complete: $outputUri")
-            Result.success(outputUri)
         } catch (e: Exception) {
             DebugLog.log("[PDF] Merge failed: ${e.message}")
             Result.failure(e)
         }
     }
-    
+
+    private fun resolveDocumentSize(pdfUri: Uri): Long {
+        val assetLength = runCatching {
+            context.contentResolver.openAssetFileDescriptor(pdfUri, "r")?.use { descriptor ->
+                descriptor.length.takeIf { it >= 0L }
+            }
+        }.getOrNull()
+        if (assetLength != null) return assetLength
+
+        val documentLength = DocumentFile.fromSingleUri(context, pdfUri)?.length()
+        if (documentLength != null && documentLength >= 0L) {
+            return documentLength
+        }
+
+        return 0L
+    }
+
+    private fun measureDocumentSize(doc: PDDocument): Long {
+        val tempFile = File.createTempFile("pdf_measure_", ".pdf", context.cacheDir)
+        return try {
+            doc.save(tempFile)
+            tempFile.length()
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    private fun importPageRange(sourceDoc: PDDocument, targetDoc: PDDocument, startPage: Int, endPageInclusive: Int) {
+        for (pageIndex in startPage..endPageInclusive) {
+            targetDoc.importPage(sourceDoc.getPage(pageIndex))
+        }
+    }
+
     /**
      * Split PDF by extracting specific pages
      * @param pageRange Format: "1-3, 5, 7-10" 
@@ -94,25 +131,25 @@ class PDFService(private val context: Context) {
             context.contentResolver.openInputStream(pdfUri)?.use { inputStream ->
                 val sourceDoc = PDDocument.load(inputStream)
                 val newDoc = PDDocument()
-                
-                val maxPage = sourceDoc.numberOfPages
-                pages.filter { it in 1..maxPage }.forEach { pageNum ->
-                    val page = sourceDoc.getPage(pageNum - 1) // 0-indexed
-                    newDoc.importPage(page)
-                }
-                
-                if (newDoc.numberOfPages == 0) {
-                    sourceDoc.close()
+                try {
+                    val maxPage = sourceDoc.numberOfPages
+                    pages.filter { it in 1..maxPage }.forEach { pageNum ->
+                        val page = sourceDoc.getPage(pageNum - 1) // 0-indexed
+                        newDoc.importPage(page)
+                    }
+
+                    if (newDoc.numberOfPages == 0) {
+                        return@withContext Result.failure(Exception("No valid pages in range"))
+                    }
+
+                    val outputUri = saveToOutputFolder(newDoc, "split_${System.currentTimeMillis()}.pdf")
+
+                    DebugLog.log("[PDF] Split complete: $outputUri")
+                    return@withContext Result.success(outputUri)
+                } finally {
                     newDoc.close()
-                    return@withContext Result.failure(Exception("No valid pages in range"))
+                    sourceDoc.close()
                 }
-                
-                val outputUri = saveToOutputFolder(newDoc, "split_${System.currentTimeMillis()}.pdf")
-                newDoc.close()
-                sourceDoc.close()
-                
-                DebugLog.log("[PDF] Split complete: $outputUri")
-                return@withContext Result.success(outputUri)
             }
             
             Result.failure(Exception("Could not open PDF"))
@@ -517,79 +554,75 @@ class PDFService(private val context: Context) {
             
             // Get original file size
             val originalSize = try {
-                context.contentResolver.openInputStream(pdfUri)?.use { it.available().toLong() } ?: 0L
+                resolveDocumentSize(pdfUri)
             } catch (_: Exception) { 0L }
             
             context.contentResolver.openInputStream(pdfUri)?.use { inputStream ->
                 val doc = PDDocument.load(inputStream)
-                
-                // Handle encrypted PDFs
-                if (doc.isEncrypted) {
-                    try {
-                        doc.setAllSecurityToBeRemoved(true)
-                    } catch (e: Exception) {
-                        DebugLog.log("[PDF] Could not remove encryption: ${e.message}")
-                    }
-                }
-                
-                var imagesCompressed = 0
-                
-                // Iterate through pages and compress images
-                for (i in 0 until doc.numberOfPages) {
-                    val page = doc.getPage(i)
-                    val resources = page.resources ?: continue // Skip pages without resources
-                    
-                    // Get all XObjects (includes images)
-                    val xObjectNames = try {
-                        resources.xObjectNames
-                    } catch (_: Exception) {
-                        null
-                    } ?: continue
-                    
-                    xObjectNames.forEach { name ->
+                try {
+                    // Handle encrypted PDFs
+                    if (doc.isEncrypted) {
                         try {
-                            val xObject = resources.getXObject(name)
-                            if (xObject is com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject) {
-                                val image = xObject.image
-                                if (image != null) {
-                                    val jpegImage = com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory.createFromImage(
-                                        doc, image, quality
-                                    )
-                                    resources.put(name, jpegImage)
-                                    imagesCompressed++
-                                }
-                            }
-                        } catch (_: Exception) {
-                            // Some images can't be re-encoded, skip
+                            doc.setAllSecurityToBeRemoved(true)
+                        } catch (e: Exception) {
+                            DebugLog.log("[PDF] Could not remove encryption: ${e.message}")
                         }
                     }
-                }
-                
-                DebugLog.log("[PDF] Compressed $imagesCompressed images")
-                
-                // Save to temp first to check size
-                val tempFile = File(context.cacheDir, "temp_compressed.pdf")
-                doc.save(tempFile)
-                val compressedSize = tempFile.length()
-                
-                DebugLog.log("[PDF] Original: ${originalSize/1024}KB, Compressed: ${compressedSize/1024}KB")
-                
-                // Only keep if smaller
-                if (compressedSize >= originalSize && imagesCompressed > 0) {
+
+                    var imagesCompressed = 0
+
+                    // Iterate through pages and compress images
+                    for (i in 0 until doc.numberOfPages) {
+                        val page = doc.getPage(i)
+                        val resources = page.resources ?: continue // Skip pages without resources
+
+                        // Get all XObjects (includes images)
+                        val xObjectNames = try {
+                            resources.xObjectNames
+                        } catch (_: Exception) {
+                            null
+                        } ?: continue
+
+                        xObjectNames.forEach { name ->
+                            try {
+                                val xObject = resources.getXObject(name)
+                                if (xObject is com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject) {
+                                    val image = xObject.image
+                                    if (image != null) {
+                                        val jpegImage = com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory.createFromImage(
+                                            doc, image, quality
+                                        )
+                                        resources.put(name, jpegImage)
+                                        imagesCompressed++
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                // Some images can't be re-encoded, skip
+                            }
+                        }
+                    }
+
+                    DebugLog.log("[PDF] Compressed $imagesCompressed images")
+
+                    val compressedSize = measureDocumentSize(doc)
+
+                    DebugLog.log("[PDF] Original: ${originalSize/1024}KB, Compressed: ${compressedSize/1024}KB")
+
+                    // Only keep if smaller
+                    if (compressedSize >= originalSize && imagesCompressed > 0) {
+                        DebugLog.log("[PDF] Compression would increase size - aborting")
+                        return@withContext Result.failure(Exception("Compression would increase file size (${originalSize/1024}KB → ${compressedSize/1024}KB). Try a higher compression level or the PDF may not be compressible."))
+                    }
+
+                    // Move temp to output folder
+                    val outputUri = saveToOutputFolder(doc, "compressed_L${level}_${System.currentTimeMillis()}.pdf")
+
+                    val savings = if (originalSize > 0) ((originalSize - compressedSize) * 100 / originalSize) else 0
+                    DebugLog.log("[PDF] Compression complete: $outputUri (saved $savings%)")
+                    return@withContext Result.success(outputUri)
+                } finally {
                     doc.close()
-                    tempFile.delete()
-                    DebugLog.log("[PDF] Compression would increase size - aborting")
-                    return@withContext Result.failure(Exception("Compression would increase file size (${originalSize/1024}KB → ${compressedSize/1024}KB). Try a higher compression level or the PDF may not be compressible."))
                 }
-                
-                // Move temp to output folder
-                val outputUri = saveToOutputFolder(doc, "compressed_L${level}_${System.currentTimeMillis()}.pdf")
-                doc.close()
-                tempFile.delete()
-                
-                val savings = if (originalSize > 0) ((originalSize - compressedSize) * 100 / originalSize) else 0
-                DebugLog.log("[PDF] Compression complete: $outputUri (saved $savings%)")
-                return@withContext Result.success(outputUri)
             }
             
             Result.failure(Exception("Could not open PDF"))
@@ -611,80 +644,77 @@ class PDFService(private val context: Context) {
             
             context.contentResolver.openInputStream(pdfUri)?.use { inputStream ->
                 val sourceDoc = PDDocument.load(inputStream)
-                
-                // Handle encrypted PDFs
-                if (sourceDoc.isEncrypted) {
-                    try {
-                        sourceDoc.setAllSecurityToBeRemoved(true)
-                    } catch (_: Exception) {}
-                }
-                
-                val totalPages = sourceDoc.numberOfPages
-                val outputUris = mutableListOf<Uri>()
-                
-                // Collect pages into groups
-                var startPage = 0
-                var partNumber = 1
-                
-                while (startPage < totalPages) {
-                    // Binary search-style: keep adding pages until we exceed max size
-                    var endPage = startPage
-                    var lastGoodEnd = startPage
-                    
-                    while (endPage < totalPages) {
-                        // Create temp doc with pages startPage..endPage
-                        val testDoc = PDDocument()
-                        for (p in startPage..endPage) {
-                            testDoc.addPage(sourceDoc.getPage(p))
-                        }
-                        
-                        // Measure size
-                        val tempFile = File(context.cacheDir, "test_part.pdf")
-                        testDoc.save(tempFile)
-                        val partSize = tempFile.length()
-                        testDoc.close()
-                        tempFile.delete()
-                        
-                        if (partSize <= maxSizeBytes) {
-                            lastGoodEnd = endPage
-                            endPage++
-                        } else {
-                            // Size exceeded - use lastGoodEnd if we have pages, else force include current
-                            if (lastGoodEnd >= startPage) {
-                                break
-                            } else {
-                                // Single page exceeds max - include it anyway
+                try {
+                    // Handle encrypted PDFs
+                    if (sourceDoc.isEncrypted) {
+                        try {
+                            sourceDoc.setAllSecurityToBeRemoved(true)
+                        } catch (_: Exception) {}
+                    }
+
+                    val totalPages = sourceDoc.numberOfPages
+                    val outputUris = mutableListOf<Uri>()
+
+                    // Collect pages into groups
+                    var startPage = 0
+                    var partNumber = 1
+
+                    while (startPage < totalPages) {
+                        // Binary search-style: keep adding pages until we exceed max size
+                        var endPage = startPage
+                        var lastGoodEnd = startPage
+
+                        while (endPage < totalPages) {
+                            val partSize = PDDocument().let { testDoc ->
+                                try {
+                                    importPageRange(sourceDoc, testDoc, startPage, endPage)
+                                    measureDocumentSize(testDoc)
+                                } finally {
+                                    testDoc.close()
+                                }
+                            }
+
+                            if (partSize <= maxSizeBytes) {
                                 lastGoodEnd = endPage
-                                break
+                                endPage++
+                            } else {
+                                // Size exceeded - use lastGoodEnd if we have pages, else force include current
+                                if (lastGoodEnd >= startPage) {
+                                    break
+                                } else {
+                                    // Single page exceeds max - include it anyway
+                                    lastGoodEnd = endPage
+                                    break
+                                }
                             }
                         }
+
+                        // Handle edge case where we reached end
+                        if (endPage >= totalPages) {
+                            lastGoodEnd = totalPages - 1
+                        }
+
+                        val outputUri = PDDocument().let { partDoc ->
+                            try {
+                                importPageRange(sourceDoc, partDoc, startPage, lastGoodEnd)
+                                saveToOutputFolder(partDoc, "part${partNumber}_${System.currentTimeMillis()}.pdf")
+                            } finally {
+                                partDoc.close()
+                            }
+                        }
+                        outputUris.add(outputUri)
+
+                        DebugLog.log("[PDF] Part $partNumber: pages ${startPage + 1}-${lastGoodEnd + 1}")
+
+                        startPage = lastGoodEnd + 1
+                        partNumber++
                     }
-                    
-                    // Handle edge case where we reached end
-                    if (endPage >= totalPages) {
-                        lastGoodEnd = totalPages - 1
-                    }
-                    
-                    // Create output doc with pages startPage..lastGoodEnd
-                    val partDoc = PDDocument()
-                    for (p in startPage..lastGoodEnd) {
-                        partDoc.addPage(sourceDoc.getPage(p))
-                    }
-                    
-                    val outputUri = saveToOutputFolder(partDoc, "part${partNumber}_${System.currentTimeMillis()}.pdf")
-                    outputUris.add(outputUri)
-                    partDoc.close()
-                    
-                    DebugLog.log("[PDF] Part $partNumber: pages ${startPage + 1}-${lastGoodEnd + 1}")
-                    
-                    startPage = lastGoodEnd + 1
-                    partNumber++
+
+                    DebugLog.log("[PDF] Split into ${outputUris.size} parts")
+                    return@withContext Result.success(outputUris)
+                } finally {
+                    sourceDoc.close()
                 }
-                
-                sourceDoc.close()
-                
-                DebugLog.log("[PDF] Split into ${outputUris.size} parts")
-                return@withContext Result.success(outputUris)
             }
             
             Result.failure(Exception("Could not open PDF"))

@@ -2,10 +2,17 @@ package com.example.llamadroid.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.llamadroid.onnx.OnnxBackendOverride
+import com.example.llamadroid.onnx.OnnxCatalogProvider
+import com.example.llamadroid.onnx.OnnxExecutionMode
+import com.example.llamadroid.onnx.OnnxGraphOptimizationLevel
+import com.example.llamadroid.onnx.OnnxRuntimeBackend
+import com.example.llamadroid.tama.data.TamaPicGenDefaults
 import com.example.llamadroid.util.AIConstants
 import com.example.llamadroid.util.PromptUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Locale
 
 data class RemoteSummarySettingsSnapshot(
     val backend: String,
@@ -29,6 +36,27 @@ data class RemoteSummarySettingsSnapshot(
 
 class SettingsRepository(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("llamadroid_settings", Context.MODE_PRIVATE)
+
+    private inline fun <reified T : Enum<T>> enumPref(key: String, defaultValue: T): T {
+        val stored = prefs.getString(key, defaultValue.name)
+        return runCatching { enumValueOf<T>(stored ?: defaultValue.name) }.getOrDefault(defaultValue)
+    }
+
+    private fun optionalIntPref(key: String): Int? {
+        if (!prefs.contains(key)) return null
+        val value = prefs.getInt(key, 0)
+        return value.takeIf { it > 0 }
+    }
+
+    private fun setOptionalIntPref(key: String, value: Int?) {
+        prefs.edit().apply {
+            if (value == null || value <= 0) {
+                remove(key)
+            } else {
+                putInt(key, value)
+            }
+        }.apply()
+    }
 
     inner class RemoteSummarySettingsGroup(
         private val keyPrefix: String,
@@ -128,13 +156,11 @@ class SettingsRepository(private val context: Context) {
         }
 
         private val _backend = stringFlow("backend", PDF_BACKEND_OLLAMA).let {
-            MutableStateFlow((it.value ?: PDF_BACKEND_OLLAMA).let { backend ->
-                if (backend == PDF_BACKEND_LLAMA_SERVER) PDF_BACKEND_LLAMA_SERVER else PDF_BACKEND_OLLAMA
-            })
+            MutableStateFlow(normalizeOllamaOrLlamaBackend(it.value))
         }
         val backend = _backend.asStateFlow()
         fun setBackend(value: String) {
-            val normalized = if (value == PDF_BACKEND_LLAMA_SERVER) PDF_BACKEND_LLAMA_SERVER else PDF_BACKEND_OLLAMA
+            val normalized = normalizeOllamaOrLlamaBackend(value)
             putStringValue("backend", normalized)
             _backend.value = normalized
         }
@@ -383,11 +409,12 @@ class SettingsRepository(private val context: Context) {
     }
     
     // Agent backend: "ollama" or "llama-server"
-    private val _agentBackend = MutableStateFlow(prefs.getString("agent_backend", "ollama") ?: "ollama")
+    private val _agentBackend = MutableStateFlow(normalizeOllamaOrLlamaBackend(prefs.getString("agent_backend", PDF_BACKEND_OLLAMA)))
     val agentBackend = _agentBackend.asStateFlow()
     fun setAgentBackend(backend: String) {
-        prefs.edit().putString("agent_backend", backend).apply()
-        _agentBackend.value = backend
+        val normalized = normalizeOllamaOrLlamaBackend(backend)
+        prefs.edit().putString("agent_backend", normalized).apply()
+        _agentBackend.value = normalized
     }
     
     // llama-server URL (used when backend is "llama-server")
@@ -396,6 +423,29 @@ class SettingsRepository(private val context: Context) {
     fun setLlamaServerUrl(url: String) {
         prefs.edit().putString("llama_server_url", url).apply()
         _llamaServerUrl.value = url
+    }
+
+    // Last known llama-server metadata for the agent runtime UI
+    private val _agentLlamaServerModelLabel = MutableStateFlow(prefs.getString("agent_llama_server_model_label", null))
+    val agentLlamaServerModelLabel = _agentLlamaServerModelLabel.asStateFlow()
+    fun setAgentLlamaServerModelLabel(value: String?) {
+        prefs.edit().putString("agent_llama_server_model_label", value).apply()
+        _agentLlamaServerModelLabel.value = value
+    }
+
+    private val _agentLlamaServerContextTokens = MutableStateFlow(prefs.getInt("agent_llama_server_context_tokens", -1))
+    val agentLlamaServerContextTokens = _agentLlamaServerContextTokens.asStateFlow()
+    fun setAgentLlamaServerContextTokens(value: Int?) {
+        val normalized = value ?: -1
+        prefs.edit().putInt("agent_llama_server_context_tokens", normalized).apply()
+        _agentLlamaServerContextTokens.value = normalized
+    }
+
+    private val _agentLlamaServerContextLabel = MutableStateFlow(prefs.getString("agent_llama_server_context_label", null))
+    val agentLlamaServerContextLabel = _agentLlamaServerContextLabel.asStateFlow()
+    fun setAgentLlamaServerContextLabel(value: String?) {
+        prefs.edit().putString("agent_llama_server_context_label", value).apply()
+        _agentLlamaServerContextLabel.value = value
     }
 
     // Show Extra Output (thinking, tool calls, etc.)
@@ -451,7 +501,120 @@ class SettingsRepository(private val context: Context) {
         prefs.edit().putString("output_folder_uri", uri).apply()
         _outputFolderUri.value = uri
     }
-    
+
+    private val _onnxCatalogProvider = MutableStateFlow(
+        OnnxCatalogProvider.fromId(prefs.getString("onnx_catalog_provider", OnnxCatalogProvider.SDAI.id))
+            ?: OnnxCatalogProvider.SDAI
+    )
+    val onnxCatalogProvider = _onnxCatalogProvider.asStateFlow()
+
+    fun setOnnxCatalogProvider(provider: OnnxCatalogProvider) {
+        prefs.edit().putString("onnx_catalog_provider", provider.id).apply()
+        _onnxCatalogProvider.value = provider
+    }
+
+    private val _tamaNormalDreamingEnabled = MutableStateFlow(
+        when {
+            prefs.contains("tama_normal_dreaming_enabled") -> prefs.getBoolean("tama_normal_dreaming_enabled", true)
+            prefs.contains("tama_dreaming_enabled") -> prefs.getBoolean("tama_dreaming_enabled", true)
+            else -> true
+        }
+    )
+    val tamaNormalDreamingEnabled = _tamaNormalDreamingEnabled.asStateFlow()
+
+    fun setTamaNormalDreamingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("tama_normal_dreaming_enabled", enabled).apply()
+        _tamaNormalDreamingEnabled.value = enabled
+    }
+
+    private val _tamaDeepDreamingEnabled = MutableStateFlow(
+        when {
+            prefs.contains("tama_deep_dreaming_enabled") -> prefs.getBoolean("tama_deep_dreaming_enabled", true)
+            prefs.contains("tama_dreaming_enabled") -> prefs.getBoolean("tama_dreaming_enabled", true)
+            else -> true
+        }
+    )
+    val tamaDeepDreamingEnabled = _tamaDeepDreamingEnabled.asStateFlow()
+
+    fun setTamaDeepDreamingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("tama_deep_dreaming_enabled", enabled).apply()
+        _tamaDeepDreamingEnabled.value = enabled
+    }
+
+    private val _tamaDeepDreamRetryCount = MutableStateFlow(
+        prefs.getInt("tama_deep_dream_retry_count", 3).coerceAtLeast(1)
+    )
+    val tamaDeepDreamRetryCount = _tamaDeepDreamRetryCount.asStateFlow()
+
+    fun setTamaDeepDreamRetryCount(count: Int) {
+        val normalized = count.coerceAtLeast(1)
+        prefs.edit().putInt("tama_deep_dream_retry_count", normalized).apply()
+        _tamaDeepDreamRetryCount.value = normalized
+    }
+
+    private val _tamaDeepDreamDesiredLanguage = MutableStateFlow(
+        prefs.getString(
+            "tama_deep_dream_desired_language",
+            Locale.getDefault().displayLanguage.takeIf { it.isNotBlank() } ?: "English"
+        )?.trim().orEmpty().ifBlank {
+            Locale.getDefault().displayLanguage.takeIf { it.isNotBlank() } ?: "English"
+        }
+    )
+    val tamaDeepDreamDesiredLanguage = _tamaDeepDreamDesiredLanguage.asStateFlow()
+
+    fun setTamaDeepDreamDesiredLanguage(language: String) {
+        val normalized = language.trim().ifBlank {
+            Locale.getDefault().displayLanguage.takeIf { it.isNotBlank() } ?: "English"
+        }
+        prefs.edit().putString("tama_deep_dream_desired_language", normalized).apply()
+        _tamaDeepDreamDesiredLanguage.value = normalized
+    }
+
+    private val _tamaSchoolPaintingEnabled = MutableStateFlow(
+        prefs.getBoolean("tama_school_painting_enabled", true)
+    )
+    val tamaSchoolPaintingEnabled = _tamaSchoolPaintingEnabled.asStateFlow()
+
+    fun setTamaSchoolPaintingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("tama_school_painting_enabled", enabled).apply()
+        _tamaSchoolPaintingEnabled.value = enabled
+    }
+
+    private val _tamaPicGenModelFilename = MutableStateFlow(
+        prefs.getString("tama_pic_gen_model_filename", null)
+    )
+    val tamaPicGenModelFilename = _tamaPicGenModelFilename.asStateFlow()
+
+    fun setTamaPicGenModelFilename(filename: String?) {
+        prefs.edit().putString("tama_pic_gen_model_filename", filename).apply()
+        _tamaPicGenModelFilename.value = filename
+    }
+
+    private val _tamaPicGenResolution = MutableStateFlow(
+        prefs.getInt("tama_pic_gen_resolution", TamaPicGenDefaults.DEFAULT_RESOLUTION)
+            .let { saved ->
+                TamaPicGenDefaults.RESOLUTION_PRESETS.firstOrNull { it == saved }
+                    ?: TamaPicGenDefaults.DEFAULT_RESOLUTION
+            }
+    )
+    val tamaPicGenResolution = _tamaPicGenResolution.asStateFlow()
+
+    fun setTamaPicGenResolution(resolution: Int) {
+        val normalized = TamaPicGenDefaults.RESOLUTION_PRESETS.firstOrNull { it == resolution }
+            ?: TamaPicGenDefaults.DEFAULT_RESOLUTION
+        prefs.edit().putInt("tama_pic_gen_resolution", normalized).apply()
+        _tamaPicGenResolution.value = normalized
+    }
+
+    private val _keepScreenAwakeDuringGeneration =
+        MutableStateFlow(prefs.getBoolean("keep_screen_awake_during_generation", false))
+    val keepScreenAwakeDuringGeneration = _keepScreenAwakeDuringGeneration.asStateFlow()
+
+    fun setKeepScreenAwakeDuringGeneration(enabled: Boolean) {
+        prefs.edit().putBoolean("keep_screen_awake_during_generation", enabled).apply()
+        _keepScreenAwakeDuringGeneration.value = enabled
+    }
+
     // Ollama URL (API endpoint)
     private val _ollamaUrl = MutableStateFlow(prefs.getString("ollama_url", AIConstants.Urls.OLLAMA_DEFAULT) ?: AIConstants.Urls.OLLAMA_DEFAULT)
     val ollamaUrl = _ollamaUrl.asStateFlow()
@@ -563,6 +726,34 @@ class SettingsRepository(private val context: Context) {
     fun setWhisperOutputFolder(uri: String?) {
         prefs.edit().putString("whisper_output_folder", uri).apply()
         _whisperOutputFolder.value = uri
+    }
+
+    private val _tamaWhisperModelPath = MutableStateFlow(prefs.getString("tama_whisper_model_path", null))
+    val tamaWhisperModelPath = _tamaWhisperModelPath.asStateFlow()
+
+    fun setTamaWhisperModelPath(path: String?) {
+        prefs.edit().putString("tama_whisper_model_path", path).apply()
+        _tamaWhisperModelPath.value = path
+    }
+
+    private val _tamaWhisperLanguage = MutableStateFlow(
+        prefs.getString("tama_whisper_language", "auto") ?: "auto"
+    )
+    val tamaWhisperLanguage = _tamaWhisperLanguage.asStateFlow()
+
+    fun setTamaWhisperLanguage(lang: String) {
+        prefs.edit().putString("tama_whisper_language", lang).apply()
+        _tamaWhisperLanguage.value = lang
+    }
+
+    private val _tamaChatImageInputEnabled = MutableStateFlow(
+        prefs.getBoolean("tama_chat_image_input_enabled", false)
+    )
+    val tamaChatImageInputEnabled = _tamaChatImageInputEnabled.asStateFlow()
+
+    fun setTamaChatImageInputEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("tama_chat_image_input_enabled", enabled).apply()
+        _tamaChatImageInputEnabled.value = enabled
     }
     
     // ========== Video Upscaler Settings ==========
@@ -1217,6 +1408,13 @@ class SettingsRepository(private val context: Context) {
         prefs.edit().putBoolean("fastsdcpu_network_visible", enabled).apply()
         _fastsdcpuNetworkVisible.value = enabled
     }
+
+    private val _fastsdcpuMcpNetworkVisible = MutableStateFlow(prefs.getBoolean("fastsdcpu_mcp_network_visible", false))
+    val fastsdcpuMcpNetworkVisible = _fastsdcpuMcpNetworkVisible.asStateFlow()
+    fun setFastsdcpuMcpNetworkVisible(enabled: Boolean) {
+        prefs.edit().putBoolean("fastsdcpu_mcp_network_visible", enabled).apply()
+        _fastsdcpuMcpNetworkVisible.value = enabled
+    }
     
     private val _a1111NetworkVisible = MutableStateFlow(prefs.getBoolean("a1111_network_visible", false))
     val a1111NetworkVisible = _a1111NetworkVisible.asStateFlow()
@@ -1235,6 +1433,7 @@ class SettingsRepository(private val context: Context) {
             "big_agi" -> _bigAGINetworkVisible.value
             "oobabooga" -> _oobaboogaNetworkVisible.value
             "fastsdcpu" -> _fastsdcpuNetworkVisible.value
+            "fastsdcpu_mcp" -> _fastsdcpuMcpNetworkVisible.value
             "a1111" -> _a1111NetworkVisible.value
             else -> false
         }
@@ -1250,6 +1449,7 @@ class SettingsRepository(private val context: Context) {
             "big_agi" -> setBigAGINetworkVisible(enabled)
             "oobabooga" -> setOobaboogaNetworkVisible(enabled)
             "fastsdcpu" -> setFastsdcpuNetworkVisible(enabled)
+            "fastsdcpu_mcp" -> setFastsdcpuMcpNetworkVisible(enabled)
             "a1111" -> setA1111NetworkVisible(enabled)
         }
     }
@@ -1302,6 +1502,260 @@ class SettingsRepository(private val context: Context) {
     fun setAgentSummarizerThinkingEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("agent_summarizer_thinking_enabled", enabled).apply()
         _agentSummarizerThinkingEnabled.value = enabled
+    }
+
+    // Per-agent vision toggles
+    private val _agentOrchestratorVisionEnabled = MutableStateFlow(prefs.getBoolean("agent_orchestrator_vision_enabled", true))
+    val agentOrchestratorVisionEnabled = _agentOrchestratorVisionEnabled.asStateFlow()
+    fun setAgentOrchestratorVisionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_orchestrator_vision_enabled", enabled).apply()
+        _agentOrchestratorVisionEnabled.value = enabled
+    }
+
+    private val _agentCoderVisionEnabled = MutableStateFlow(prefs.getBoolean("agent_coder_vision_enabled", false))
+    val agentCoderVisionEnabled = _agentCoderVisionEnabled.asStateFlow()
+    fun setAgentCoderVisionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_coder_vision_enabled", enabled).apply()
+        _agentCoderVisionEnabled.value = enabled
+    }
+
+    private val _agentReviewerVisionEnabled = MutableStateFlow(prefs.getBoolean("agent_reviewer_vision_enabled", false))
+    val agentReviewerVisionEnabled = _agentReviewerVisionEnabled.asStateFlow()
+    fun setAgentReviewerVisionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_reviewer_vision_enabled", enabled).apply()
+        _agentReviewerVisionEnabled.value = enabled
+    }
+
+    private val _agentExecutorVisionEnabled = MutableStateFlow(prefs.getBoolean("agent_executor_vision_enabled", false))
+    val agentExecutorVisionEnabled = _agentExecutorVisionEnabled.asStateFlow()
+    fun setAgentExecutorVisionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_executor_vision_enabled", enabled).apply()
+        _agentExecutorVisionEnabled.value = enabled
+    }
+
+    private val _agentSummarizerVisionEnabled = MutableStateFlow(prefs.getBoolean("agent_summarizer_vision_enabled", false))
+    val agentSummarizerVisionEnabled = _agentSummarizerVisionEnabled.asStateFlow()
+    fun setAgentSummarizerVisionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_summarizer_vision_enabled", enabled).apply()
+        _agentSummarizerVisionEnabled.value = enabled
+    }
+
+    // Shared agent image-generation tool settings
+    private val _agentImageGenerationToolEnabled = MutableStateFlow(prefs.getBoolean("agent_image_generation_tool_enabled", true))
+    val agentImageGenerationToolEnabled = _agentImageGenerationToolEnabled.asStateFlow()
+    fun setAgentImageGenerationToolEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("agent_image_generation_tool_enabled", enabled).apply()
+        _agentImageGenerationToolEnabled.value = enabled
+    }
+
+    private val _agentImageGenerationModel = MutableStateFlow(prefs.getString("agent_image_generation_model", null))
+    val agentImageGenerationModel = _agentImageGenerationModel.asStateFlow()
+    fun setAgentImageGenerationModel(model: String?) {
+        prefs.edit().putString("agent_image_generation_model", model).apply()
+        _agentImageGenerationModel.value = model
+    }
+
+    private val _agentImageGenerationSteps = MutableStateFlow(prefs.getInt("agent_image_generation_steps", 20))
+    val agentImageGenerationSteps = _agentImageGenerationSteps.asStateFlow()
+    fun setAgentImageGenerationSteps(steps: Int) {
+        val normalized = steps.coerceAtLeast(1)
+        prefs.edit().putInt("agent_image_generation_steps", normalized).apply()
+        _agentImageGenerationSteps.value = normalized
+    }
+
+    private val _agentImageGenerationCfg = MutableStateFlow(prefs.getFloat("agent_image_generation_cfg", 6.5f))
+    val agentImageGenerationCfg = _agentImageGenerationCfg.asStateFlow()
+    fun setAgentImageGenerationCfg(cfg: Float) {
+        val normalized = cfg.coerceAtLeast(0.1f)
+        prefs.edit().putFloat("agent_image_generation_cfg", normalized).apply()
+        _agentImageGenerationCfg.value = normalized
+    }
+
+    private val _agentImageGenerationResolution = MutableStateFlow(
+        prefs.getString("agent_image_generation_resolution", "512x512") ?: "512x512"
+    )
+    val agentImageGenerationResolution = _agentImageGenerationResolution.asStateFlow()
+    fun setAgentImageGenerationResolution(resolution: String) {
+        val normalized = resolution.ifBlank { "512x512" }
+        prefs.edit().putString("agent_image_generation_resolution", normalized).apply()
+        _agentImageGenerationResolution.value = normalized
+    }
+
+    // Native chat image-generation tool settings. These intentionally do not reuse
+    // the AI Agent image-generation preset so chat experiments can stay isolated.
+    private val _nativeChatImageGenerationModel = MutableStateFlow(prefs.getString("native_chat_image_generation_model", null))
+    val nativeChatImageGenerationModel = _nativeChatImageGenerationModel.asStateFlow()
+    fun setNativeChatImageGenerationModel(model: String?) {
+        prefs.edit().putString("native_chat_image_generation_model", model?.takeIf { it.isNotBlank() }).apply()
+        _nativeChatImageGenerationModel.value = model?.takeIf { it.isNotBlank() }
+    }
+
+    private val _nativeChatImageGenerationWidth = MutableStateFlow(prefs.getInt("native_chat_image_generation_width", 512))
+    val nativeChatImageGenerationWidth = _nativeChatImageGenerationWidth.asStateFlow()
+    fun setNativeChatImageGenerationWidth(width: Int) {
+        val normalized = width.coerceAtLeast(64)
+        prefs.edit().putInt("native_chat_image_generation_width", normalized).apply()
+        _nativeChatImageGenerationWidth.value = normalized
+    }
+
+    private val _nativeChatImageGenerationHeight = MutableStateFlow(prefs.getInt("native_chat_image_generation_height", 512))
+    val nativeChatImageGenerationHeight = _nativeChatImageGenerationHeight.asStateFlow()
+    fun setNativeChatImageGenerationHeight(height: Int) {
+        val normalized = height.coerceAtLeast(64)
+        prefs.edit().putInt("native_chat_image_generation_height", normalized).apply()
+        _nativeChatImageGenerationHeight.value = normalized
+    }
+
+    private val _nativeChatImageGenerationSteps = MutableStateFlow(prefs.getInt("native_chat_image_generation_steps", 20))
+    val nativeChatImageGenerationSteps = _nativeChatImageGenerationSteps.asStateFlow()
+    fun setNativeChatImageGenerationSteps(steps: Int) {
+        val normalized = steps.coerceIn(1, 150)
+        prefs.edit().putInt("native_chat_image_generation_steps", normalized).apply()
+        _nativeChatImageGenerationSteps.value = normalized
+    }
+
+    private val _nativeChatImageGenerationCfg = MutableStateFlow(prefs.getFloat("native_chat_image_generation_cfg", 6.5f))
+    val nativeChatImageGenerationCfg = _nativeChatImageGenerationCfg.asStateFlow()
+    fun setNativeChatImageGenerationCfg(cfg: Float) {
+        val normalized = cfg.coerceIn(0.1f, 30f)
+        prefs.edit().putFloat("native_chat_image_generation_cfg", normalized).apply()
+        _nativeChatImageGenerationCfg.value = normalized
+    }
+
+    private val _nativeChatImageGenerationSeed = MutableStateFlow(
+        prefs.getString("native_chat_image_generation_seed", "") ?: ""
+    )
+    val nativeChatImageGenerationSeed = _nativeChatImageGenerationSeed.asStateFlow()
+    fun setNativeChatImageGenerationSeed(seed: String) {
+        val normalized = seed.trim()
+        prefs.edit().putString("native_chat_image_generation_seed", normalized).apply()
+        _nativeChatImageGenerationSeed.value = normalized
+    }
+
+    private val _nativeChatImageGenerationNegativePrompt = MutableStateFlow(
+        prefs.getString("native_chat_image_generation_negative_prompt", "") ?: ""
+    )
+    val nativeChatImageGenerationNegativePrompt = _nativeChatImageGenerationNegativePrompt.asStateFlow()
+    fun setNativeChatImageGenerationNegativePrompt(prompt: String) {
+        prefs.edit().putString("native_chat_image_generation_negative_prompt", prompt).apply()
+        _nativeChatImageGenerationNegativePrompt.value = prompt
+    }
+
+    private val _nativeChatImageGenerationBackend = MutableStateFlow(
+        enumPref("native_chat_image_generation_backend", OnnxRuntimeBackend.CPU)
+    )
+    val nativeChatImageGenerationBackend = _nativeChatImageGenerationBackend.asStateFlow()
+    fun setNativeChatImageGenerationBackend(backend: OnnxRuntimeBackend) {
+        prefs.edit().putString("native_chat_image_generation_backend", backend.name).apply()
+        _nativeChatImageGenerationBackend.value = backend
+    }
+
+    private val _nativeChatImageGenerationRuntimeThreads = MutableStateFlow(
+        optionalIntPref("native_chat_image_generation_runtime_threads")
+    )
+    val nativeChatImageGenerationRuntimeThreads = _nativeChatImageGenerationRuntimeThreads.asStateFlow()
+    fun setNativeChatImageGenerationRuntimeThreads(threads: Int?) {
+        setOptionalIntPref("native_chat_image_generation_runtime_threads", threads?.coerceAtLeast(1))
+        _nativeChatImageGenerationRuntimeThreads.value = threads?.coerceAtLeast(1)
+    }
+
+    private val _nativeChatImageGenerationGraphOptimizationLevel = MutableStateFlow(
+        enumPref("native_chat_image_generation_graph_optimization_level", OnnxGraphOptimizationLevel.ALL)
+    )
+    val nativeChatImageGenerationGraphOptimizationLevel = _nativeChatImageGenerationGraphOptimizationLevel.asStateFlow()
+    fun setNativeChatImageGenerationGraphOptimizationLevel(level: OnnxGraphOptimizationLevel) {
+        prefs.edit().putString("native_chat_image_generation_graph_optimization_level", level.name).apply()
+        _nativeChatImageGenerationGraphOptimizationLevel.value = level
+    }
+
+    private val _nativeChatImageGenerationUnetBackendOverride = MutableStateFlow(
+        enumPref("native_chat_image_generation_unet_backend_override", OnnxBackendOverride.DEFAULT)
+    )
+    val nativeChatImageGenerationUnetBackendOverride = _nativeChatImageGenerationUnetBackendOverride.asStateFlow()
+    fun setNativeChatImageGenerationUnetBackendOverride(override: OnnxBackendOverride) {
+        prefs.edit().putString("native_chat_image_generation_unet_backend_override", override.name).apply()
+        _nativeChatImageGenerationUnetBackendOverride.value = override
+    }
+
+    private val _nativeChatImageGenerationVaeDecoderBackendOverride = MutableStateFlow(
+        enumPref("native_chat_image_generation_vae_decoder_backend_override", OnnxBackendOverride.DEFAULT)
+    )
+    val nativeChatImageGenerationVaeDecoderBackendOverride = _nativeChatImageGenerationVaeDecoderBackendOverride.asStateFlow()
+    fun setNativeChatImageGenerationVaeDecoderBackendOverride(override: OnnxBackendOverride) {
+        prefs.edit().putString("native_chat_image_generation_vae_decoder_backend_override", override.name).apply()
+        _nativeChatImageGenerationVaeDecoderBackendOverride.value = override
+    }
+
+    private val _nativeChatImageGenerationVaeEncoderBackendOverride = MutableStateFlow(
+        enumPref("native_chat_image_generation_vae_encoder_backend_override", OnnxBackendOverride.DEFAULT)
+    )
+    val nativeChatImageGenerationVaeEncoderBackendOverride = _nativeChatImageGenerationVaeEncoderBackendOverride.asStateFlow()
+    fun setNativeChatImageGenerationVaeEncoderBackendOverride(override: OnnxBackendOverride) {
+        prefs.edit().putString("native_chat_image_generation_vae_encoder_backend_override", override.name).apply()
+        _nativeChatImageGenerationVaeEncoderBackendOverride.value = override
+    }
+
+    private val _nativeChatImageGenerationIntraOpThreads = MutableStateFlow(
+        optionalIntPref("native_chat_image_generation_intra_op_threads")
+    )
+    val nativeChatImageGenerationIntraOpThreads = _nativeChatImageGenerationIntraOpThreads.asStateFlow()
+    fun setNativeChatImageGenerationIntraOpThreads(threads: Int?) {
+        setOptionalIntPref("native_chat_image_generation_intra_op_threads", threads?.coerceAtLeast(1))
+        _nativeChatImageGenerationIntraOpThreads.value = threads?.coerceAtLeast(1)
+    }
+
+    private val _nativeChatImageGenerationInterOpThreads = MutableStateFlow(
+        optionalIntPref("native_chat_image_generation_inter_op_threads")
+    )
+    val nativeChatImageGenerationInterOpThreads = _nativeChatImageGenerationInterOpThreads.asStateFlow()
+    fun setNativeChatImageGenerationInterOpThreads(threads: Int?) {
+        setOptionalIntPref("native_chat_image_generation_inter_op_threads", threads?.coerceAtLeast(1))
+        _nativeChatImageGenerationInterOpThreads.value = threads?.coerceAtLeast(1)
+    }
+
+    private val _nativeChatImageGenerationExecutionMode = MutableStateFlow(
+        enumPref("native_chat_image_generation_execution_mode", OnnxExecutionMode.SEQUENTIAL)
+    )
+    val nativeChatImageGenerationExecutionMode = _nativeChatImageGenerationExecutionMode.asStateFlow()
+    fun setNativeChatImageGenerationExecutionMode(mode: OnnxExecutionMode) {
+        prefs.edit().putString("native_chat_image_generation_execution_mode", mode.name).apply()
+        _nativeChatImageGenerationExecutionMode.value = mode
+    }
+
+    private val _nativeChatImageGenerationMemoryPatternOptimization = MutableStateFlow(
+        prefs.getBoolean("native_chat_image_generation_memory_pattern_optimization", true)
+    )
+    val nativeChatImageGenerationMemoryPatternOptimization = _nativeChatImageGenerationMemoryPatternOptimization.asStateFlow()
+    fun setNativeChatImageGenerationMemoryPatternOptimization(enabled: Boolean) {
+        prefs.edit().putBoolean("native_chat_image_generation_memory_pattern_optimization", enabled).apply()
+        _nativeChatImageGenerationMemoryPatternOptimization.value = enabled
+    }
+
+    private val _nativeChatImageGenerationCpuArenaAllocator = MutableStateFlow(
+        prefs.getBoolean("native_chat_image_generation_cpu_arena_allocator", true)
+    )
+    val nativeChatImageGenerationCpuArenaAllocator = _nativeChatImageGenerationCpuArenaAllocator.asStateFlow()
+    fun setNativeChatImageGenerationCpuArenaAllocator(enabled: Boolean) {
+        prefs.edit().putBoolean("native_chat_image_generation_cpu_arena_allocator", enabled).apply()
+        _nativeChatImageGenerationCpuArenaAllocator.value = enabled
+    }
+
+    private val _nativeChatImageGenerationNnapiCpuDisabled = MutableStateFlow(
+        prefs.getBoolean("native_chat_image_generation_nnapi_cpu_disabled", true)
+    )
+    val nativeChatImageGenerationNnapiCpuDisabled = _nativeChatImageGenerationNnapiCpuDisabled.asStateFlow()
+    fun setNativeChatImageGenerationNnapiCpuDisabled(enabled: Boolean) {
+        prefs.edit().putBoolean("native_chat_image_generation_nnapi_cpu_disabled", enabled).apply()
+        _nativeChatImageGenerationNnapiCpuDisabled.value = enabled
+    }
+
+    private val _nativeChatImageGenerationNnapiUseFp16 = MutableStateFlow(
+        prefs.getBoolean("native_chat_image_generation_nnapi_use_fp16", false)
+    )
+    val nativeChatImageGenerationNnapiUseFp16 = _nativeChatImageGenerationNnapiUseFp16.asStateFlow()
+    fun setNativeChatImageGenerationNnapiUseFp16(enabled: Boolean) {
+        prefs.edit().putBoolean("native_chat_image_generation_nnapi_use_fp16", enabled).apply()
+        _nativeChatImageGenerationNnapiUseFp16.value = enabled
     }
     
     /**
@@ -1359,6 +1813,27 @@ class SettingsRepository(private val context: Context) {
             "SUMMARIZER" -> setAgentSummarizerThinkingEnabled(enabled)
             "WEB_SEARCH" -> setAgentWebSearchThinkingEnabled(enabled)
             "KIWIX" -> setAgentKiwixThinkingEnabled(enabled)
+        }
+    }
+
+    fun getAgentVisionEnabledForRole(role: String): Boolean {
+        return when (role.uppercase()) {
+            "ORCHESTRATOR" -> _agentOrchestratorVisionEnabled.value
+            "CODER" -> _agentCoderVisionEnabled.value
+            "REVIEWER" -> _agentReviewerVisionEnabled.value
+            "EXECUTOR" -> _agentExecutorVisionEnabled.value
+            "SUMMARIZER" -> _agentSummarizerVisionEnabled.value
+            else -> _agentOrchestratorVisionEnabled.value
+        }
+    }
+
+    fun setAgentVisionEnabledForRole(role: String, enabled: Boolean) {
+        when (role.uppercase()) {
+            "ORCHESTRATOR" -> setAgentOrchestratorVisionEnabled(enabled)
+            "CODER" -> setAgentCoderVisionEnabled(enabled)
+            "REVIEWER" -> setAgentReviewerVisionEnabled(enabled)
+            "EXECUTOR" -> setAgentExecutorVisionEnabled(enabled)
+            "SUMMARIZER" -> setAgentSummarizerVisionEnabled(enabled)
         }
     }
     
@@ -1567,6 +2042,26 @@ class SettingsRepository(private val context: Context) {
         const val PDF_BACKEND_OLLAMA = "ollama"
         const val PDF_BACKEND_LLAMA_SERVER = "llama-server"
         const val PDF_LLAMA_SERVER_DEFAULT_URL = "http://localhost:8080"
+
+        fun normalizeOllamaOrLlamaBackend(backend: String?): String {
+            val normalized = backend
+                ?.trim()
+                ?.lowercase(Locale.US)
+                ?.replace('_', '-')
+                ?: return PDF_BACKEND_OLLAMA
+
+            return when (normalized) {
+                PDF_BACKEND_LLAMA_SERVER,
+                "llama.cpp",
+                "llama-cpp",
+                "llamacpp" -> PDF_BACKEND_LLAMA_SERVER
+                else -> PDF_BACKEND_OLLAMA
+            }
+        }
+
+        fun isLlamaServerBackend(backend: String?): Boolean =
+            normalizeOllamaOrLlamaBackend(backend) == PDF_BACKEND_LLAMA_SERVER
+
         const val SUMMARY_CONTEXT_MIN = 1
         val SUMMARY_CONTEXT_RANGE: IntRange = 2048..32768
         val PDF_THREADS_RANGE: IntRange = 1..16
@@ -1605,7 +2100,20 @@ Instructions:
         const val FALLBACK_CODER_PROMPT = "You are the Coder agent. You specialize in software development and file manipulation."
         const val FALLBACK_REVIEWER_PROMPT = "You are the Reviewer agent. Your purpose is to ensure code quality, security, and correctness."
         const val FALLBACK_EXECUTOR_PROMPT = "You are the Executor agent. You are the bridge between the AI and the system shell."
-        const val FALLBACK_TAMA_PET_PROMPT = "You are a virtual pet. Your personality and responses depend on your current stats, growth stage, and mood. Be expressive and stay in character."
+        const val FALLBACK_TAMA_PET_PROMPT = """You are a virtual pet talking to your owner.
+
+Stay fully in character, react to your current mood, growth stage, personality, recent actions, location, and inventory, and sound like a real little companion with opinions and feelings.
+
+Default reply style:
+- usually 1-2 short sentences
+- keep replies compact enough to fit naturally in a small chat bubble
+- only go longer when the owner clearly asks for detail or tells you to explain more
+- avoid rambling, speeches, and long lists unless directly requested
+
+Voice:
+- playful, warm, alive, and aware of what just happened
+- stage-appropriate and personality-aware
+- funny in small bursts, not long monologues"""
         const val FALLBACK_TAMA_SUMMARIZER_PROMPT = "You are the Tama Summarizer. Your job is to summarize the recent conversation and events into a concise memory that helps the pet remember its owner and life."
         const val FALLBACK_ADVENTURE_SYSTEM_PROMPT = """You are a master storyteller for dark fantasy text adventures.
 
@@ -1699,6 +2207,54 @@ Keep it brief but capture essential details."""
     }
 
     // ========== Tama Virtual Pet AI Settings ==========
+
+    private val _tamaBackend = MutableStateFlow(
+        normalizeOllamaOrLlamaBackend(prefs.getString("tama_backend", PDF_BACKEND_OLLAMA))
+    )
+    val tamaBackend = _tamaBackend.asStateFlow()
+    fun setTamaBackend(backend: String) {
+        val normalized = normalizeOllamaOrLlamaBackend(backend)
+        prefs.edit().putString("tama_backend", normalized).apply()
+        _tamaBackend.value = normalized
+    }
+
+    private val _tamaThinkingEnabled = MutableStateFlow(prefs.getBoolean("tama_thinking_enabled", true))
+    val tamaThinkingEnabled = _tamaThinkingEnabled.asStateFlow()
+    fun setTamaThinkingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("tama_thinking_enabled", enabled).apply()
+        _tamaThinkingEnabled.value = enabled
+    }
+
+    private val _tamaLlamaServerUrl = MutableStateFlow(
+        prefs.getString("tama_llama_server_url", PDF_LLAMA_SERVER_DEFAULT_URL) ?: PDF_LLAMA_SERVER_DEFAULT_URL
+    )
+    val tamaLlamaServerUrl = _tamaLlamaServerUrl.asStateFlow()
+    fun setTamaLlamaServerUrl(url: String) {
+        prefs.edit().putString("tama_llama_server_url", url).apply()
+        _tamaLlamaServerUrl.value = url
+    }
+
+    private val _tamaLlamaServerModelLabel = MutableStateFlow(prefs.getString("tama_llama_server_model_label", null))
+    val tamaLlamaServerModelLabel = _tamaLlamaServerModelLabel.asStateFlow()
+    fun setTamaLlamaServerModelLabel(value: String?) {
+        prefs.edit().putString("tama_llama_server_model_label", value).apply()
+        _tamaLlamaServerModelLabel.value = value
+    }
+
+    private val _tamaLlamaServerContextTokens = MutableStateFlow(prefs.getInt("tama_llama_server_context_tokens", -1))
+    val tamaLlamaServerContextTokens = _tamaLlamaServerContextTokens.asStateFlow()
+    fun setTamaLlamaServerContextTokens(value: Int?) {
+        val normalized = value ?: -1
+        prefs.edit().putInt("tama_llama_server_context_tokens", normalized).apply()
+        _tamaLlamaServerContextTokens.value = normalized
+    }
+
+    private val _tamaLlamaServerContextLabel = MutableStateFlow(prefs.getString("tama_llama_server_context_label", null))
+    val tamaLlamaServerContextLabel = _tamaLlamaServerContextLabel.asStateFlow()
+    fun setTamaLlamaServerContextLabel(value: String?) {
+        prefs.edit().putString("tama_llama_server_context_label", value).apply()
+        _tamaLlamaServerContextLabel.value = value
+    }
 
     // Tama Pet LLM Model
     private val _tamaPetModel = MutableStateFlow(prefs.getString("tama_pet_model", "qwen3.5:9b") ?: "qwen3.5:9b")
@@ -1834,6 +2390,110 @@ Keep it brief but capture essential details."""
     fun setAdventureLanguage(language: String) {
         prefs.edit().putString("adventure_language", language).apply()
         _adventureLanguage.value = language
+    }
+
+    private val _adventureBackend = MutableStateFlow(
+        normalizeOllamaOrLlamaBackend(prefs.getString("adventure_backend", PDF_BACKEND_OLLAMA))
+    )
+    val adventureBackend = _adventureBackend.asStateFlow()
+    fun setAdventureBackend(backend: String) {
+        val normalized = normalizeOllamaOrLlamaBackend(backend)
+        prefs.edit().putString("adventure_backend", normalized).apply()
+        _adventureBackend.value = normalized
+    }
+
+    private val _adventureLlamaServerUrl = MutableStateFlow(
+        prefs.getString("adventure_llama_server_url", PDF_LLAMA_SERVER_DEFAULT_URL) ?: PDF_LLAMA_SERVER_DEFAULT_URL
+    )
+    val adventureLlamaServerUrl = _adventureLlamaServerUrl.asStateFlow()
+    fun setAdventureLlamaServerUrl(url: String) {
+        prefs.edit().putString("adventure_llama_server_url", url).apply()
+        _adventureLlamaServerUrl.value = url
+    }
+
+    private val _adventureLlamaServerModelLabel = MutableStateFlow(
+        prefs.getString("adventure_llama_server_model_label", null)
+    )
+    val adventureLlamaServerModelLabel = _adventureLlamaServerModelLabel.asStateFlow()
+    fun setAdventureLlamaServerModelLabel(label: String?) {
+        prefs.edit().putString("adventure_llama_server_model_label", label).apply()
+        _adventureLlamaServerModelLabel.value = label
+    }
+
+    private val _adventureLlamaServerContextTokens = MutableStateFlow(
+        prefs.getInt("adventure_llama_server_context_tokens", -1)
+    )
+    val adventureLlamaServerContextTokens = _adventureLlamaServerContextTokens.asStateFlow()
+    fun setAdventureLlamaServerContextTokens(tokens: Int?) {
+        val normalized = tokens ?: -1
+        prefs.edit().putInt("adventure_llama_server_context_tokens", normalized).apply()
+        _adventureLlamaServerContextTokens.value = normalized
+    }
+
+    private val _adventureLlamaServerContextLabel = MutableStateFlow(
+        prefs.getString("adventure_llama_server_context_label", null)
+    )
+    val adventureLlamaServerContextLabel = _adventureLlamaServerContextLabel.asStateFlow()
+    fun setAdventureLlamaServerContextLabel(label: String?) {
+        prefs.edit().putString("adventure_llama_server_context_label", label).apply()
+        _adventureLlamaServerContextLabel.value = label
+    }
+
+    private val _adventureWorldImageEnabled = MutableStateFlow(
+        prefs.getBoolean("adventure_world_image_enabled", false)
+    )
+    val adventureWorldImageEnabled = _adventureWorldImageEnabled.asStateFlow()
+    fun setAdventureWorldImageEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("adventure_world_image_enabled", enabled).apply()
+        _adventureWorldImageEnabled.value = enabled
+    }
+
+    private val _adventureStageImagesEnabled = MutableStateFlow(
+        prefs.getBoolean("adventure_stage_images_enabled", false)
+    )
+    val adventureStageImagesEnabled = _adventureStageImagesEnabled.asStateFlow()
+    fun setAdventureStageImagesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("adventure_stage_images_enabled", enabled).apply()
+        _adventureStageImagesEnabled.value = enabled
+    }
+
+    private val _adventureOnnxModelFilename = MutableStateFlow(
+        prefs.getString("adventure_onnx_model_filename", null)
+    )
+    val adventureOnnxModelFilename = _adventureOnnxModelFilename.asStateFlow()
+    fun setAdventureOnnxModelFilename(filename: String?) {
+        prefs.edit().putString("adventure_onnx_model_filename", filename).apply()
+        _adventureOnnxModelFilename.value = filename
+    }
+
+    private val _adventureOnnxSteps = MutableStateFlow(
+        prefs.getInt("adventure_onnx_steps", 20).coerceAtLeast(1)
+    )
+    val adventureOnnxSteps = _adventureOnnxSteps.asStateFlow()
+    fun setAdventureOnnxSteps(steps: Int) {
+        val normalized = steps.coerceAtLeast(1)
+        prefs.edit().putInt("adventure_onnx_steps", normalized).apply()
+        _adventureOnnxSteps.value = normalized
+    }
+
+    private val _adventureOnnxCfg = MutableStateFlow(
+        prefs.getFloat("adventure_onnx_cfg", 6.5f).coerceIn(1f, 20f)
+    )
+    val adventureOnnxCfg = _adventureOnnxCfg.asStateFlow()
+    fun setAdventureOnnxCfg(cfg: Float) {
+        val normalized = cfg.coerceIn(1f, 20f)
+        prefs.edit().putFloat("adventure_onnx_cfg", normalized).apply()
+        _adventureOnnxCfg.value = normalized
+    }
+
+    private val _adventureOnnxResolution = MutableStateFlow(
+        prefs.getInt("adventure_onnx_resolution", TamaPicGenDefaults.DEFAULT_RESOLUTION).coerceAtLeast(256)
+    )
+    val adventureOnnxResolution = _adventureOnnxResolution.asStateFlow()
+    fun setAdventureOnnxResolution(resolution: Int) {
+        val normalized = resolution.coerceAtLeast(256)
+        prefs.edit().putInt("adventure_onnx_resolution", normalized).apply()
+        _adventureOnnxResolution.value = normalized
     }
 
 }

@@ -81,7 +81,11 @@ object RemoteSummaryClientFactory {
             },
             timeoutMinutes = snapshot.timeoutMinutes
         )
-        return if (snapshot.backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+        return fromConfig(config)
+    }
+
+    fun fromConfig(config: RemoteSummaryBackendConfig): RemoteSummaryClient {
+        return if (config.backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
             LlamaServerRemoteSummaryClient(config)
         } else {
             OllamaRemoteSummaryClient(config)
@@ -145,7 +149,7 @@ internal fun buildLlamaServerSummaryRequestPayload(
     return payload
 }
 
-private fun buildJsonObject(payload: Map<String, Any?>): JSONObject {
+internal fun buildJsonObject(payload: Map<String, Any?>): JSONObject {
     return JSONObject().apply {
         payload.forEach { (key, value) ->
             put(key, payloadToJsonValue(value))
@@ -284,10 +288,11 @@ private class OllamaRemoteSummaryClient(
 
     override suspend fun fetchMetadata(): Result<RemoteSummaryMetadata> = withContext(Dispatchers.IO) {
         runCatching {
+            val timeoutMinutes = config.timeoutMinutes.coerceAtLeast(1)
             val (status, body) = executeJson(
                 path = "/api/tags",
                 requestBuilder = Request.Builder().get(),
-                timeoutMinutes = 1
+                timeoutMinutes = timeoutMinutes
             )
             if (status !in 200..299) {
                 throw classifyFailure(parseErrorMessage(body, "Ollama metadata request failed"))
@@ -495,10 +500,11 @@ private class LlamaServerRemoteSummaryClient(
 
     private suspend fun fetchModelLabel(): String? = withContext(Dispatchers.IO) {
         runCatching {
+            val timeoutMinutes = config.timeoutMinutes.coerceAtLeast(1)
             val (status, body) = executeJson(
                 path = "/v1/models",
                 requestBuilder = Request.Builder().get(),
-                timeoutMinutes = 1
+                timeoutMinutes = timeoutMinutes
             )
             if (status !in 200..299) return@runCatching null
             val json = JSONObject(body)
@@ -510,11 +516,12 @@ private class LlamaServerRemoteSummaryClient(
     }
 
     private suspend fun fetchContextTokens(): Int? = withContext(Dispatchers.IO) {
+        val timeoutMinutes = config.timeoutMinutes.coerceAtLeast(1)
         val getAttempt = runCatching {
             val (status, body) = executeJson(
                 path = "/props",
                 requestBuilder = Request.Builder().get(),
-                timeoutMinutes = 1
+                timeoutMinutes = timeoutMinutes
             )
             if (status !in 200..299) return@runCatching null
             parseLlamaServerContextTokens(body)
@@ -528,7 +535,7 @@ private class LlamaServerRemoteSummaryClient(
                 requestBuilder = Request.Builder()
                     .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .header("Content-Type", "application/json"),
-                timeoutMinutes = 1
+                timeoutMinutes = timeoutMinutes
             )
             if (status !in 200..299) return@runCatching null
             parseLlamaServerContextTokens(body)

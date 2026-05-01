@@ -1,6 +1,8 @@
 package com.example.llamadroid.ui.ai
 
 import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,10 +36,12 @@ import androidx.navigation.NavController
 import com.example.llamadroid.data.model.TermuxTool
 import com.example.llamadroid.data.model.TermuxTools
 import com.example.llamadroid.service.SSHService
+import java.io.File
+import java.io.InputStream
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * File entry from SSH ls output with raw bytes for sorting
@@ -50,6 +54,23 @@ data class FileEntry(
     val permissions: String,
     val modifiedTime: String
 )
+
+data class UploadProgressState(
+    val fileName: String,
+    val fileIndex: Int,
+    val fileCount: Int,
+    val bytesSent: Long,
+    val totalBytes: Long
+) {
+    val progressFraction: Float
+        get() = when {
+            totalBytes > 0L -> (bytesSent.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+            else -> 0f
+        }
+
+    val progressPercent: Int
+        get() = (progressFraction * 100).toInt().coerceIn(0, 100)
+}
 
 /**
  * Sort options for file listing
@@ -92,6 +113,10 @@ fun TermuxFileManagerScreen(navController: NavController) {
     // Sorting
     var sortOption by remember { mutableStateOf(SortOption.NAME_ASC) }
     var showSortMenu by remember { mutableStateOf(false) }
+
+    // Track file count to detect changes
+    var lastFileCount by remember { mutableStateOf(-1) }
+    var isCalculatingSizes by remember { mutableStateOf(false) }
     
     // Multi-selection
     var selectedFiles by remember { mutableStateOf(setOf<String>()) }
@@ -101,6 +126,8 @@ fun TermuxFileManagerScreen(navController: NavController) {
     var showDownloadDialog by remember { mutableStateOf(false) }
     var downloadUrl by remember { mutableStateOf("") }
     var isDownloading by remember { mutableStateOf(false) }
+    var isUploading by remember { mutableStateOf(false) }
+    var uploadProgress by remember { mutableStateOf<UploadProgressState?>(null) }
     
     // Delete confirmation
     var fileToDelete by remember { mutableStateOf<FileEntry?>(null) }
@@ -122,6 +149,54 @@ fun TermuxFileManagerScreen(navController: NavController) {
                 selectedFiles = emptySet()
                 isSelectionMode = false
                 Toast.makeText(context, context.getString(R.string.file_download_success), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val uploadPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNullOrEmpty()) return@rememberLauncherForActivityResult
+
+        uris.forEach { uri ->
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+        }
+
+        scope.launch {
+            isUploading = true
+            uploadProgress = null
+            val result = uploadFilesToRemoteFolder(
+                context = context,
+                sshService = sshService,
+                remotePath = currentPath,
+                uris = uris,
+                onProgress = { progress -> uploadProgress = progress }
+            )
+            isUploading = false
+            uploadProgress = null
+
+            result.onSuccess { uploadedNames ->
+                lastFileCount = -1
+                files = emptyList()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.file_upload_success_count, uploadedNames.size),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }.onFailure { throwable ->
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        R.string.file_upload_failed,
+                        throwable.message ?: context.getString(R.string.error_unknown)
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -147,10 +222,9 @@ fun TermuxFileManagerScreen(navController: NavController) {
         
         // Check all tools by their install path
         for (tool in TermuxTools.allTools) {
-            val path = tool.installPath.replace("~", "/root")
-            val result = sshService.executeCommand("test -e $path && echo 'exists' || echo 'not'")
+            val result = sshService.executeCommand(tool.installCheckCommand)
             result.onSuccess { output ->
-                if (output.trim() == "exists") {
+                if (output.trim() == "installed") {
                     detected.add(tool)
                 }
             }
@@ -162,13 +236,9 @@ fun TermuxFileManagerScreen(navController: NavController) {
         // Auto-select first tool
         if (detected.isNotEmpty()) {
             selectedTool = detected.first()
-            currentPath = detected.first().installPath
+            currentPath = expandRemotePath(detected.first().installPath)
         }
     }
-    
-    // Track file count to detect changes
-    var lastFileCount by remember { mutableStateOf(-1) }
-    var isCalculatingSizes by remember { mutableStateOf(false) }
     
     // Load files when path changes and auto-refresh every 10 seconds
     LaunchedEffect(currentPath) {
@@ -180,13 +250,13 @@ fun TermuxFileManagerScreen(navController: NavController) {
         isLoading = true
         
         while (true) {
-            if (!isDownloading) {  // Don't refresh during downloads
+            if (!isDownloading && !isUploading) {  // Don't refresh during transfers
                 error = null
-                val expandedPath = currentPath.replace("~", "/root")
+                val expandedPath = expandRemotePath(currentPath)
                 
                 // Step 1: Quick file listing (no sizes, instant)
                 if (files.isEmpty()) {
-                    val quickResult = sshService.executeCommand("ls -1A $expandedPath 2>/dev/null")
+                    val quickResult = sshService.executeCommand("ls -1A ${shellQuote(expandedPath)} 2>/dev/null")
                     quickResult.onSuccess { output ->
                         // Show files immediately with "Calculating..." as size
                         files = output.lines()
@@ -208,7 +278,7 @@ fun TermuxFileManagerScreen(navController: NavController) {
                 }
                 
                 // Step 2: Get types and sizes (may be slow for folders)
-                val countResult = sshService.executeCommand("ls -1A $expandedPath 2>/dev/null | wc -l")
+                val countResult = sshService.executeCommand("ls -1A ${shellQuote(expandedPath)} 2>/dev/null | wc -l")
                 val currentCount = countResult.getOrNull()?.trim()?.toIntOrNull() ?: 0
                 
                 if (currentCount != lastFileCount) {
@@ -217,7 +287,7 @@ fun TermuxFileManagerScreen(navController: NavController) {
                     
                     // Get detailed info with sizes
                     val result = sshService.executeCommand("""
-                        cd $expandedPath 2>/dev/null && for f in * .[^.]*; do
+                        cd ${shellQuote(expandedPath)} 2>/dev/null && for f in * .[^.]*; do
                             if [ -e "${'$'}f" ]; then
                                 if [ -d "${'$'}f" ]; then
                                     size=${'$'}(du -sh "${'$'}f" 2>/dev/null | cut -f1)
@@ -244,17 +314,16 @@ fun TermuxFileManagerScreen(navController: NavController) {
     // Navigate to folder
     fun navigateTo(folder: String) {
         currentPath = if (folder.startsWith("/")) {
-            folder
+            expandRemotePath(folder)
         } else {
-            "$currentPath/$folder"
+            buildChildRemotePath(currentPath, folder)
         }
     }
     
     // Navigate back
     fun navigateBack() {
-        val parent = currentPath.substringBeforeLast("/")
-        if (parent.isNotBlank() && parent != currentPath) {
-            currentPath = parent
+        if (canNavigateUp(currentPath)) {
+            currentPath = parentRemotePath(currentPath)
         }
     }
     
@@ -266,17 +335,17 @@ fun TermuxFileManagerScreen(navController: NavController) {
             showDownloadDialog = false
             
             val filename = url.substringAfterLast("/").ifBlank { "model.bin" }
-            val expandedPath = currentPath.replace("~", "/root")
+            val expandedPath = expandRemotePath(currentPath)
             
             sshService.executeCommandStreaming(
-                "cd $expandedPath && wget --progress=dot:mega -O '$filename' '$url'"
+                "cd ${shellQuote(expandedPath)} && wget --progress=dot:mega -O ${shellQuote(filename)} ${shellQuote(url)}"
             )
             
             isDownloading = false
             downloadUrl = ""
             
             // Refresh file list
-            val result = sshService.executeCommand("ls -la --time-style=long-iso $expandedPath 2>/dev/null || ls -la $expandedPath 2>/dev/null")
+            val result = sshService.executeCommand("ls -la --time-style=long-iso ${shellQuote(expandedPath)} 2>/dev/null || ls -la ${shellQuote(expandedPath)} 2>/dev/null")
             result.onSuccess { output ->
                 files = parseLsOutputEnhanced(output)
             }
@@ -288,13 +357,13 @@ fun TermuxFileManagerScreen(navController: NavController) {
     // Delete file
     fun deleteFile(file: FileEntry) {
         scope.launch {
-            val expandedPath = currentPath.replace("~", "/root")
+            val expandedPath = expandRemotePath(currentPath)
             val cmd = if (file.isDirectory) "rm -rf" else "rm -f"
             
-            sshService.executeCommand("$cmd '$expandedPath/${file.name}'")
+            sshService.executeCommand("$cmd ${shellQuote(buildChildRemotePath(expandedPath, file.name))}")
             
             // Refresh
-            val result = sshService.executeCommand("ls -la --time-style=long-iso $expandedPath 2>/dev/null || ls -la $expandedPath 2>/dev/null")
+            val result = sshService.executeCommand("ls -la --time-style=long-iso ${shellQuote(expandedPath)} 2>/dev/null || ls -la ${shellQuote(expandedPath)} 2>/dev/null")
             result.onSuccess { output ->
                 files = parseLsOutputEnhanced(output)
             }
@@ -353,9 +422,11 @@ fun TermuxFileManagerScreen(navController: NavController) {
                     }
                     // Refresh button
                     IconButton(onClick = {
-                        val expandedPath = currentPath.replace("~", "/root")
+                        val expandedPath = expandRemotePath(currentPath)
                         scope.launch {
-                            val result = sshService.executeCommand("ls -la --time-style=long-iso $expandedPath 2>/dev/null || ls -la $expandedPath 2>/dev/null")
+                            val result = sshService.executeCommand(
+                                "ls -la --time-style=long-iso ${shellQuote(expandedPath)} 2>/dev/null || ls -la ${shellQuote(expandedPath)} 2>/dev/null"
+                            )
                             result.onSuccess { output ->
                                 files = parseLsOutputEnhanced(output)
                             }
@@ -388,7 +459,7 @@ fun TermuxFileManagerScreen(navController: NavController) {
                             OutlinedButton(onClick = {
                                 selectedFiles = sortedFiles.map { it.name }.toSet()
                             }) {
-                                Text("All")
+                                Text(stringResource(R.string.dataset_select_all))
                             }
                             // Download selected
                             Button(onClick = {
@@ -522,7 +593,7 @@ fun TermuxFileManagerScreen(navController: NavController) {
                         selected = selectedTool?.id == tool.id,
                         onClick = {
                             selectedTool = tool
-                            currentPath = tool.installPath
+                            currentPath = expandRemotePath(tool.installPath)
                         },
                         label = {
                             Text("${tool.emoji} ${tool.name}")
@@ -544,12 +615,16 @@ fun TermuxFileManagerScreen(navController: NavController) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Back button
-                    if (currentPath != selectedTool?.installPath) {
+                    if (canNavigateUp(currentPath)) {
                         IconButton(
                             onClick = { navigateBack() },
                             modifier = Modifier.size(32.dp)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), tint = Color.White)
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                stringResource(R.string.agent_parent_folder),
+                                tint = Color.White
+                            )
                         }
                     }
                     
@@ -583,22 +658,93 @@ fun TermuxFileManagerScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(12.dp))
             
             // Download button (URL)
-            Button(
-                onClick = { showDownloadDialog = true },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isDownloading
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (isDownloading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.action_downloading_status))
-                } else {
-                    Icon(Icons.Default.Add, null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.file_download_url))
+                OutlinedButton(
+                    onClick = { uploadPicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isDownloading && !isUploading
+                ) {
+                    if (isUploading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.file_uploading_status))
+                    } else {
+                        Icon(Icons.Default.Upload, null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.file_upload_from_device))
+                    }
+                }
+
+                Button(
+                    onClick = { showDownloadDialog = true },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isDownloading && !isUploading
+                ) {
+                    if (isDownloading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.action_downloading_status))
+                    } else {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.file_download_url))
+                    }
                 }
             }
-            
+
+            if (isUploading) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            uploadProgress?.let {
+                                stringResource(
+                                    R.string.file_upload_progress_files,
+                                    it.fileIndex,
+                                    it.fileCount
+                                )
+                            } ?: stringResource(R.string.file_uploading_status),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        uploadProgress?.let { progress ->
+                            Text(
+                                progress.fileName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            LinearProgressIndicator(
+                                progress = { progress.progressFraction },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.file_upload_progress_detail,
+                                    formatSizeEnhanced(progress.bytesSent),
+                                    formatSizeEnhanced(progress.totalBytes),
+                                    progress.progressPercent
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+
             // Selection mode hint
             if (!isSelectionMode && sortedFiles.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
@@ -831,6 +977,46 @@ fun FileItemEnhanced(
     }
 }
 
+private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
+
+private fun expandRemotePath(path: String): String {
+    return when {
+        path == "~" -> "/root"
+        path.startsWith("~/") -> path.replaceFirst("~", "/root")
+        path.isBlank() -> "/"
+        else -> path
+    }
+}
+
+private fun buildChildRemotePath(parent: String, child: String): String {
+    val normalizedParent = expandRemotePath(parent).trimEnd('/')
+    return if (normalizedParent.isBlank() || normalizedParent == "/") {
+        "/$child"
+    } else {
+        "$normalizedParent/$child"
+    }
+}
+
+private fun parentRemotePath(path: String): String {
+    val normalized = expandRemotePath(path).trimEnd('/')
+    if (normalized.isBlank() || normalized == "/") return "/"
+    return normalized.substringBeforeLast("/", missingDelimiterValue = "/").ifBlank { "/" }
+}
+
+private fun canNavigateUp(path: String): Boolean = expandRemotePath(path).trimEnd('/').let { normalized ->
+    normalized.isNotBlank() && normalized != "/"
+}
+
+private fun queryDisplayName(context: android.content.Context, uri: Uri): String? {
+    return context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            cursor.getString(0)
+        } else {
+            null
+        }
+    }
+}
+
 /**
  * Parse `ls -la` output into FileEntry list with size and time.
  * Handles both:
@@ -952,12 +1138,12 @@ suspend fun downloadFilesToFolder(
     fileNames: List<String>,
     targetUri: android.net.Uri
 ) = withContext(Dispatchers.IO) {
-    val expandedPath = remotePath.replace("~", "/root")
+    val expandedPath = expandRemotePath(remotePath)
     
     for (fileName in fileNames) {
         try {
             // Get file content via base64 encoding (works for all file types)
-            val result = sshService.executeCommand("base64 '$expandedPath/$fileName' 2>/dev/null")
+            val result = sshService.executeCommand("base64 ${shellQuote(buildChildRemotePath(expandedPath, fileName))} 2>/dev/null")
             result.onSuccess { base64Content ->
                 if (base64Content.isNotBlank()) {
                     // Decode and write to target folder
@@ -976,5 +1162,158 @@ suspend fun downloadFilesToFolder(
             // Log error but continue with other files
             e.printStackTrace()
         }
+    }
+}
+
+suspend fun uploadFilesToRemoteFolder(
+    context: android.content.Context,
+    sshService: SSHService,
+    remotePath: String,
+    uris: List<Uri>,
+    onProgress: ((UploadProgressState) -> Unit)? = null
+): Result<List<String>> = withContext(Dispatchers.IO) {
+    try {
+        val expandedPath = expandRemotePath(remotePath)
+        sshService.executeCommand("mkdir -p ${shellQuote(expandedPath)}").getOrThrow()
+
+        val uploadedNames = mutableListOf<String>()
+        uris.forEachIndexed { index, uri ->
+            val fileName = sanitizeRemoteFileName(
+                queryDisplayName(context, uri)
+                ?: uri.lastPathSegment?.substringAfterLast('/')
+                ?: return@withContext Result.failure(Exception("Could not read file name"))
+            )
+            val remoteFilePath = buildChildRemotePath(expandedPath, fileName)
+            val stagedFile = stageUriForRemoteUpload(context, uri, fileName)
+            val fileCount = uris.size
+            val totalBytes = stagedFile.length().coerceAtLeast(0L)
+
+            try {
+                if (onProgress != null) {
+                    withContext(Dispatchers.Main) {
+                        onProgress.invoke(
+                            UploadProgressState(
+                                fileName = fileName,
+                                fileIndex = index + 1,
+                                fileCount = fileCount,
+                                bytesSent = 0L,
+                                totalBytes = totalBytes
+                            )
+                        )
+                    }
+                }
+                sshService.uploadToRemotePath(
+                    localFile = stagedFile,
+                    remotePath = remoteFilePath,
+                    onProgress = { sent, total ->
+                        onProgress?.invoke(
+                            UploadProgressState(
+                                fileName = fileName,
+                                fileIndex = index + 1,
+                                fileCount = fileCount,
+                                bytesSent = sent,
+                                totalBytes = total
+                            )
+                        )
+                    }
+                ).getOrThrow()
+            } finally {
+                stagedFile.delete()
+            }
+
+            uploadedNames += fileName
+        }
+
+        Result.success(uploadedNames)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+}
+
+private fun sanitizeRemoteFileName(name: String): String {
+    return name
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .ifBlank { "upload.bin" }
+}
+
+private fun stageUriForRemoteUpload(
+    context: android.content.Context,
+    uri: Uri,
+    fileName: String
+): File {
+    val safeBaseName = fileName
+        .substringBeforeLast('.', missingDelimiterValue = fileName)
+        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        .ifBlank { "upload" }
+        .take(32)
+        .padEnd(3, '_')
+    val safeSuffix = fileName
+        .substringAfterLast('.', missingDelimiterValue = "")
+        .replace(Regex("[^A-Za-z0-9]"), "")
+        .take(12)
+        .let { extension ->
+            if (extension.isBlank()) ".tmp" else ".$extension"
+        }
+    val tempFile = File.createTempFile(safeBaseName, safeSuffix, context.cacheDir)
+
+    try {
+        val contentResolver = context.contentResolver
+        val typedMime = contentResolver.getType(uri)
+        val openers = listOf<() -> InputStream?>(
+            { contentResolver.openInputStream(uri)?.buffered() },
+            { contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()?.buffered() },
+            {
+                contentResolver.openFileDescriptor(uri, "r")?.let { descriptor ->
+                    android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).buffered()
+                }
+            },
+            {
+                typedMime?.let { mime ->
+                    contentResolver.openTypedAssetFileDescriptor(uri, mime, null)
+                        ?.createInputStream()
+                        ?.buffered()
+                }
+            },
+            {
+                contentResolver.openTypedAssetFileDescriptor(uri, "*/*", null)
+                    ?.createInputStream()
+                    ?.buffered()
+            }
+        )
+
+        var lastError: Exception? = null
+        for (openStream in openers) {
+            try {
+                val input = openStream() ?: continue
+                input.use { stream ->
+                    copyUploadInputToTempFile(stream, tempFile)
+                }
+                return tempFile
+            } catch (error: Exception) {
+                lastError = error
+            }
+        }
+
+        throw lastError ?: IOException("Could not open input stream for upload")
+    } catch (error: Exception) {
+        tempFile.delete()
+        throw error
+    }
+}
+
+private fun copyUploadInputToTempFile(
+    inputStream: InputStream,
+    tempFile: File
+) {
+    tempFile.outputStream().buffered().use { output ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val read = inputStream.read(buffer)
+            if (read < 0) break
+            if (read == 0) continue
+            output.write(buffer, 0, read)
+        }
+        output.flush()
     }
 }

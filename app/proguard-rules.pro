@@ -59,6 +59,86 @@
 # Keep all API data classes
 -keep class com.example.llamadroid.data.api.** { *; }
 
+# Keep ONNX Runtime Java bindings
+-keep class ai.onnxruntime.** { *; }
+
+# Parquet/Hadoop local dataset imports reference optional desktop/server JVM APIs.
+-dontwarn com.fasterxml.jackson.core.JsonFactory
+-dontwarn com.fasterxml.jackson.databind.ObjectMapper
+-dontwarn java.lang.management.ManagementFactory
+-dontwarn java.lang.management.ThreadMXBean
+-dontwarn javax.management.DynamicMBean
+-dontwarn javax.management.InstanceAlreadyExistsException
+-dontwarn javax.management.MBeanServer
+-dontwarn javax.management.ObjectInstance
+-dontwarn javax.management.ObjectName
+-dontwarn javax.naming.NamingException
+-dontwarn javax.naming.directory.DirContext
+-dontwarn javax.naming.directory.InitialDirContext
+-dontwarn javax.security.auth.callback.NameCallback
+-dontwarn javax.security.auth.kerberos.KerberosPrincipal
+-dontwarn javax.security.auth.kerberos.KerberosTicket
+-dontwarn javax.security.auth.kerberos.KeyTab
+-dontwarn javax.security.auth.login.AppConfigurationEntry$LoginModuleControlFlag
+-dontwarn javax.security.auth.login.AppConfigurationEntry
+-dontwarn javax.security.auth.login.Configuration$Parameters
+-dontwarn javax.security.auth.login.Configuration
+-dontwarn javax.security.auth.login.LoginContext
+-dontwarn javax.security.auth.spi.LoginModule
+-dontwarn javax.security.sasl.RealmCallback
+-dontwarn javax.security.sasl.RealmChoiceCallback
+-dontwarn javax.security.sasl.Sasl
+-dontwarn javax.security.sasl.SaslClient
+-dontwarn javax.security.sasl.SaslClientFactory
+-dontwarn javax.security.sasl.SaslException
+-dontwarn javax.security.sasl.SaslServer
+-dontwarn javax.security.sasl.SaslServerFactory
+-dontwarn javax.xml.stream.Location
+-dontwarn javax.xml.stream.XMLEventFactory
+-dontwarn javax.xml.stream.XMLEventReader
+-dontwarn javax.xml.stream.XMLInputFactory
+-dontwarn javax.xml.stream.XMLOutputFactory
+-dontwarn javax.xml.stream.XMLReporter
+-dontwarn javax.xml.stream.XMLResolver
+-dontwarn javax.xml.stream.XMLStreamConstants
+-dontwarn javax.xml.stream.XMLStreamException
+-dontwarn javax.xml.stream.XMLStreamReader
+-dontwarn javax.xml.stream.XMLStreamWriter
+-dontwarn javax.xml.stream.events.DTD
+-dontwarn javax.xml.stream.events.EntityDeclaration
+-dontwarn javax.xml.stream.events.NotationDeclaration
+-dontwarn javax.xml.stream.events.XMLEvent
+-dontwarn javax.xml.stream.util.XMLEventAllocator
+-dontwarn lombok.Generated
+-dontwarn net.jpountz.lz4.LZ4Factory
+-dontwarn net.jpountz.lz4.LZ4SafeDecompressor
+-dontwarn org.apache.hadoop.shaded.com.google.errorprone.annotations.CanIgnoreReturnValue
+-dontwarn org.apache.hadoop.shaded.com.google.errorprone.annotations.CheckReturnValue
+-dontwarn org.apache.hadoop.shaded.com.google.errorprone.annotations.Immutable
+-dontwarn org.apache.hadoop.shaded.com.google.protobuf.GeneratedMessage$ExtendableMessageOrBuilder
+-dontwarn org.apache.hadoop.shaded.com.sun.jersey.server.spi.component.ResourceComponentProviderFactory
+-dontwarn org.apache.hadoop.shaded.com.sun.jersey.server.spi.component.ResourceComponentProviderFactoryClass
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.Library
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.Memory
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.Native
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.Pointer
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.Structure$ByReference
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.Structure$FieldOrder
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.Structure
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.WString
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.platform.win32.Win32Exception
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.ptr.IntByReference
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.win32.StdCallLibrary
+-dontwarn org.apache.hadoop.shaded.com.sun.jna.win32.W32APIOptions
+-dontwarn org.apache.hadoop.shaded.com.sun.msv.reader.GrammarReaderController
+-dontwarn org.apache.hadoop.shaded.com.sun.msv.reader.util.IgnoreController
+-dontwarn org.apache.hadoop.shaded.org.apache.curator.shaded.com.google.errorprone.annotations.CanIgnoreReturnValue
+-dontwarn org.apache.hadoop.shaded.org.apache.curator.shaded.com.google.errorprone.annotations.CheckReturnValue
+-dontwarn org.apache.hadoop.shaded.org.apache.curator.shaded.com.google.errorprone.annotations.Immutable
+-dontwarn org.apache.hadoop.shaded.org.fusesource.jansi.Ansi
+-dontwarn org.slf4j.impl.StaticLoggerBinder
+-dontwarn sun.net.spi.nameservice.NameServiceDescriptor
+
 # ========== RETROFIT - CRITICAL RULES FOR GENERIC TYPES ==========
 # Keep Retrofit service interfaces with their method signatures
 -keep,allowobfuscation interface * {

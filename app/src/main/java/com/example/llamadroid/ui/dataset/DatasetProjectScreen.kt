@@ -1,10 +1,8 @@
 package com.example.llamadroid.ui.dataset
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -34,17 +32,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.data.db.*
+import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.model.DatasetExporter
 import com.example.llamadroid.data.model.DatasetFormat
+import com.example.llamadroid.service.DatasetForegroundService
 import com.example.llamadroid.service.DatasetProcessor
-import com.example.llamadroid.service.PDFService
+import com.example.llamadroid.service.OllamaService
+import com.example.llamadroid.service.RemoteSummaryBackendConfig
+import com.example.llamadroid.service.RemoteSummaryClientFactory
+import com.example.llamadroid.service.normalizeDatasetBackend
 import com.example.llamadroid.ui.components.SliderWithInput
 import com.example.llamadroid.ui.components.IntSliderWithInput
 import kotlinx.coroutines.Dispatchers
@@ -64,13 +65,35 @@ class DatasetProjectViewModel : ViewModel() {
     fun setTab(index: Int) {
         _selectedTab.value = index
     }
-    
-    // Processing state preservation
-    var processor: DatasetProcessor? = null
 }
 
 // Tab data class for icons
 data class TabItem(val icon: ImageVector, val label: String)
+
+private enum class DatasetProcessStage {
+    CLEAN,
+    QUESTIONS,
+    ANSWERS,
+    RATING
+}
+
+private fun DatasetProcessor.Job.isImportJobFor(projectId: Long): Boolean =
+    this.projectId == projectId && (this is DatasetProcessor.Job.ImportPdf || this is DatasetProcessor.Job.ImportTxt)
+
+private fun DatasetProcessor.Job.importFileName(): String = when (this) {
+    is DatasetProcessor.Job.ImportPdf -> sourceName.ifBlank { name }
+    is DatasetProcessor.Job.ImportTxt -> sourceName.ifBlank { name }
+    else -> name
+}
+
+private fun persistDatasetImportReadPermission(context: Context, uri: Uri) {
+    runCatching {
+        context.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+    }
+}
 
 /**
  * Dataset Project Detail Screen with 5 tabs (icon-based for better fit)
@@ -85,13 +108,9 @@ fun DatasetProjectScreen(
     val scope = rememberCoroutineScope()
     val db = remember { AppDatabase.getDatabase(context) }
     val dao = db.datasetDao()
-    val pdfService = remember { PDFService(context) }
     
     // ViewModel for state persistence
     val viewModel: DatasetProjectViewModel = viewModel()
-    val processor = remember { 
-        viewModel.processor ?: DatasetProcessor(context, dao).also { viewModel.processor = it }
-    }
     
     // State from ViewModel (survives navigation)
     val selectedTab by viewModel.selectedTab.collectAsState()
@@ -103,20 +122,13 @@ fun DatasetProjectScreen(
     val qaList by dao.getQAForProject(projectId).collectAsState(initial = emptyList())
     val prompts by dao.getAllPrompts().collectAsState(initial = emptyList())
     
-    // Get available LLM models (downloaded only)
-    val models by db.modelDao().getModelsByType(ModelType.LLM).collectAsState(initial = emptyList())
-    
-    
-    // Processing state from static companion object (survives navigation)
-    val processingProgress by DatasetProcessor.progress.collectAsState()
-    val isProcessing by DatasetProcessor.isProcessing.collectAsState()
-    val jobQueue by DatasetProcessor.jobQueue.collectAsState()
-    
-    // Set context and processor for global notifications and job queue
-    LaunchedEffect(Unit) {
-        DatasetProcessor.setApplicationContext(context)
-        DatasetProcessor.setProcessor(processor)
-    }
+    // Processing state owned by the foreground runtime
+    val processingProgress by DatasetForegroundService.progress.collectAsState()
+    val isProcessing by DatasetForegroundService.isProcessing.collectAsState()
+    val jobQueue by DatasetForegroundService.jobQueue.collectAsState()
+    val activeJob by DatasetForegroundService.activeJob.collectAsState()
+    val activeImportJob = activeJob?.takeIf { it.isImportJobFor(projectId) }
+    val queuedImportJobs = jobQueue.filter { it.isImportJobFor(projectId) }
     
     // Icon-based tabs (no text cutting)
     val tabs = listOf(
@@ -131,64 +143,39 @@ fun DatasetProjectScreen(
     // File pickers
     val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { pdfUri ->
-            scope.launch {
-                val name = uri.lastPathSegment?.substringAfterLast("/") ?: context.getString(R.string.file_type_pdf)
-                val textResult = pdfService.extractText(pdfUri)
-                textResult.onSuccess { text ->
-                    val sourceId = dao.insertSource(DatasetSourceEntity(
-                        projectId = projectId,
-                        type = SourceType.PDF,
-                        uri = pdfUri.toString(),
-                        name = name,
-                        extractedText = text
-                    ))
-                    val proj = project ?: return@launch
-                    val chunkTexts = processor.chunkText(text, proj.chunkSize)
-                    val chunkEntities = chunkTexts.mapIndexed { index, chunkText ->
-                        DatasetChunkEntity(
-                            projectId = projectId,
-                            sourceId = sourceId,
-                            chunkIndex = index,
-                            originalText = chunkText
-                        )
-                    }
-                    dao.insertChunks(chunkEntities)
-                }
-            }
+            persistDatasetImportReadPermission(context, pdfUri)
+            val name = uri.lastPathSegment?.substringAfterLast("/") ?: context.getString(R.string.file_type_pdf)
+            DatasetForegroundService.enqueue(
+                context,
+                DatasetProcessor.Job.ImportPdf(
+                    projectId = projectId,
+                    sourceUri = pdfUri.toString(),
+                    sourceName = name,
+                    name = context.getString(R.string.dataset_job_import_pdf)
+                )
+            )
         }
     }
     
     val txtPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { txtUri ->
-            scope.launch {
-                val name = uri.lastPathSegment?.substringAfterLast("/") ?: context.getString(R.string.file_type_text)
-                context.contentResolver.openInputStream(txtUri)?.use { stream ->
-                    val text = stream.bufferedReader().readText()
-                    val sourceId = dao.insertSource(DatasetSourceEntity(
-                        projectId = projectId,
-                        type = SourceType.TXT,
-                        uri = txtUri.toString(),
-                        name = name,
-                        extractedText = text
-                    ))
-                    val proj = project ?: return@launch
-                    val chunkTexts = processor.chunkText(text, proj.chunkSize)
-                    val chunkEntities = chunkTexts.mapIndexed { index, chunkText ->
-                        DatasetChunkEntity(
-                            projectId = projectId,
-                            sourceId = sourceId,
-                            chunkIndex = index,
-                            originalText = chunkText
-                        )
-                    }
-                    dao.insertChunks(chunkEntities)
-                }
-            }
+            persistDatasetImportReadPermission(context, txtUri)
+            val name = uri.lastPathSegment?.substringAfterLast("/") ?: context.getString(R.string.file_type_text)
+            DatasetForegroundService.enqueue(
+                context,
+                DatasetProcessor.Job.ImportTxt(
+                    projectId = projectId,
+                    sourceUri = txtUri.toString(),
+                    sourceName = name,
+                    name = context.getString(R.string.dataset_job_import_txt)
+                )
+            )
         }
     }
     
     // State for selected IDs during export
     var selectedIdsForExport by remember { mutableStateOf(setOf<Long>()) }
+    var showDatasetInfo by remember { mutableStateOf(false) }
     
     // Export launcher  
     val exportLauncher = rememberLauncherForActivityResult(
@@ -208,6 +195,11 @@ fun DatasetProjectScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showDatasetInfo = true }) {
+                        Icon(Icons.Default.Info, stringResource(R.string.dataset_info_title))
                     }
                 }
             )
@@ -233,12 +225,23 @@ fun DatasetProjectScreen(
                     )
                 }
             }
+
+            if (isProcessing && processingProgress != null) {
+                DatasetRuntimeBanner(
+                    progress = processingProgress,
+                    queuedJobCount = jobQueue.size,
+                    onStop = { DatasetForegroundService.cancelCurrent(context) }
+                )
+            }
             
             // Tab Content
             when (selectedTab) {
                 0 -> SourcesTab(
                     sources = sources,
                     chunks = chunks,
+                    importProgress = processingProgress.takeIf { activeImportJob != null },
+                    activeImportJob = activeImportJob,
+                    queuedImportJobs = queuedImportJobs,
                     onAddPdf = { pdfPicker.launch(arrayOf("application/pdf")) },
                     onAddTxt = { txtPicker.launch(arrayOf("text/*")) },
                     onDeleteSource = { source ->
@@ -257,39 +260,95 @@ fun DatasetProjectScreen(
                     onRegenQuestions = { chunkIds ->
                         project?.let { proj ->
                             val questionPrompt = prompts.find { it.type == PromptType.QUESTION && it.isDefault }?.content ?: DEFAULT_QUESTION_PROMPT
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.RegenQuestions(chunkIds, proj.id, questionPrompt, context.getString(R.string.dataset_regen_questions)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.RegenQuestions(
+                                    chunkIds,
+                                    proj.id,
+                                    questionPrompt,
+                                    context.getString(R.string.dataset_regen_questions)
+                                )
+                            )
+                        }
+                    },
+                    onDeleteSelectedChunks = { chunkIds ->
+                        scope.launch {
+                            dao.deleteChunksByIds(chunkIds.toList())
+                            android.widget.Toast.makeText(
+                                context,
+                                context.getString(R.string.dataset_chunks_removed_success, chunkIds.size),
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
                     },
                     isProcessing = isProcessing
                 )
                 2 -> ProcessTab(
-                    project = project,
                     chunks = chunks,
                     qaList = qaList,
                     prompts = prompts,
-                    progress = processingProgress,
                     isProcessing = isProcessing,
                     onRunClean = { prompt ->
                         project?.let { proj ->
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.Clean(proj.id, prompt, context.getString(R.string.dataset_job_clean)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.Clean(proj.id, prompt, context.getString(R.string.dataset_job_clean))
+                            )
                         }
                     },
                     onRunQuestions = { prompt ->
                         project?.let { proj ->
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.Questions(proj.id, prompt, context.getString(R.string.dataset_job_questions)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.Questions(proj.id, prompt, context.getString(R.string.dataset_job_questions))
+                            )
                         }
                     },
                     onRunAnswers = { prompt ->
                         project?.let { proj ->
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.Answers(proj.id, prompt, context.getString(R.string.dataset_job_answers)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.Answers(proj.id, prompt, context.getString(R.string.dataset_job_answers))
+                            )
                         }
                     },
                     onRunRating = { prompt ->
                         project?.let { proj ->
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.Rating(proj.id, prompt, context.getString(R.string.dataset_job_rating)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.Rating(proj.id, prompt, context.getString(R.string.dataset_job_rating))
+                            )
                         }
                     },
-                    onCancel = { DatasetProcessor.cancel() }
+                    onRunSequence = { stages, cleanPrompt, questionPrompt, answerPrompt, reviewPrompt ->
+                        project?.let { proj ->
+                            val jobs = stages.map { stage ->
+                                when (stage) {
+                                    DatasetProcessStage.CLEAN -> DatasetProcessor.Job.Clean(
+                                        proj.id,
+                                        cleanPrompt,
+                                        context.getString(R.string.dataset_job_clean)
+                                    )
+                                    DatasetProcessStage.QUESTIONS -> DatasetProcessor.Job.Questions(
+                                        proj.id,
+                                        questionPrompt,
+                                        context.getString(R.string.dataset_job_questions)
+                                    )
+                                    DatasetProcessStage.ANSWERS -> DatasetProcessor.Job.Answers(
+                                        proj.id,
+                                        answerPrompt,
+                                        context.getString(R.string.dataset_job_answers)
+                                    )
+                                    DatasetProcessStage.RATING -> DatasetProcessor.Job.Rating(
+                                        proj.id,
+                                        reviewPrompt,
+                                        context.getString(R.string.dataset_job_rating)
+                                    )
+                                }
+                            }
+                            DatasetForegroundService.enqueueBatch(context, jobs)
+                        }
+                    }
                 )
                 3 -> ReviewTab(
                     qaList = qaList,
@@ -310,106 +369,124 @@ fun DatasetProjectScreen(
                     onRegenerateAnswer = { qa ->
                         project?.let { proj ->
                             val answerPrompt = prompts.find { it.type == PromptType.ANSWER && it.isDefault }?.content ?: DEFAULT_ANSWER_PROMPT
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.RegenAnswer(qa.id, proj.id, answerPrompt, context.getString(R.string.dataset_job_regen_answer)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.RegenAnswer(
+                                    qa.id,
+                                    proj.id,
+                                    answerPrompt,
+                                    context.getString(R.string.dataset_job_regen_answer)
+                                )
+                            )
                         }
                     },
                     onRegenerateRating = { qa ->
                         project?.let { proj ->
                             val reviewPrompt = prompts.find { it.type == PromptType.REVIEW && it.isDefault }?.content ?: DEFAULT_REVIEW_PROMPT
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.RegenRating(qa.id, proj.id, reviewPrompt, context.getString(R.string.dataset_job_regen_rating)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.RegenRating(
+                                    qa.id,
+                                    proj.id,
+                                    reviewPrompt,
+                                    context.getString(R.string.dataset_job_regen_rating)
+                                )
+                            )
                         }
                     },
                     onRegenerateSelectedAnswers = { selectedIds ->
                         project?.let { proj ->
                             val answerPrompt = prompts.find { it.type == PromptType.ANSWER && it.isDefault }?.content ?: DEFAULT_ANSWER_PROMPT
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.RegenAnswers(selectedIds, proj.id, answerPrompt, context.getString(R.string.dataset_job_regen_answers_param, selectedIds.size)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.RegenAnswers(
+                                    selectedIds,
+                                    proj.id,
+                                    answerPrompt,
+                                    context.getString(R.string.dataset_job_regen_answers_param, selectedIds.size)
+                                )
+                            )
                         }
                     },
                     onRegenerateSelectedRatings = { selectedIds ->
                         project?.let { proj ->
                             val reviewPrompt = prompts.find { it.type == PromptType.REVIEW && it.isDefault }?.content ?: DEFAULT_REVIEW_PROMPT
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.RegenRatings(selectedIds, proj.id, reviewPrompt, context.getString(R.string.dataset_job_regen_ratings_param, selectedIds.size)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.RegenRatings(
+                                    selectedIds,
+                                    proj.id,
+                                    reviewPrompt,
+                                    context.getString(R.string.dataset_job_regen_ratings_param, selectedIds.size)
+                                )
+                            )
                         }
                     },
                     onExport = { selectedIds ->
                         selectedIdsForExport = selectedIds
                         val filename = "dataset_${System.currentTimeMillis()}.json"
                         exportLauncher.launch(filename)
-                    },
-                    isProcessing = isProcessing,
-                    progress = processingProgress,
-                    jobQueue = jobQueue,
-                    onCancel = { DatasetProcessor.cancel() },
-                    onCancelAll = { DatasetProcessor.cancelAll() }
+                    }
                 )
                 4 -> QueueTab(
+                    activeJob = activeJob,
                     jobQueue = jobQueue,
-                    isProcessing = isProcessing,
-                    progress = processingProgress,
-                    onCancel = { DatasetProcessor.cancel() },
-                    onCancelAll = { DatasetProcessor.cancelAll() },
-                    onRemoveJob = { index -> DatasetProcessor.removeJob(index) }
+                    onCancelAll = { DatasetForegroundService.cancelAll(context) },
+                    onRemoveJob = { index -> DatasetForegroundService.removeQueuedJob(context, index) },
+                    onMoveJobUp = { index -> DatasetForegroundService.moveQueuedJobUp(context, index) },
+                    onMoveJobDown = { index -> DatasetForegroundService.moveQueuedJobDown(context, index) }
                 )
                 5 -> SettingsTab(
                     project = project,
                     prompts = prompts,
-                    models = models,
                     dao = dao,
                     onUpdateProject = { updated ->
                         scope.launch {
                             dao.updateProject(updated)
                             // Flow will auto-refresh project
                         }
-                    },
-                    onSavePrompt = { prompt ->
-                        scope.launch { dao.insertPrompt(prompt) }
-                    },
-                    onUpdatePrompt = { prompt ->
-                        scope.launch { dao.updatePrompt(prompt) }
-                    },
-                    onDeletePrompt = { prompt ->
-                        scope.launch { dao.deletePrompt(prompt) }
                     }
                 )
             }
         }
     }
-}
 
-// Notification helpers
-private const val CHANNEL_ID = "dataset_progress"
-private const val NOTIFICATION_ID = 9001
-
-private fun showProgressNotification(context: Context, progress: DatasetProcessor.Progress) {
-    // Create channel (required for Android 8+)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            context.getString(R.string.dataset_processing_notif),
-            NotificationManager.IMPORTANCE_LOW
-        )
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
-    }
-    
-    val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_menu_sort_by_size)
-        .setContentTitle("${progress.stage}: ${progress.current}/${progress.total}")
-        .setContentText(progress.currentItem)
-        .setProgress(progress.total, progress.current, false)
-        .setOngoing(true)
-        .setSilent(true)
-        .build()
-    
-    try {
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-    } catch (_: SecurityException) {
-        // Permission not granted
+    if (showDatasetInfo) {
+        DatasetCreatorInfoDialog(onDismiss = { showDatasetInfo = false })
     }
 }
 
-private fun cancelProgressNotification(context: Context) {
-    NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+@Composable
+private fun DatasetCreatorInfoDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dataset_info_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(stringResource(R.string.dataset_info_intro))
+                Text(stringResource(R.string.dataset_info_sources), fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.dataset_info_sources_body))
+                Text(stringResource(R.string.dataset_info_process), fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.dataset_info_process_body))
+                Text(stringResource(R.string.dataset_info_review), fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.dataset_info_review_body))
+                Text(stringResource(R.string.dataset_info_queue), fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.dataset_info_queue_body))
+                Text(stringResource(R.string.dataset_info_settings), fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.dataset_info_settings_body))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_close))
+            }
+        }
+    )
 }
 
 // Export helper
@@ -460,15 +537,80 @@ private suspend fun exportQAToFile(
     }
 }
 
+@Composable
+private fun DatasetRuntimeBanner(
+    progress: DatasetProcessor.Progress?,
+    queuedJobCount: Int,
+    onStop: () -> Unit
+) {
+    if (progress == null) return
+
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.dataset_running),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                TextButton(
+                    onClick = onStop,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.action_stop))
+                }
+            }
+            Text(progress.stage, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+            Text(
+                "${progress.current} / ${progress.total}",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            LinearProgressIndicator(
+                progress = { progress.current.toFloat() / progress.total.coerceAtLeast(1) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            )
+            Text(
+                progress.currentItem,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            Text(
+                stringResource(R.string.dataset_runtime_queue_count, queuedJobCount),
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
 // ========== SOURCES TAB ==========
 @Composable
-fun SourcesTab(
+private fun SourcesTab(
     sources: List<DatasetSourceEntity>,
     chunks: List<DatasetChunkEntity>,
+    importProgress: DatasetProcessor.Progress?,
+    activeImportJob: DatasetProcessor.Job?,
+    queuedImportJobs: List<DatasetProcessor.Job>,
     onAddPdf: () -> Unit,
     onAddTxt: () -> Unit,
     onDeleteSource: (DatasetSourceEntity) -> Unit
 ) {
+    val hasImportPending = activeImportJob != null || queuedImportJobs.isNotEmpty()
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -503,12 +645,36 @@ fun SourcesTab(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FilledTonalButton(onClick = onAddPdf, modifier = Modifier.weight(1f)) {
+                FilledTonalButton(
+                    onClick = onAddPdf,
+                    enabled = !hasImportPending,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(stringResource(R.string.dataset_add_pdf))
                 }
-                FilledTonalButton(onClick = onAddTxt, modifier = Modifier.weight(1f)) {
+                FilledTonalButton(
+                    onClick = onAddTxt,
+                    enabled = !hasImportPending,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(stringResource(R.string.dataset_add_txt))
                 }
+            }
+        }
+
+        importProgress?.let { progress ->
+            item {
+                DatasetImportProgressCard(
+                    progress = progress,
+                    activeImportJob = activeImportJob,
+                    queuedImportJobs = queuedImportJobs
+                )
+            }
+        }
+
+        if (importProgress == null && queuedImportJobs.isNotEmpty()) {
+            item {
+                DatasetImportQueuedCard(queuedImportJobs = queuedImportJobs)
             }
         }
         
@@ -571,6 +737,110 @@ fun SourcesTab(
     }
 }
 
+@Composable
+private fun DatasetImportProgressCard(
+    progress: DatasetProcessor.Progress,
+    activeImportJob: DatasetProcessor.Job?,
+    queuedImportJobs: List<DatasetProcessor.Job>
+) {
+    val diagnostics = progress.currentItem
+        .lines()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+    val fileName = activeImportJob?.importFileName()?.takeIf { it.isNotBlank() }
+    val indicatorColor = MaterialTheme.colorScheme.primary
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.dataset_import_title_running), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(
+                    progress.stage,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                fileName?.let {
+                    Text(
+                        it,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            LinearProgressIndicator(
+                progress = { progress.current.toFloat() / progress.total.coerceAtLeast(1) },
+                modifier = Modifier.fillMaxWidth(),
+                color = indicatorColor
+            )
+
+            Text(
+                stringResource(R.string.dataset_import_exit_warning),
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            diagnostics.forEach { line ->
+                Text(
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = line,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (queuedImportJobs.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.dataset_import_queued_count, queuedImportJobs.size),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DatasetImportQueuedCard(
+    queuedImportJobs: List<DatasetProcessor.Job>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.dataset_import_queued_title), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(
+                stringResource(R.string.dataset_import_queued_count, queuedImportJobs.size),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            queuedImportJobs.take(3).forEach { job ->
+                Text(
+                    job.importFileName(),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                stringResource(R.string.dataset_import_exit_warning),
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
 // ========== CHUNKS TAB ==========
 @Composable
 fun ChunksTab(
@@ -578,11 +848,13 @@ fun ChunksTab(
     sources: List<DatasetSourceEntity>,
     onUpdateChunk: (DatasetChunkEntity) -> Unit,
     onRegenQuestions: (Set<Long>) -> Unit = {},
+    onDeleteSelectedChunks: (Set<Long>) -> Unit = {},
     isProcessing: Boolean = false
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var editingChunk by remember { mutableStateOf<DatasetChunkEntity?>(null) }
     var selectedChunkIds by remember { mutableStateOf(setOf<Long>()) }
+    var pendingDeleteChunkIds by remember { mutableStateOf<Set<Long>?>(null) }
     
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -591,29 +863,41 @@ fun ChunksTab(
         // Compact action bar
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalButton(
-                        onClick = { selectedChunkIds = if (selectedChunkIds.size == chunks.size) emptySet() else chunks.map { it.id }.toSet() }
-                    ) {
-                        Text(if (selectedChunkIds.isEmpty()) stringResource(R.string.dataset_select_all) else stringResource(R.string.dataset_selected, selectedChunkIds.size), fontSize = 13.sp)
-                    }
-                    if (selectedChunkIds.isNotEmpty()) {
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = { selectedChunkIds = emptySet() }) {
-                            Text(stringResource(R.string.action_clear), fontSize = 12.sp)
-                        }
-                    }
+                FilledTonalButton(
+                    onClick = { selectedChunkIds = if (selectedChunkIds.size == chunks.size) emptySet() else chunks.map { it.id }.toSet() }
+                ) {
+                    Text(
+                        if (selectedChunkIds.isEmpty()) stringResource(R.string.dataset_select_all)
+                        else stringResource(R.string.dataset_selected, selectedChunkIds.size),
+                        fontSize = 13.sp
+                    )
                 }
-                
                 Button(
                     onClick = { if (selectedChunkIds.isNotEmpty()) onRegenQuestions(selectedChunkIds) },
                     enabled = selectedChunkIds.isNotEmpty()
                 ) {
                     Text(stringResource(R.string.dataset_regen_questions), fontSize = 13.sp)
+                }
+                FilledTonalButton(
+                    onClick = { pendingDeleteChunkIds = selectedChunkIds },
+                    enabled = selectedChunkIds.isNotEmpty() && !isProcessing,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                ) {
+                    Text(stringResource(R.string.dataset_remove_selected_chunks), fontSize = 13.sp)
+                }
+                if (selectedChunkIds.isNotEmpty()) {
+                    TextButton(onClick = { selectedChunkIds = emptySet() }) {
+                        Text(stringResource(R.string.action_clear), fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -690,7 +974,15 @@ fun ChunksTab(
                     TextButton(
                         onClick = {
                             // Queue regen clean for this chunk
-                            DatasetProcessor.queueJob(DatasetProcessor.Job.RegenClean(chunk.id, chunk.projectId, "", context.getString(R.string.dataset_job_regen_clean)))
+                            DatasetForegroundService.enqueue(
+                                context,
+                                DatasetProcessor.Job.RegenClean(
+                                    chunk.id,
+                                    chunk.projectId,
+                                    "",
+                                    context.getString(R.string.dataset_job_regen_clean)
+                                )
+                            )
                             editingChunk = null
                         }
                     ) {
@@ -739,57 +1031,58 @@ fun ChunksTab(
             }
         )
     }
+
+    pendingDeleteChunkIds?.let { chunkIds ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteChunkIds = null },
+            title = { Text(stringResource(R.string.dataset_remove_chunks_title, chunkIds.size)) },
+            text = { Text(stringResource(R.string.dataset_remove_chunks_message, chunkIds.size)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteSelectedChunks(chunkIds)
+                    selectedChunkIds = emptySet()
+                    pendingDeleteChunkIds = null
+                }) {
+                    Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteChunkIds = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 }
 
 // ========== PROCESS TAB ==========
 @Composable
-fun ProcessTab(
-    project: DatasetProjectEntity?,
+private fun ProcessTab(
     chunks: List<DatasetChunkEntity>,
     qaList: List<DatasetQAEntity>,
     prompts: List<DatasetPromptEntity>,
-    progress: DatasetProcessor.Progress?,
     isProcessing: Boolean,
     onRunClean: (String) -> Unit,
     onRunQuestions: (String) -> Unit,
     onRunAnswers: (String) -> Unit,
     onRunRating: (String) -> Unit,
-    onCancel: () -> Unit
+    onRunSequence: (List<DatasetProcessStage>, String, String, String, String) -> Unit
 ) {
     val pendingChunks = chunks.count { it.status == ChunkStatus.PENDING }
     val cleanedChunks = chunks.count { it.status == ChunkStatus.CLEANED }
     val questionsGenerated = qaList.count { it.status >= QAStatus.QUESTIONED }
     val answersGenerated = qaList.count { it.status >= QAStatus.ANSWERED }
     val rated = qaList.count { it.status == QAStatus.REVIEWED }
+    val cleanPrompt = prompts.find { it.type == PromptType.CLEAN && it.isDefault }?.content ?: DEFAULT_CLEAN_PROMPT
+    val questionPrompt = prompts.find { it.type == PromptType.QUESTION && it.isDefault }?.content ?: DEFAULT_QUESTION_PROMPT
+    val answerPrompt = prompts.find { it.type == PromptType.ANSWER && it.isDefault }?.content ?: DEFAULT_ANSWER_PROMPT
+    val reviewPrompt = prompts.find { it.type == PromptType.REVIEW && it.isDefault }?.content ?: DEFAULT_REVIEW_PROMPT
+    var showSequenceDialog by remember { mutableStateOf(false) }
     
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (isProcessing && progress != null) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("${progress.stage}: ${progress.current}/${progress.total}", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { progress.current.toFloat() / progress.total.coerceAtLeast(1) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(progress.currentItem, fontSize = 12.sp, color = Color.Gray, maxLines = 1)
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
-                            Text(stringResource(R.string.action_cancel))
-                        }
-                    }
-                }
-            }
-        }
-        
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -822,12 +1115,16 @@ fun ProcessTab(
         }
         
         item {
-            val cleanPrompt = prompts.find { it.type == PromptType.CLEAN && it.isDefault }?.content ?: DEFAULT_CLEAN_PROMPT
-            val questionPrompt = prompts.find { it.type == PromptType.QUESTION && it.isDefault }?.content ?: DEFAULT_QUESTION_PROMPT
-            val answerPrompt = prompts.find { it.type == PromptType.ANSWER && it.isDefault }?.content ?: DEFAULT_ANSWER_PROMPT
-            val reviewPrompt = prompts.find { it.type == PromptType.REVIEW && it.isDefault }?.content ?: DEFAULT_REVIEW_PROMPT
-            
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(
+                    onClick = { showSequenceDialog = true },
+                    enabled = chunks.isNotEmpty() && !isProcessing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.dataset_run_sequence))
+                }
                 Button(onClick = { onRunClean(cleanPrompt) }, enabled = pendingChunks > 0 && !isProcessing, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.dataset_run_clean, pendingChunks))
                 }
@@ -843,6 +1140,149 @@ fun ProcessTab(
             }
         }
     }
+
+    if (showSequenceDialog) {
+        DatasetRunSequenceDialog(
+            pendingChunks = pendingChunks,
+            cleanedChunks = cleanedChunks,
+            unansweredQuestions = questionsGenerated - answersGenerated,
+            unratedAnswers = answersGenerated - rated,
+            isProcessing = isProcessing,
+            onDismiss = { showSequenceDialog = false },
+            onQueue = { stages ->
+                onRunSequence(stages, cleanPrompt, questionPrompt, answerPrompt, reviewPrompt)
+                showSequenceDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun DatasetRunSequenceDialog(
+    pendingChunks: Int,
+    cleanedChunks: Int,
+    unansweredQuestions: Int,
+    unratedAnswers: Int,
+    isProcessing: Boolean,
+    onDismiss: () -> Unit,
+    onQueue: (List<DatasetProcessStage>) -> Unit
+) {
+    var stageOrder by remember {
+        mutableStateOf(
+            listOf(
+                DatasetProcessStage.CLEAN,
+                DatasetProcessStage.QUESTIONS,
+                DatasetProcessStage.ANSWERS,
+                DatasetProcessStage.RATING
+            )
+        )
+    }
+    var selectedStages by remember { mutableStateOf(stageOrder.toSet()) }
+
+    fun moveStage(from: Int, to: Int) {
+        val updated = stageOrder.toMutableList()
+        val item = updated.removeAt(from)
+        updated.add(to, item)
+        stageOrder = updated
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dataset_run_sequence_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    stringResource(R.string.dataset_run_sequence_hint),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                stageOrder.forEachIndexed { index, stage ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = stage in selectedStages,
+                                onCheckedChange = { checked ->
+                                    selectedStages = if (checked) {
+                                        selectedStages + stage
+                                    } else {
+                                        selectedStages - stage
+                                    }
+                                }
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = when (stage) {
+                                        DatasetProcessStage.CLEAN -> stringResource(R.string.dataset_job_clean)
+                                        DatasetProcessStage.QUESTIONS -> stringResource(R.string.dataset_job_questions)
+                                        DatasetProcessStage.ANSWERS -> stringResource(R.string.dataset_job_answers)
+                                        DatasetProcessStage.RATING -> stringResource(R.string.dataset_job_rating)
+                                    },
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = when (stage) {
+                                        DatasetProcessStage.CLEAN -> stringResource(R.string.dataset_sequence_clean_hint, pendingChunks)
+                                        DatasetProcessStage.QUESTIONS -> stringResource(R.string.dataset_sequence_questions_hint, cleanedChunks)
+                                        DatasetProcessStage.ANSWERS -> stringResource(R.string.dataset_sequence_answers_hint, maxOf(0, unansweredQuestions))
+                                        DatasetProcessStage.RATING -> stringResource(R.string.dataset_sequence_rating_hint, maxOf(0, unratedAnswers))
+                                    },
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { moveStage(index, index - 1) },
+                                enabled = index > 0,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowUp,
+                                    stringResource(R.string.dataset_move_up),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { moveStage(index, index + 1) },
+                                enabled = index < stageOrder.size - 1,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    stringResource(R.string.dataset_move_down),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selectedStages.isNotEmpty() && !isProcessing,
+                onClick = { onQueue(stageOrder.filter { it in selectedStages }) }
+            ) {
+                Text(stringResource(R.string.dataset_queue_sequence))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
 }
 
 // ========== REVIEW TAB ==========
@@ -858,14 +1298,10 @@ fun ReviewTab(
     onRegenerateRating: (DatasetQAEntity) -> Unit,
     onRegenerateSelectedAnswers: (Set<Long>) -> Unit,
     onRegenerateSelectedRatings: (Set<Long>) -> Unit,
-    onExport: (Set<Long>) -> Unit,
-    isProcessing: Boolean = false,
-    progress: DatasetProcessor.Progress? = null,
-    jobQueue: List<DatasetProcessor.Job> = emptyList(),
-    onCancel: () -> Unit = {},
-    onCancelAll: () -> Unit = {}
+    onExport: (Set<Long>) -> Unit
 ) {
     var filter by remember { mutableStateOf("all") }
+    var selectedScoreFilters by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var editingQA by remember { mutableStateOf<DatasetQAEntity?>(null) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     var showJustification by remember { mutableStateOf<DatasetQAEntity?>(null) }
@@ -873,75 +1309,56 @@ fun ReviewTab(
     var filterDropdownExpanded by remember { mutableStateOf(false) }
     var actionsExpanded by remember { mutableStateOf(false) }
     
-    val filterOptions = listOf("all", "answered", "unrated", "1", "2", "3", "4", "5", ">3")
-    
-    val filteredList = when {
-        filter == "all" -> qaList
-        filter == "answered" -> qaList.filter { it.answer != null }
-        filter == "unrated" -> qaList.filter { it.score == null }
-        filter.startsWith(">") -> {
-            val threshold = filter.drop(1).toIntOrNull() ?: 0
-            qaList.filter { (it.score ?: 0) > threshold }
-        }
-        else -> {
-            val exact = filter.toIntOrNull() ?: 0
-            qaList.filter { it.score == exact }
-        }
+    val scoreOptions = (1..5).toList()
+    val selectedScoresLabel = when {
+        selectedScoreFilters.isEmpty() -> null
+        selectedScoreFilters == (4..5).toSet() -> stringResource(R.string.dataset_filter_greater_than, 3)
+        selectedScoreFilters == (3..5).toSet() -> stringResource(R.string.dataset_filter_greater_than, 2)
+        selectedScoreFilters == (2..5).toSet() -> stringResource(R.string.dataset_filter_greater_than, 1)
+        selectedScoreFilters == (1..5).toSet() -> stringResource(R.string.dataset_filter_greater_than, 0)
+        selectedScoreFilters.size == 1 -> selectedScoreFilters.first().toString()
+        else -> selectedScoreFilters.sorted().joinToString(",")
     }
-    
+    val filterLabel = when {
+        filter == "unrated" -> stringResource(R.string.dataset_filter_unrated)
+        filter == "answered" && selectedScoresLabel == null -> stringResource(R.string.dataset_filter_answered)
+        selectedScoresLabel != null -> stringResource(R.string.dataset_filter_score, selectedScoresLabel)
+        else -> stringResource(R.string.dataset_filter_all)
+    }
+
+    val filteredList = qaList.filter { qa ->
+        val baseMatches = when (filter) {
+            "answered" -> qa.answer != null
+            "unrated" -> qa.score == null
+            else -> true
+        }
+        val scoreMatches = selectedScoreFilters.isEmpty() ||
+            qa.score?.let { it in selectedScoreFilters } == true
+        baseMatches && scoreMatches
+    }
+
+    fun updateBaseFilter(newFilter: String) {
+        filter = newFilter
+        if (newFilter == "unrated") {
+            selectedScoreFilters = emptySet()
+        }
+        selectedIds = emptySet()
+    }
+
+    fun updateScoreFilters(scores: Set<Int>) {
+        selectedScoreFilters = scores
+        if (filter == "unrated" && scores.isNotEmpty()) {
+            filter = "all"
+        }
+        selectedIds = emptySet()
+    }
+    val canExport = selectedIds.isNotEmpty() || filteredList.any { (it.score ?: 0) >= 3 }
+    val canActOnSelection = selectedIds.isNotEmpty()
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Progress card (compact)
-        if (isProcessing && progress != null) {
-            item {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("${progress.stage}: ${progress.current}/${progress.total}", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                            TextButton(onClick = onCancel, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                                Text(stringResource(R.string.action_stop), fontSize = 12.sp)
-                            }
-                        }
-                        LinearProgressIndicator(
-                            progress = { progress.current.toFloat() / progress.total.coerceAtLeast(1) },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        )
-                    }
-                }
-            }
-        }
-        
-        // Job queue (compact)
-        if (jobQueue.isNotEmpty()) {
-            item {
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(stringResource(R.string.dataset_tab_queue) + ": ", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text(jobQueue.take(3).joinToString(" → ") { it.name }, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
-                        if (jobQueue.size > 3) Text("+${jobQueue.size - 3}", fontSize = 11.sp, color = Color.Gray)
-                        TextButton(onClick = onCancelAll, modifier = Modifier.height(28.dp)) { Text(stringResource(R.string.action_clear), fontSize = 11.sp, color = MaterialTheme.colorScheme.error) }
-                    }
-                }
-            }
-        }
-        
         // Combined filter + actions bar
         item {
             Row(
@@ -953,7 +1370,7 @@ fun ReviewTab(
                 ExposedDropdownMenuBox(
                     expanded = filterDropdownExpanded,
                     onExpandedChange = { filterDropdownExpanded = it },
-                    modifier = Modifier.width(100.dp)
+                    modifier = Modifier.width(132.dp)
                 ) {
                     Surface(
                         shape = MaterialTheme.shapes.small,
@@ -964,16 +1381,73 @@ fun ReviewTab(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(if (filter == "all") stringResource(R.string.dataset_filter_all) else if (filter == "unrated") "○" else filter, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text(filterLabel, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(18.dp))
                         }
                     }
-                    ExposedDropdownMenu(expanded = filterDropdownExpanded, onDismissRequest = { filterDropdownExpanded = false }) {
-                        filterOptions.forEach { option ->
+                    ExposedDropdownMenu(
+                        expanded = filterDropdownExpanded,
+                        onDismissRequest = { filterDropdownExpanded = false },
+                        modifier = Modifier.width(220.dp)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.dataset_filter_all), fontSize = 13.sp) },
+                            onClick = { updateBaseFilter("all"); filterDropdownExpanded = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.dataset_filter_answered), fontSize = 13.sp) },
+                            onClick = { updateBaseFilter("answered"); filterDropdownExpanded = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.dataset_filter_unrated), fontSize = 13.sp) },
+                            onClick = { updateBaseFilter("unrated"); filterDropdownExpanded = false }
+                        )
+                        HorizontalDivider()
+                        Text(
+                            stringResource(R.string.dataset_filter_scores),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                        scoreOptions.forEach { score ->
                             DropdownMenuItem(
-                                text = { Text(when (option) { "all" -> stringResource(R.string.dataset_filter_all); "unrated" -> stringResource(R.string.dataset_filter_unrated); else -> stringResource(R.string.dataset_filter_score, option) }, fontSize = 13.sp) },
-                                onClick = { filter = option; filterDropdownExpanded = false; selectedIds = emptySet() }
+                                text = { Text(stringResource(R.string.dataset_filter_score, score.toString()), fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Checkbox(
+                                        checked = score in selectedScoreFilters,
+                                        onCheckedChange = null
+                                    )
+                                },
+                                onClick = {
+                                    updateScoreFilters(
+                                        if (score in selectedScoreFilters) {
+                                            selectedScoreFilters - score
+                                        } else {
+                                            selectedScoreFilters + score
+                                        }
+                                    )
+                                }
                             )
+                        }
+                        HorizontalDivider()
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            (0..4).forEach { threshold ->
+                                TextButton(
+                                    onClick = { updateScoreFilters(((threshold + 1)..5).toSet()) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(stringResource(R.string.dataset_filter_greater_than, threshold), fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        TextButton(
+                            onClick = { updateScoreFilters(emptySet()) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.action_clear), fontSize = 12.sp)
                         }
                     }
                 }
@@ -994,25 +1468,34 @@ fun ReviewTab(
                     Icon(if (selectedIds.size == filteredList.size && filteredList.isNotEmpty()) Icons.Default.Check else Icons.Default.Add, stringResource(R.string.action_select), modifier = Modifier.size(20.dp))
                 }
                 
-                // Export button (icon only)
-                IconButton(
-                    onClick = { onExport(selectedIds) },
-                    enabled = selectedIds.isNotEmpty() || filteredList.any { (it.score ?: 0) >= 3 },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(Icons.Default.Share, stringResource(R.string.action_export), modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                }
-                
                 // Actions dropdown
                 Box {
-                    FilledTonalButton(onClick = { actionsExpanded = true }, enabled = selectedIds.isNotEmpty()) {
+                    FilledTonalButton(onClick = { actionsExpanded = true }, enabled = canExport || canActOnSelection) {
                         Text(stringResource(R.string.dataset_actions), fontSize = 12.sp)
                     }
                     DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.dataset_action_regen_answers)) }, onClick = { actionsExpanded = false; onRegenerateSelectedAnswers(selectedIds) })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.dataset_action_regen_ratings)) }, onClick = { actionsExpanded = false; onRegenerateSelectedRatings(selectedIds) })
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.action_export)) },
+                            enabled = canExport,
+                            onClick = { actionsExpanded = false; onExport(selectedIds) }
+                        )
                         HorizontalDivider()
-                        DropdownMenuItem(text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) }, onClick = { actionsExpanded = false; onDeleteSelected(selectedIds); selectedIds = emptySet() })
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.dataset_action_regen_answers)) },
+                            enabled = canActOnSelection,
+                            onClick = { actionsExpanded = false; onRegenerateSelectedAnswers(selectedIds) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.dataset_action_regen_ratings)) },
+                            enabled = canActOnSelection,
+                            onClick = { actionsExpanded = false; onRegenerateSelectedRatings(selectedIds) }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) },
+                            enabled = canActOnSelection,
+                            onClick = { actionsExpanded = false; onDeleteSelected(selectedIds); selectedIds = emptySet() }
+                        )
                     }
                 }
             }
@@ -1186,49 +1669,17 @@ fun ReviewTab(
 // ========== QUEUE TAB ==========
 @Composable
 fun QueueTab(
+    activeJob: DatasetProcessor.Job?,
     jobQueue: List<DatasetProcessor.Job>,
-    isProcessing: Boolean,
-    progress: DatasetProcessor.Progress?,
-    onCancel: () -> Unit,
     onCancelAll: () -> Unit,
-    onRemoveJob: (Int) -> Unit
+    onRemoveJob: (Int) -> Unit,
+    onMoveJobUp: (Int) -> Unit,
+    onMoveJobDown: (Int) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Current job (if processing)
-        if (isProcessing && progress != null) {
-            item {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(stringResource(R.string.dataset_running), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            TextButton(onClick = onCancel, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                                Text(stringResource(R.string.action_stop))
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text(progress.stage, fontWeight = FontWeight.Medium, fontSize = 16.sp)
-                        Text("${progress.current} / ${progress.total}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        LinearProgressIndicator(
-                            progress = { progress.current.toFloat() / progress.total.coerceAtLeast(1) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                        )
-                        Text(progress.currentItem, fontSize = 11.sp, color = Color.Gray, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
-            }
-        }
-        
         // Queue header
         item {
             Row(
@@ -1244,9 +1695,39 @@ fun QueueTab(
                 }
             }
         }
+
+        activeJob?.let { job ->
+            item {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.dataset_active_job_title), fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                            Text(job.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(
+                                stringResource(R.string.dataset_active_job_hint),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
         
         // Empty state
-        if (jobQueue.isEmpty() && !isProcessing) {
+        if (jobQueue.isEmpty()) {
             item {
                 Surface(
                     shape = MaterialTheme.shapes.large,
@@ -1294,20 +1775,28 @@ fun QueueTab(
                     
                     // Move up
                     IconButton(
-                        onClick = { DatasetProcessor.moveJobUp(index) },
+                        onClick = { onMoveJobUp(index) },
                         enabled = index > 0,
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.Default.KeyboardArrowUp, "Move Up", modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Default.KeyboardArrowUp,
+                            stringResource(R.string.dataset_move_up),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                     
                     // Move down
                     IconButton(
-                        onClick = { DatasetProcessor.moveJobDown(index) },
+                        onClick = { onMoveJobDown(index) },
                         enabled = index < jobQueue.size - 1,
                         modifier = Modifier.size(32.dp)
                     ) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Move Down", modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            stringResource(R.string.dataset_move_down),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                     
                     // Remove
@@ -1324,30 +1813,117 @@ fun QueueTab(
 }
 
 // ========== SETTINGS TAB ==========
-@OptIn(ExperimentalMaterial3Api::class)
+private fun mergeDatasetOllamaModels(selectedModel: String, models: List<String>): List<String> {
+    val normalizedSelected = selectedModel.trim()
+    if (normalizedSelected.isBlank() || models.contains(normalizedSelected)) return models
+    return listOf(normalizedSelected) + models
+}
+
+@Composable
+private fun DatasetBackendChoiceButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (selected) {
+        Button(onClick = onClick, modifier = modifier) {
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier) {
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 @Composable
 fun SettingsTab(
     project: DatasetProjectEntity?,
     prompts: List<DatasetPromptEntity>,
-    models: List<com.example.llamadroid.data.db.ModelEntity>,
     dao: DatasetDao,
-    onUpdateProject: (DatasetProjectEntity) -> Unit,
-    onSavePrompt: (DatasetPromptEntity) -> Unit,
-    onUpdatePrompt: (DatasetPromptEntity) -> Unit,
-    onDeletePrompt: (DatasetPromptEntity) -> Unit
+    onUpdateProject: (DatasetProjectEntity) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     
-    // State - only per-request API settings (server is started from Dashboard)
-    var serverUrl by remember(project) { mutableStateOf(project?.serverUrl ?: "http://127.0.0.1:8080") }
+    var backend by remember(project) {
+        mutableStateOf(normalizeDatasetBackend(project?.backend))
+    }
+    var serverUrl by remember(project) {
+        mutableStateOf(project?.serverUrl ?: SettingsRepository.PDF_LLAMA_SERVER_DEFAULT_URL)
+    }
+    var ollamaUrl by remember(project) {
+        mutableStateOf(project?.ollamaUrl ?: OllamaService.DEFAULT_URL)
+    }
+    var ollamaModel by remember(project) { mutableStateOf(project?.ollamaModel.orEmpty()) }
+    var ollamaNumCtx by remember(project) { mutableStateOf(project?.ollamaNumCtx ?: 4096) }
+    var ollamaThreads by remember(project) { mutableStateOf(project?.ollamaThreads ?: 4) }
+    var ollamaMmap by remember(project) { mutableStateOf(project?.ollamaMmap ?: false) }
     var temperature by remember(project) { mutableStateOf(project?.temperature ?: 0.7f) }
     var maxTokens by remember(project) { mutableStateOf(project?.maxTokens ?: 512) }
     var useCoT by remember(project) { mutableStateOf(project?.useCoT ?: false) }
+    var finalLanguage by remember(project) { mutableStateOf(project?.finalLanguage.orEmpty()) }
+    var availableOllamaModels by remember(project?.ollamaModel) {
+        mutableStateOf(project?.ollamaModel?.takeIf { it.isNotBlank() }?.let(::listOf) ?: emptyList())
+    }
+    var showModelMenu by remember { mutableStateOf(false) }
+    var isRefreshingMetadata by remember { mutableStateOf(false) }
+    var metadataMessage by remember(project) { mutableStateOf<String?>(null) }
+    var llamaServerModelLabel by remember(project) { mutableStateOf<String?>(null) }
+    var llamaServerContextLabel by remember(project) { mutableStateOf<String?>(null) }
     
     // Prompt editor state
     var editingPromptType by remember { mutableStateOf<PromptType?>(null) }
     var editingPromptContent by remember { mutableStateOf("") }
     var projectName by remember(project) { mutableStateOf(project?.name ?: "") }
+    val currentUrl = if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) serverUrl else ollamaUrl
+    val defaultUrl = if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+        SettingsRepository.PDF_LLAMA_SERVER_DEFAULT_URL
+    } else {
+        OllamaService.DEFAULT_URL
+    }
+    val visibleOllamaModels = mergeDatasetOllamaModels(ollamaModel, availableOllamaModels)
+
+    fun refreshMetadata() {
+        if (currentUrl.isBlank()) return
+        scope.launch {
+            isRefreshingMetadata = true
+            metadataMessage = null
+            RemoteSummaryClientFactory.fromConfig(
+                RemoteSummaryBackendConfig(
+                    backend = backend,
+                    baseUrl = currentUrl.trim(),
+                    model = ollamaModel.trim().ifBlank { null },
+                    timeoutMinutes = 1
+                )
+            ).fetchMetadata()
+                .onSuccess { metadata ->
+                    if (backend == SettingsRepository.PDF_BACKEND_OLLAMA) {
+                        availableOllamaModels = mergeDatasetOllamaModels(ollamaModel, metadata.availableModels)
+                        metadataMessage = context.getString(
+                            R.string.pdf_metadata_ollama_loaded,
+                            metadata.availableModels.size
+                        )
+                    } else {
+                        llamaServerModelLabel = metadata.serverModelLabel
+                        llamaServerContextLabel = metadata.serverContextLabel
+                        metadataMessage = context.getString(
+                            R.string.pdf_metadata_llama_loaded,
+                            metadata.serverModelLabel ?: context.getString(R.string.pdf_server_value_unavailable),
+                            metadata.serverContextLabel ?: context.getString(R.string.pdf_server_value_unavailable)
+                        )
+                    }
+                }
+                .onFailure {
+                    metadataMessage = context.getString(
+                        R.string.pdf_metadata_refresh_failed,
+                        it.message ?: context.getString(R.string.error_generic)
+                    )
+                }
+            isRefreshingMetadata = false
+        }
+    }
     
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -1387,23 +1963,192 @@ fun SettingsTab(
                     Text(stringResource(R.string.dataset_server_settings), fontWeight = FontWeight.Bold)
                     Text(stringResource(R.string.dataset_server_desc), fontSize = 11.sp, color = Color.Gray)
                     Spacer(Modifier.height(12.dp))
-                    
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DatasetBackendChoiceButton(
+                            label = stringResource(R.string.pdf_backend_ollama),
+                            selected = backend == SettingsRepository.PDF_BACKEND_OLLAMA,
+                            onClick = { backend = SettingsRepository.PDF_BACKEND_OLLAMA },
+                            modifier = Modifier.weight(1f)
+                        )
+                        DatasetBackendChoiceButton(
+                            label = stringResource(R.string.pdf_backend_llama_server),
+                            selected = backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER,
+                            onClick = { backend = SettingsRepository.PDF_BACKEND_LLAMA_SERVER },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
                     OutlinedTextField(
-                        value = serverUrl, 
-                        onValueChange = { serverUrl = it }, 
-                        label = { Text(stringResource(R.string.dataset_server_url)) },
-                        placeholder = { Text(stringResource(R.string.dataset_server_default_hint)) },
+                        value = currentUrl,
+                        onValueChange = {
+                            if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                                serverUrl = it
+                            } else {
+                                ollamaUrl = it
+                            }
+                        },
+                        label = {
+                            Text(
+                                if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                                    stringResource(R.string.pdf_llama_server_url_label)
+                                } else {
+                                    stringResource(R.string.pdf_ollama_url_label)
+                                }
+                            )
+                        },
+                        placeholder = { Text(stringResource(R.string.dataset_backend_default_url, defaultUrl)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
                     Text(
-                        "Default: http://127.0.0.1:8080 (or custom external URL)",
+                        stringResource(R.string.dataset_backend_default_url, defaultUrl),
                         fontSize = 11.sp, 
                         color = Color.Gray
                     )
-                    
+
                     Spacer(Modifier.height(12.dp))
-                    
+
+                    OutlinedButton(
+                        onClick = ::refreshMetadata,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = currentUrl.isNotBlank() && !isRefreshingMetadata
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (isRefreshingMetadata) {
+                                stringResource(R.string.pdf_refreshing_metadata)
+                            } else {
+                                stringResource(R.string.pdf_refresh_backend_info)
+                            }
+                        )
+                    }
+
+                    metadataMessage?.let { message ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = message,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    if (backend == SettingsRepository.PDF_BACKEND_OLLAMA) {
+                        Text(
+                            stringResource(R.string.dataset_ollama_model_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Box {
+                            OutlinedButton(
+                                onClick = { showModelMenu = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = visibleOllamaModels.isNotEmpty()
+                            ) {
+                                Text(
+                                    text = ollamaModel.ifBlank {
+                                        context.getString(R.string.pdf_select_ollama_model)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                            DropdownMenu(
+                                expanded = showModelMenu,
+                                onDismissRequest = { showModelMenu = false }
+                            ) {
+                                if (visibleOllamaModels.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.pdf_no_remote_models_loaded)) },
+                                        onClick = { showModelMenu = false }
+                                    )
+                                } else {
+                                    visibleOllamaModels.forEach { model ->
+                                        DropdownMenuItem(
+                                            text = { Text(model) },
+                                            onClick = {
+                                                ollamaModel = model
+                                                showModelMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+
+                        IntSliderWithInput(
+                            value = ollamaNumCtx,
+                            onValueChange = { ollamaNumCtx = it },
+                            valueRange = 512..32768,
+                            label = stringResource(R.string.tama_chat_context_size_label)
+                        )
+
+                        IntSliderWithInput(
+                            value = ollamaThreads,
+                            onValueChange = { ollamaThreads = it },
+                            valueRange = 1..16,
+                            label = stringResource(R.string.ollama_threads_label, ollamaThreads)
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.ollama_mmap_label))
+                                Text(
+                                    stringResource(R.string.ollama_mmap_desc),
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                            Switch(checked = ollamaMmap, onCheckedChange = { ollamaMmap = it })
+                        }
+                    } else {
+                        Text(
+                            stringResource(R.string.pdf_llama_server_model_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            llamaServerModelLabel ?: stringResource(R.string.pdf_server_value_unavailable),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        Text(
+                            stringResource(R.string.pdf_llama_server_context_label),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            llamaServerContextLabel ?: stringResource(R.string.pdf_server_value_unavailable),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.dataset_llama_server_dashboard_hint),
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
                     IntSliderWithInput(
                         value = maxTokens,
                         onValueChange = { maxTokens = it },
@@ -1425,6 +2170,18 @@ fun SettingsTab(
                         Spacer(Modifier.weight(1f))
                         Switch(checked = useCoT, onCheckedChange = { useCoT = it })
                     }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = finalLanguage,
+                        onValueChange = { finalLanguage = it },
+                        label = { Text(stringResource(R.string.dataset_final_language_label)) },
+                        placeholder = { Text(stringResource(R.string.dataset_final_language_placeholder)) },
+                        supportingText = { Text(stringResource(R.string.dataset_final_language_help)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
                     
                     Spacer(Modifier.height(12.dp))
                     
@@ -1432,10 +2189,17 @@ fun SettingsTab(
                         onClick = {
                             project?.let {
                                 onUpdateProject(it.copy(
-                                    serverUrl = serverUrl,
+                                    backend = backend,
+                                    serverUrl = serverUrl.trim(),
+                                    ollamaUrl = ollamaUrl.trim(),
+                                    ollamaModel = ollamaModel.trim().ifBlank { null },
+                                    ollamaNumCtx = ollamaNumCtx,
+                                    ollamaThreads = ollamaThreads,
+                                    ollamaMmap = ollamaMmap,
                                     temperature = temperature,
                                     maxTokens = maxTokens,
-                                    useCoT = useCoT
+                                    useCoT = useCoT,
+                                    finalLanguage = finalLanguage.trim()
                                 ))
                             }
                         },
@@ -1546,8 +2310,11 @@ fun SettingsTab(
 }
 
 // Default prompts
-const val DEFAULT_CLEAN_PROMPT = """Clean this text by removing formatting artifacts, OCR errors, and noise.
-Keep the meaning intact. Do not summarize or change content.
+const val DEFAULT_CLEAN_PROMPT = """Clean this text aggressively for dataset training.
+
+Remove OCR mistakes, broken words, duplicate fragments, page numbers, headers, footers, navigation text, captions without useful meaning, watermarks, boilerplate, citation clutter, malformed tables, stray punctuation, and formatting artifacts.
+Preserve factual content, terminology, names, dates, numbers, relationships, and the original meaning. Do not summarize, invent, or add commentary.
+Return only the cleaned text.
 
 Previous context: {prev_chunk_50%}
 Text to clean: {chunk}
@@ -1555,7 +2322,14 @@ Next context: {next_chunk_50%}
 
 Cleaned text:"""
 
-const val DEFAULT_QUESTION_PROMPT = """Generate 1 unique question from this text.
+const val DEFAULT_QUESTION_PROMPT = """Generate exactly 1 useful question that is directly answerable from the meaningful content in this text.
+
+{final_language_instruction}
+
+Ignore leaked cleanup artifacts, formatting leftovers, page headers, footers, citation noise, navigation text, and unrelated fragments.
+Prefer specific factual, conceptual, or relationship questions that reflect the central information in the text.
+Do not ask about the text, passage, document, chunk, authoring process, or source. Do not include explanations.
+Return one question only.
 
 Previous: {prev_chunk_50%}
 Text: {chunk}
@@ -1563,7 +2337,15 @@ Next: {next_chunk_50%}
 
 Question:"""
 
-const val DEFAULT_ANSWER_PROMPT = """You are an expert assistant. Answer the question accurately and completely using only the provided context.
+const val DEFAULT_ANSWER_PROMPT = """Answer the question naturally and confidently, as if the knowledge is your own.
+
+{final_language_instruction}
+
+Use only the information contained in the provided context. Do not use outside knowledge, assumptions, or speculation.
+Never mention or imply that the answer comes from a text, context, passage, excerpt, document, source, or provided material.
+If the provided context does not contain enough information to answer the question, output exactly:
+there is not enough information in the provided text
+
 {if CoT: Think step by step before answering.}
 
 Context:
@@ -1571,26 +2353,27 @@ Context:
 
 Question: {question}
 
-Provide a clear, informative answer. If the context does not contain enough information to fully answer the question, say so.
-
 Answer:"""
 
-const val DEFAULT_REVIEW_PROMPT = """You are a strict Q&A quality evaluator. Rate the following Q&A pair.
+const val DEFAULT_REVIEW_PROMPT = """You are a strict dataset quality reviewer. Evaluate whether this Q&A pair is useful for training.
 
-RUBRIC (score each criterion):
-- Relevance (0-2): Does the question directly relate to the context? Is it answerable from the given context?
-- Accuracy (0-2): Is the answer factually correct and complete based on the context?
-- Clarity (0-1): Are both the question and answer clear, well-formed, and unambiguous?
+{final_language_instruction}
 
-IMPORTANT: Your response MUST end with "FINAL_SCORE: X" where X is the sum (0-5).
+Use only the context as ground truth.
+Penalize hallucinations, unsupported details, vague or trivial questions, answers that mention the context/text/source, cleanup artifacts, formatting leakage, irrelevant content, partial answers, and unclear wording.
+
+Score from 1 to 5:
+5 = Excellent: specific, useful, fully supported, complete, natural, and source-free.
+4 = Good: supported and useful with only minor clarity or completeness issues.
+3 = Acceptable: mostly supported but somewhat shallow, incomplete, or awkward.
+2 = Poor: weakly related, vague, artifact-contaminated, incomplete, or partly unsupported.
+1 = Bad: wrong, hallucinated, unanswerable from context, irrelevant, or explicitly source-referential.
+
+Your response must include brief reasoning and end with exactly "FINAL_SCORE: X" where X is 1, 2, 3, 4, or 5.
 
 Question: {question}
 Answer: {answer}
 Context: {context}
 
-Evaluate each criterion, then provide your FINAL_SCORE.
-Example output format:
-Relevance: 2/2 - [your reasoning]
-Accuracy: 2/2 - [your reasoning]
-Clarity: 1/1 - [your reasoning]
-FINAL_SCORE: 5"""
+Justification:
+FINAL_SCORE:"""

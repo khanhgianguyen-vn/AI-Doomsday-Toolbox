@@ -18,7 +18,7 @@ object AIConstants {
 
     // Timeouts
     object Timeouts {
-        const val OLLAMA_MODEL_PULL_MINUTES = 5L
+        const val OLLAMA_MODEL_PULL_MINUTES = 30L
     }
 
     // Default AI Parameters

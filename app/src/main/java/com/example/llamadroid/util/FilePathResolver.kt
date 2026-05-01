@@ -36,6 +36,38 @@ object FilePathResolver {
         
         return null
     }
+
+    fun getPathFromTreeUri(context: Context, uri: Uri): String? {
+        DebugLog.log("[FilePathResolver] Resolving tree URI: $uri")
+        return try {
+            if (!DocumentsContract.isTreeUri(uri)) {
+                return getPathFromUri(context, uri)
+            }
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val split = docId.split(":")
+            if (split.size != 2) return null
+            val storageId = split[0]
+            val relativePath = split[1]
+
+            if (storageId == "primary") {
+                val path = "${android.os.Environment.getExternalStorageDirectory()}/$relativePath"
+                if (File(path).exists()) return path
+            }
+
+            val sdCardPaths = getExternalStoragePaths(context)
+            for (sdPath in sdCardPaths) {
+                val fullPath = "$sdPath/$relativePath"
+                if (File(fullPath).exists()) return fullPath
+
+                val altPath = "/storage/$storageId/$relativePath"
+                if (File(altPath).exists()) return altPath
+            }
+            null
+        } catch (e: Exception) {
+            DebugLog.log("[FilePathResolver] Error resolving tree URI: ${e.message}")
+            null
+        }
+    }
     
     private fun resolveContentUri(context: Context, uri: Uri): String? {
         try {

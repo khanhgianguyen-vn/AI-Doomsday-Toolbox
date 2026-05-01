@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,15 +17,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.llamadroid.R
-import com.example.llamadroid.util.AssetPackManagerUtil
-import com.example.llamadroid.util.AssetPackManagerUtil.AssetPack
-import com.example.llamadroid.util.AssetPackManagerUtil.InstallState
+import com.example.llamadroid.util.DynamicFeatureManager
+import com.example.llamadroid.util.UpscalerAssetPackSupport
+import com.example.llamadroid.util.UpscalerAssetPackSupport.PreparationState
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import androidx.compose.ui.window.DialogProperties
 
 /**
- * Dialog shown on first launch to prompt user to download all asset packs
+ * Dialog shown when the upscaler runtime needs its transient Play-delivered assets.
  */
 @Composable
 fun AssetDownloadDialog(
@@ -33,24 +35,24 @@ fun AssetDownloadDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
+
     var isDownloading by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableIntStateOf(0) }
-    var currentState by remember { mutableStateOf<InstallState>(InstallState.Pending) }
+    var currentState by remember { mutableStateOf<PreparationState>(PreparationState.Pending) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    
-    val allPacks = remember { AssetPack.ALL }
-    val missingPacks = remember(isDownloading) {
-        if (!isDownloading) {
-            allPacks.filter { !AssetPackManagerUtil.isReady(context, it) }
-        } else emptyList()
+
+    val featureInstalled = remember(isDownloading) {
+        DynamicFeatureManager.isModuleInstalled(context, DynamicFeatureManager.MODULE_UPSCALER)
     }
-    
+    val modelsReady = remember(isDownloading) {
+        UpscalerAssetPackSupport.areModelsReady(context)
+    }
+
     AlertDialog(
         onDismissRequest = { if (!isDownloading) onDismiss() },
         title = {
             Text(
-                text = stringResource(R.string.feature_download_title),
+                text = stringResource(R.string.feature_upscaler_download_title),
                 fontWeight = FontWeight.Bold
             )
         },
@@ -61,107 +63,109 @@ fun AssetDownloadDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 if (isDownloading) {
-                    // Download progress view
                     val statusText = when (currentState) {
-                        is InstallState.Pending -> stringResource(R.string.feature_status_pending)
-                        is InstallState.Downloading -> stringResource(R.string.feature_downloading)
-                        is InstallState.Extracting -> stringResource(R.string.feature_status_extracting)
-                        is InstallState.Completed -> stringResource(R.string.feature_status_completed)
-                        is InstallState.Failed -> stringResource(R.string.feature_status_failed)
+                        is PreparationState.Pending -> stringResource(R.string.feature_status_pending)
+                        is PreparationState.InstallingFeature -> stringResource(R.string.feature_status_installing_feature)
+                        is PreparationState.Downloading -> stringResource(R.string.feature_downloading)
+                        is PreparationState.Extracting -> stringResource(R.string.feature_status_extracting)
+                        is PreparationState.RemovingPack -> stringResource(R.string.feature_status_removing_pack)
+                        is PreparationState.Completed -> stringResource(R.string.feature_status_completed)
+                        is PreparationState.Failed -> stringResource(R.string.feature_status_failed)
                     }
-                    
+
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
-                    if (currentState is InstallState.Downloading) {
+
+                    if (currentState is PreparationState.Downloading) {
                         LinearProgressIndicator(
                             progress = { downloadProgress / 100f },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         Text(
                             text = "$downloadProgress%",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    } else if (currentState is InstallState.Extracting) {
+                    } else {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         Text(
-                            text = stringResource(R.string.feature_status_extracting_desc),
+                            text = when (currentState) {
+                                is PreparationState.InstallingFeature -> stringResource(R.string.feature_status_installing_feature_desc)
+                                is PreparationState.Extracting -> stringResource(R.string.feature_status_extracting_desc)
+                                is PreparationState.RemovingPack -> stringResource(R.string.feature_status_removing_pack_desc)
+                                else -> stringResource(R.string.feature_status_pending_desc)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    
                 } else if (errorMessage != null) {
-                    // Error view
                     Text(
                         text = errorMessage ?: "",
                         color = MaterialTheme.colorScheme.error
                     )
                 } else {
-                    // Initial prompt
                     Text(
-                        text = stringResource(R.string.feature_download_description),
+                        text = stringResource(R.string.feature_upscaler_download_description),
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // List packs
-                    allPacks.forEach { pack ->
-                        val isInstalled = AssetPackManagerUtil.isReady(context, pack)
-                        AssetPackItem(
-                            pack = pack,
-                            isInstalled = isInstalled
-                        )
-                    }
-                    
-                    if (missingPacks.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Text(
-                            text = stringResource(
-                                R.string.feature_download_size_warning,
-                                AssetPackManagerUtil.getTotalSizeMB()
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(stringResource(R.string.feature_download_required_force))
-                    }
+
+                    AssetPackItem(
+                        title = stringResource(R.string.feature_upscaler_runtime_module),
+                        description = stringResource(R.string.feature_upscaler_runtime_module_desc),
+                        isInstalled = featureInstalled
+                    )
+                    AssetPackItem(
+                        title = stringResource(R.string.feature_upscaler_runtime_models),
+                        description = stringResource(R.string.feature_upscaler_runtime_models_desc),
+                        isInstalled = modelsReady
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = stringResource(
+                            R.string.feature_download_size_warning,
+                            UpscalerAssetPackSupport.estimatedDownloadSizeMb()
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(stringResource(R.string.feature_upscaler_download_required_force))
                 }
             }
         },
         confirmButton = {
             if (!isDownloading) {
-                // Mandatory download - no skip option
                 Button(
                     onClick = {
                         isDownloading = true
                         errorMessage = null
                         scope.launch {
-                            AssetPackManagerUtil.downloadAllPacks(context).collectLatest { state ->
+                            UpscalerAssetPackSupport.prepareForUse(context).collectLatest { state ->
                                 currentState = state
                                 when (state) {
-                                    is InstallState.Downloading -> {
+                                    is PreparationState.Downloading -> {
                                         downloadProgress = state.progress
                                     }
-                                    is InstallState.Completed -> {
+                                    is PreparationState.Completed -> {
                                         isDownloading = false
                                         onDownloadAll()
                                     }
-                                    is InstallState.Failed -> {
+                                    is PreparationState.Failed -> {
                                         errorMessage = state.error
                                         isDownloading = false
                                     }
@@ -171,18 +175,19 @@ fun AssetDownloadDialog(
                         }
                     }
                 ) {
-                    Text("Download")
+                    Text(stringResource(R.string.feature_download_all))
                 }
             }
         },
-        dismissButton = {}, // No dismiss allowed
+        dismissButton = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
     )
 }
 
 @Composable
 private fun AssetPackItem(
-    pack: AssetPack,
+    title: String,
+    description: String,
     isInstalled: Boolean
 ) {
     Row(
@@ -192,27 +197,27 @@ private fun AssetPackItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = getPackIcon(pack),
+            imageVector = if (isInstalled) Icons.Default.CheckCircle else Icons.Default.Extension,
             contentDescription = null,
             tint = if (isInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(24.dp)
         )
-        
+
         Spacer(modifier = Modifier.width(12.dp))
-        
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = stringResource(pack.displayNameRes),
+                text = title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = getPackDescription(pack),
+                text = description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        
+
         if (isInstalled) {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
@@ -221,20 +226,5 @@ private fun AssetPackItem(
                 modifier = Modifier.size(20.dp)
             )
         }
-    }
-}
-
-@Composable
-private fun getPackDescription(pack: AssetPack): String {
-    return when (pack) {
-        AssetPack.UPSCALER -> stringResource(R.string.feature_upscaler_desc)
-        else -> "" // Should be exhaustive if enum is small
-    }
-}
-
-private fun getPackIcon(pack: AssetPack): ImageVector {
-    return when (pack) {
-        AssetPack.UPSCALER -> Icons.Default.HighQuality
-        else -> Icons.Default.Extension
     }
 }

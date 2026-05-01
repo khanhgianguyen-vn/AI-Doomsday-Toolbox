@@ -15,9 +15,65 @@ data class ModelEntity(
     val mmprojPath: String? = null, // Path to the mmproj file for vision models
     // SD-specific fields
     val sdCapabilities: String? = null, // Comma-separated: "txt2img,img2img,upscale"
+    val sdFamily: String? = null,
+    val sdVariant: String? = null,
+    val sdCompatProfiles: String? = null,
+    // ONNX-specific fields
+    val onnxCapabilities: String? = null, // Comma-separated: "txt2img,img2img"
+    val onnxAssetKind: String? = null,
+    val onnxPipelineFamily: String? = null,
+    val onnxReferenceUri: String? = null,
+    val onnxReferencePath: String? = null,
     // Layer count for distributed inference
     val layerCount: Int = 0  // Number of transformer layers (from GGUF metadata)
 )
+
+const val SD_CAPABILITY_TXT2IMG = "txt2img"
+const val SD_CAPABILITY_IMG2IMG = "img2img"
+const val SD_CAPABILITY_UPSCALE = "upscale"
+const val SD_CAPABILITY_VID_GEN = "vid_gen"
+const val ONNX_CAPABILITY_TXT2IMG = "txt2img"
+const val ONNX_CAPABILITY_IMG2IMG = "img2img"
+
+fun String?.parseSdCapabilities(): Set<String> =
+    this
+        ?.split(",")
+        ?.map { it.trim() }
+        ?.filter { it.isNotBlank() }
+        ?.toSet()
+        ?: emptySet()
+
+fun buildSdCapabilities(vararg tokens: String?): String? {
+    val normalized = tokens
+        .mapNotNull { it?.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+    return normalized.joinToString(",").ifBlank { null }
+}
+
+fun ModelEntity.sdCapabilityTokens(): Set<String> = sdCapabilities.parseSdCapabilities()
+
+fun ModelEntity.hasSdCapability(token: String): Boolean = sdCapabilityTokens().contains(token)
+
+fun String?.parseOnnxCapabilities(): Set<String> =
+    this
+        ?.split(",")
+        ?.map { it.trim() }
+        ?.filter { it.isNotBlank() }
+        ?.toSet()
+        ?: emptySet()
+
+fun buildOnnxCapabilities(vararg tokens: String?): String? {
+    val normalized = tokens
+        .mapNotNull { it?.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+    return normalized.joinToString(",").ifBlank { null }
+}
+
+fun ModelEntity.onnxCapabilityTokens(): Set<String> = onnxCapabilities.parseOnnxCapabilities()
+
+fun ModelEntity.hasOnnxCapability(token: String): Boolean = onnxCapabilityTokens().contains(token)
 
 enum class ModelType {
     // LLM types
@@ -34,9 +90,15 @@ enum class ModelType {
     // FLUX-specific types (multi-component architecture)
     SD_DIFFUSION,     // Standalone diffusion/transformer model (FLUX)
     SD_CLIP_L,        // CLIP-L text encoder (for FLUX)
+    SD_CLIP_G,        // CLIP-G text encoder (for SD3)
     SD_T5XXL,         // T5-XXL text encoder (for FLUX)
+    SD_TAE,           // TAE/TAESD latent decoder
     SD_CONTROLNET,    // ControlNet conditioning model
+    SD_PHOTOMAKER,    // PhotoMaker adapter weights
+    // ONNX media types
+    ONNX_IMAGE_GEN,           // End-to-end image generation model
+    ONNX_BACKGROUND_REMOVAL,  // Background-removal / alpha-mask model
+    ONNX_IMAGE_UPSCALER,      // Image upscaler model
     // Whisper types
     WHISPER           // WhisperCPP speech-to-text model
 }
-

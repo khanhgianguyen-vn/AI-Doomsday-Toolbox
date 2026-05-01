@@ -2,6 +2,7 @@ package com.example.llamadroid.service
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import java.util.UUID
 
 /**
@@ -23,6 +24,7 @@ object StagedFileCache {
     )
     
     private val _stagedFiles = MutableStateFlow<Map<String, StagedFile>>(emptyMap())
+    private val stagedFilesLock = Any()
     val stagedFiles: StateFlow<Map<String, StagedFile>> = _stagedFiles
     
     /**
@@ -36,7 +38,9 @@ object StagedFileCache {
             originalContent = originalContent,
             agentRole = agentRole
         )
-        _stagedFiles.value = _stagedFiles.value + (path to staged)
+        synchronized(stagedFilesLock) {
+            _stagedFiles.update { it + (path to staged) }
+        }
         return staged
     }
     
@@ -70,46 +74,56 @@ object StagedFileCache {
      * Approve a staged file (removes from cache, returns content to write)
      */
     fun approve(path: String): StagedFile? {
-        val staged = _stagedFiles.value[path]
-        if (staged != null) {
-            _stagedFiles.value = _stagedFiles.value - path
+        synchronized(stagedFilesLock) {
+            val staged = _stagedFiles.value[path]
+            if (staged != null) {
+                _stagedFiles.update { it - path }
+            }
+            return staged
         }
-        return staged
     }
     
     /**
      * Deny a staged file (removes from cache)
      */
     fun deny(path: String): StagedFile? {
-        val staged = _stagedFiles.value[path]
-        if (staged != null) {
-            _stagedFiles.value = _stagedFiles.value - path
+        synchronized(stagedFilesLock) {
+            val staged = _stagedFiles.value[path]
+            if (staged != null) {
+                _stagedFiles.update { it - path }
+            }
+            return staged
         }
-        return staged
     }
     
     /**
      * Approve all pending files
      */
     fun approveAll(): List<StagedFile> {
-        val all = _stagedFiles.value.values.toList()
-        _stagedFiles.value = emptyMap()
-        return all
+        synchronized(stagedFilesLock) {
+            val all = _stagedFiles.value.values.sortedBy { it.timestamp }
+            _stagedFiles.update { emptyMap() }
+            return all
+        }
     }
     
     /**
      * Deny all pending files
      */
     fun denyAll(): List<StagedFile> {
-        val all = _stagedFiles.value.values.toList()
-        _stagedFiles.value = emptyMap()
-        return all
+        synchronized(stagedFilesLock) {
+            val all = _stagedFiles.value.values.sortedBy { it.timestamp }
+            _stagedFiles.update { emptyMap() }
+            return all
+        }
     }
     
     /**
      * Clear all staged files (e.g., on new conversation)
      */
     fun clear() {
-        _stagedFiles.value = emptyMap()
+        synchronized(stagedFilesLock) {
+            _stagedFiles.update { emptyMap() }
+        }
     }
 }

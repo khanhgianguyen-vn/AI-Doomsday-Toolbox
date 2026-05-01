@@ -1,0 +1,50 @@
+package com.example.llamadroid.service
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Test
+
+class OllamaToolPayloadTest {
+    @Test
+    fun `buildChatRequestJson includes tool call ids and tool result ids`() {
+        val payload = OllamaService.buildChatRequestJson(
+            model = "qwen",
+            messages = listOf(
+                OllamaService.ChatMessage(
+                    role = "assistant",
+                    content = "",
+                    toolCalls = listOf(OllamaService.ToolCall("calculator", mapOf("expression" to "2+2"), "call_1"))
+                ),
+                OllamaService.ChatMessage(
+                    role = "tool",
+                    content = "4",
+                    toolCallId = "call_1"
+                )
+            ),
+            tools = listOf(
+                AgentTool(
+                    name = "calculator",
+                    description = "Calculate",
+                    parameters = mapOf("expression" to "Expression"),
+                    requiredParams = listOf("expression")
+                )
+            ),
+            thinkingEnabled = true,
+            useMmap = false,
+            numThreads = 4,
+            numCtx = 4096
+        )
+
+        val messages = payload.getJSONArray("messages")
+        assertEquals("30m", payload.getString("keep_alive"))
+        val assistant = messages.getJSONObject(0)
+        val toolCall = assistant.getJSONArray("tool_calls").getJSONObject(0)
+        assertEquals("call_1", toolCall.getString("id"))
+        assertEquals("function", toolCall.getString("type"))
+
+        val tool = messages.getJSONObject(1)
+        assertEquals("tool", tool.getString("role"))
+        assertEquals("call_1", tool.getString("tool_call_id"))
+        assertNotNull(payload.getJSONArray("tools"))
+    }
+}

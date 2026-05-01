@@ -10,7 +10,21 @@ import com.example.llamadroid.data.api.HuggingFaceService
 import com.example.llamadroid.data.db.ModelDao
 import com.example.llamadroid.data.db.ModelEntity
 import com.example.llamadroid.data.db.ModelType
+import com.example.llamadroid.data.db.parseOnnxCapabilities
 import com.example.llamadroid.data.SettingsRepository
+import com.example.llamadroid.data.db.ONNX_CAPABILITY_TXT2IMG
+import com.example.llamadroid.sd.buildSdCompatProfiles
+import com.example.llamadroid.sd.defaultCompatProfilesFor
+import com.example.llamadroid.sd.defaultCapabilitiesForFamily
+import com.example.llamadroid.sd.inferSdFamily
+import com.example.llamadroid.onnx.ONNX_ASSET_KIND_SDAI_CATALOG_BUNDLE
+import com.example.llamadroid.onnx.ONNX_INSTALL_KIND_ARCHIVE_BUNDLE
+import com.example.llamadroid.onnx.ONNX_PIPELINE_FAMILY_SDAI_LOCAL_DIFFUSION
+import com.example.llamadroid.onnx.OnnxCatalogEntry
+import com.example.llamadroid.onnx.OnnxImportSupport
+import com.example.llamadroid.onnx.OnnxStorage
+import com.example.llamadroid.onnx.buildOnnxCatalogStableId
+import com.example.llamadroid.onnx.buildOnnxImageGenModelEntity
 import com.example.llamadroid.util.DebugLog
 import com.example.llamadroid.util.Downloader
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +38,7 @@ import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFact
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import java.io.File
+import com.example.llamadroid.data.db.buildOnnxCapabilities
 
 class ModelRepository(
     private val context: Context,
@@ -72,7 +87,10 @@ class ModelRepository(
     suspend fun getGgufFiles(repoId: String): List<String> = withContext(Dispatchers.IO) {
         try {
             val info = hfService.getRepoInfo(repoId)
-            info.siblings?.filter { it.rfilename.endsWith(".gguf") || it.rfilename.endsWith(".safetensors") }?.map { it.rfilename } ?: emptyList()
+            info.siblings
+                ?.filter { isSupportedMediaModelFile(it.rfilename) }
+                ?.map { it.rfilename }
+                ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -86,7 +104,7 @@ class ModelRepository(
             // Use the /tree/main endpoint which returns actual file sizes
             val treeItems = hfService.getRepoTree(repoId)
             treeItems
-                .filter { it.type == "file" && (it.path.endsWith(".gguf") || it.path.endsWith(".safetensors")) }
+                .filter { it.type == "file" && isSupportedMediaModelFile(it.path) }
                 .map { FileInfo(it.path, it.size) }
                 .sortedByDescending { it.sizeBytes } // Show largest first
         } catch (e: Exception) {
@@ -140,10 +158,18 @@ class ModelRepository(
             ModelType.SD_CHECKPOINT, ModelType.SD_UPSCALER -> "sd/checkpoints"
             ModelType.SD_DIFFUSION -> "sd/flux"
             ModelType.SD_CLIP_L -> "sd/clip_l"
+            ModelType.SD_CLIP_G -> "sd/clip_g"
             ModelType.SD_T5XXL -> "sd/t5xxl"
-            ModelType.SD_VAE -> "sd/vae"  
+            ModelType.SD_TAE -> "sd/tae"
+            ModelType.SD_VAE -> "sd/vae"
             ModelType.SD_LORA -> "sd/lora"
             ModelType.SD_CONTROLNET -> "sd/controlnet"
+            ModelType.SD_PHOTOMAKER -> "sd/photomaker"
+            ModelType.ONNX_IMAGE_GEN,
+            ModelType.ONNX_BACKGROUND_REMOVAL,
+            ModelType.ONNX_IMAGE_UPSCALER -> return OnnxStorage.managedModelsRoot().apply {
+                OnnxStorage.ensureManagedRootsReady()
+            }
             ModelType.WHISPER -> "whisper"
         }
         
@@ -170,10 +196,31 @@ class ModelRepository(
     
     // We will assume a standard URL structure for GGUF files for the sake of the MVP
     // User would select a specific quantization
-    suspend fun downloadModel(repoId: String, filename: String, type: ModelType, isVision: Boolean = false) {
+    suspend fun downloadModel(
+        repoId: String,
+        filename: String,
+        type: ModelType,
+        isVision: Boolean = false,
+        sdCapabilities: String? = null,
+        sdFamily: String? = null,
+        sdVariant: String? = null,
+        sdCompatProfiles: String? = null,
+        onnxCapabilities: String? = null,
+        onnxAssetKind: String? = null,
+        onnxPipelineFamily: String? = null,
+        onnxReferenceUri: String? = null,
+        onnxReferencePath: String? = null
+    ) {
         val modelUrl = "https://huggingface.co/$repoId/resolve/main/$filename"
         val modelDir = getModelDir(type)
         val destFile = File(modelDir, filename)
+        val inferredFamily = inferSdFamily(type, repoId, filename)
+        val resolvedFamily = sdFamily ?: inferredFamily.first?.storedValue
+        val resolvedVariant = sdVariant ?: inferredFamily.second
+        val resolvedCapabilities = sdCapabilities ?: defaultCapabilitiesForFamily(inferredFamily.first, type)
+        val resolvedCompatProfiles = sdCompatProfiles ?: buildSdCompatProfiles(
+            *defaultCompatProfilesFor(type).toTypedArray()
+        )
         
         // Use unique progress key: repoId for models, repoId:mmproj for vision projectors
         val progressKey = if (type == ModelType.VISION_PROJECTOR) "$repoId:mmproj" else repoId
@@ -211,10 +258,20 @@ class ModelRepository(
                 val entity = ModelEntity(
                     filename = filename,
                     path = destFile.absolutePath,
-                    sizeBytes = destFile.length(), 
+                    sizeBytes = destFile.length(),
                     type = type,
                     repoId = repoId,
-                    isDownloaded = true
+                    isVision = isVision,
+                    isDownloaded = true,
+                    sdCapabilities = resolvedCapabilities,
+                    sdFamily = resolvedFamily,
+                    sdVariant = resolvedVariant,
+                    sdCompatProfiles = resolvedCompatProfiles,
+                    onnxCapabilities = onnxCapabilities,
+                    onnxAssetKind = onnxAssetKind,
+                    onnxPipelineFamily = onnxPipelineFamily,
+                    onnxReferenceUri = onnxReferenceUri,
+                    onnxReferencePath = onnxReferencePath
                 )
                 modelDao.insertModel(entity)
                 DownloadProgressHolder.removeProgress(progressKey)
@@ -234,10 +291,31 @@ class ModelRepository(
      * Use this for SD models where the dialog closes immediately.
      * The download service will handle saving to DB via DownloadCompletionReceiver.
      */
-    fun startDownloadAsync(repoId: String, filename: String, type: ModelType, isVision: Boolean = false) {
+    fun startDownloadAsync(
+        repoId: String,
+        filename: String,
+        type: ModelType,
+        isVision: Boolean = false,
+        sdCapabilities: String? = null,
+        sdFamily: String? = null,
+        sdVariant: String? = null,
+        sdCompatProfiles: String? = null,
+        onnxCapabilities: String? = null,
+        onnxAssetKind: String? = null,
+        onnxPipelineFamily: String? = null,
+        onnxReferenceUri: String? = null,
+        onnxReferencePath: String? = null
+    ) {
         val modelUrl = "https://huggingface.co/$repoId/resolve/main/$filename"
         val modelDir = getModelDir(type)
         val destFile = File(modelDir, filename)
+        val inferredFamily = inferSdFamily(type, repoId, filename)
+        val resolvedFamily = sdFamily ?: inferredFamily.first?.storedValue
+        val resolvedVariant = sdVariant ?: inferredFamily.second
+        val resolvedCapabilities = sdCapabilities ?: defaultCapabilitiesForFamily(inferredFamily.first, type)
+        val resolvedCompatProfiles = sdCompatProfiles ?: buildSdCompatProfiles(
+            *defaultCompatProfilesFor(type).toTypedArray()
+        )
         
         // Use unique progress key
         val progressKey = repoId
@@ -246,7 +324,23 @@ class ModelRepository(
         DownloadProgressHolder.updateProgress(progressKey, filename, 0f)
         
         // Store pending download info so DownloadService can save to DB on completion
-        PendingDownloadHolder.addPending(filename, repoId, type, destFile.absolutePath, isVision)
+        PendingDownloadHolder.addPending(
+            filename = filename,
+            repoId = repoId,
+            progressKey = progressKey,
+            type = type,
+            destPath = destFile.absolutePath,
+            isVision = isVision,
+            sdCapabilities = resolvedCapabilities,
+            sdFamily = resolvedFamily,
+            sdVariant = resolvedVariant,
+            sdCompatProfiles = resolvedCompatProfiles,
+            onnxCapabilities = onnxCapabilities,
+            onnxAssetKind = onnxAssetKind,
+            onnxPipelineFamily = onnxPipelineFamily,
+            onnxReferenceUri = onnxReferenceUri,
+            onnxReferencePath = onnxReferencePath
+        )
         
         // Start foreground service (this is called from main thread via onClick)
         com.example.llamadroid.service.DownloadService.startDownload(
@@ -258,15 +352,198 @@ class ModelRepository(
         
         DebugLog.log("ModelRepository: Started async download for $filename")
     }
+
+    fun startOnnxCatalogDownload(entry: OnnxCatalogEntry) {
+        OnnxStorage.ensureManagedRootsReady()
+        val modelId = buildOnnxCatalogStableId(entry.provider, entry.bundleId)
+        val progressKey = "onnx:$modelId"
+        val tempArchive = File(OnnxStorage.tempDownloadDir(context).apply { mkdirs() }, "$modelId.zip")
+
+        DownloadProgressHolder.updateProgress(progressKey, modelId, 0f)
+        DownloadProgressHolder.updateStatus(progressKey, "Downloading")
+        PendingDownloadHolder.addPending(
+            filename = modelId,
+            repoId = entry.repoId,
+            progressKey = progressKey,
+            type = ModelType.ONNX_IMAGE_GEN,
+            destPath = tempArchive.absolutePath,
+            onnxCapabilities = buildOnnxCapabilities(ONNX_CAPABILITY_TXT2IMG),
+            onnxAssetKind = ONNX_ASSET_KIND_SDAI_CATALOG_BUNDLE,
+            onnxPipelineFamily = ONNX_PIPELINE_FAMILY_SDAI_LOCAL_DIFFUSION,
+            onnxReferenceUri = entry.downloadUrl,
+            onnxReferencePath = null,
+            onnxInstallKind = ONNX_INSTALL_KIND_ARCHIVE_BUNDLE,
+            onnxInstallDirPath = OnnxStorage.managedBundleDir(modelId).absolutePath
+        )
+
+        com.example.llamadroid.service.DownloadService.startDownload(
+            context = context,
+            url = entry.downloadUrl,
+            destPath = tempArchive.absolutePath,
+            filename = modelId
+        )
+    }
     
     suspend fun deleteModel(model: ModelEntity) {
         val file = File(model.path)
-        if (file.exists()) file.delete()
+        if (file.exists() && isManagedModelPath(file)) {
+            if (file.isDirectory) {
+                OnnxImportSupport.deleteRecursively(file)
+            } else {
+                file.delete()
+            }
+        }
         modelDao.deleteModel(model)
     }
     
     suspend fun insertModel(model: ModelEntity) {
         modelDao.insertModel(model)
+    }
+
+    suspend fun updateModel(
+        original: ModelEntity,
+        newFilename: String,
+        newType: ModelType,
+        sdCapabilities: String? = original.sdCapabilities,
+        sdFamily: String? = original.sdFamily,
+        sdVariant: String? = original.sdVariant,
+        sdCompatProfiles: String? = original.sdCompatProfiles,
+        onnxCapabilities: String? = original.onnxCapabilities,
+        onnxAssetKind: String? = original.onnxAssetKind,
+        onnxPipelineFamily: String? = original.onnxPipelineFamily,
+        onnxReferenceUri: String? = original.onnxReferenceUri,
+        onnxReferencePath: String? = original.onnxReferencePath
+    ): Result<ModelEntity> = withContext(Dispatchers.IO) {
+        try {
+            val normalizedFilename = newFilename.trim()
+            if (normalizedFilename.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Filename cannot be blank"))
+            }
+
+            val sourceFile = File(original.path)
+            if (!sourceFile.exists()) {
+                return@withContext Result.failure(IllegalStateException("Model file not found"))
+            }
+            val isManagedSource = isManagedModelPath(sourceFile)
+
+            val finalFile = if (isManagedSource) {
+                val targetDir = if (newType == original.type) {
+                    sourceFile.parentFile ?: getModelDir(newType)
+                } else {
+                    getModelDir(newType)
+                }.apply { mkdirs() }
+
+                val targetFile = File(targetDir, normalizedFilename)
+                if (targetFile.absolutePath != sourceFile.absolutePath) {
+                    if (targetFile.exists()) {
+                        return@withContext Result.failure(
+                            IllegalStateException("A model with that name already exists in the target location")
+                        )
+                    }
+
+                    val renamed = sourceFile.renameTo(targetFile)
+                    if (!renamed) {
+                        sourceFile.inputStream().use { input ->
+                            targetFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+
+                        sourceFile.delete()
+                    }
+                }
+                if (targetFile.absolutePath == sourceFile.absolutePath) sourceFile else targetFile
+            } else {
+                sourceFile
+            }
+            val inferredFamily = inferSdFamily(newType, original.repoId, normalizedFilename)
+            val updated = original.copy(
+                filename = normalizedFilename,
+                path = if (isManagedSource) finalFile.absolutePath else original.path,
+                sizeBytes = if (finalFile.exists()) finalFile.length() else original.sizeBytes,
+                type = newType,
+                sdCapabilities = sdCapabilities ?: defaultCapabilitiesForFamily(inferredFamily.first, newType),
+                sdFamily = sdFamily ?: inferredFamily.first?.storedValue,
+                sdVariant = sdVariant ?: inferredFamily.second,
+                sdCompatProfiles = sdCompatProfiles ?: buildSdCompatProfiles(
+                    *defaultCompatProfilesFor(newType).toTypedArray()
+                ),
+                onnxCapabilities = onnxCapabilities,
+                onnxAssetKind = onnxAssetKind,
+                onnxPipelineFamily = onnxPipelineFamily,
+                onnxReferenceUri = onnxReferenceUri,
+                onnxReferencePath = onnxReferencePath ?: original.onnxReferencePath
+            )
+
+            modelDao.insertModel(updated)
+            if (original.filename != updated.filename) {
+                modelDao.deleteByFilename(original.filename)
+            }
+
+            Result.success(updated)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun isManagedModelPath(file: File): Boolean {
+        val internalRoot = context.filesDir
+        val externalRoot = context.getExternalFilesDir(null)
+        val onnxRoot = OnnxStorage.managedModelsRoot()
+        val legacyOnnxRoot = OnnxStorage.legacyManagedModelsRoot()
+        return isWithinRoot(file, internalRoot) ||
+            (externalRoot != null && isWithinRoot(file, externalRoot)) ||
+            isWithinRoot(file, onnxRoot) ||
+            isWithinRoot(file, legacyOnnxRoot)
+    }
+
+    private fun isWithinRoot(file: File, root: File): Boolean {
+        val filePath = file.canonicalFile.absolutePath
+        val rootPath = root.canonicalFile.absolutePath
+        return filePath == rootPath || filePath.startsWith("$rootPath${File.separator}")
+    }
+
+    companion object {
+        fun resolveOnnxCapabilities(
+            explicitCapabilities: String?,
+            detectedCapabilities: Set<String>
+        ): String? {
+            val explicit = explicitCapabilities.parseOnnxCapabilities()
+            val resolved = if (detectedCapabilities.isNotEmpty()) {
+                if (explicit.isEmpty()) detectedCapabilities else explicit + detectedCapabilities
+            } else {
+                explicit
+            }
+            return buildOnnxCapabilities(*resolved.toTypedArray())
+        }
+
+        fun buildImportedOnnxModelEntity(
+            filename: String,
+            path: String,
+            sizeBytes: Long,
+            repoId: String,
+            installSource: com.example.llamadroid.onnx.OnnxInstallSource,
+            detectedCapabilities: Set<String>,
+            referenceUri: String?,
+            referencePath: String?
+        ): ModelEntity = buildOnnxImageGenModelEntity(
+            filename = filename,
+            path = path,
+            sizeBytes = sizeBytes,
+            repoId = repoId,
+            installSource = installSource,
+            supportedCapabilities = detectedCapabilities.ifEmpty { setOf(ONNX_CAPABILITY_TXT2IMG) },
+            referenceUri = referenceUri,
+            referencePath = referencePath
+        )
+
+        fun isSupportedMediaModelFile(path: String): Boolean {
+            val normalized = path.lowercase()
+            return normalized.endsWith(".gguf") ||
+                normalized.endsWith(".safetensors") ||
+                normalized.endsWith(".onnx") ||
+                normalized.endsWith(".ort")
+        }
     }
 }
 
@@ -274,6 +551,9 @@ class ModelRepository(
 object DownloadProgressHolder {
     private val _progress = MutableStateFlow<Map<String, Float>>(emptyMap())
     val progress = _progress.asStateFlow()
+
+    private val _status = MutableStateFlow<Map<String, String>>(emptyMap())
+    val status = _status.asStateFlow()
     
     // Track filename for each repoId for cancellation
     private val filenameMap = mutableMapOf<String, String>()
@@ -287,6 +567,12 @@ object DownloadProgressHolder {
     fun updateProgress(repoId: String, value: Float) {
         _progress.value = _progress.value.toMutableMap().apply { put(repoId, value) }
     }
+
+    fun updateStatus(repoId: String, value: String) {
+        _status.value = _status.value.toMutableMap().apply { put(repoId, value) }
+    }
+
+    fun getStatus(repoId: String): String? = _status.value[repoId]
     
     /** Find repoId by filename (for service callback) */
     fun findRepoIdByFilename(filename: String): String? {
@@ -296,6 +582,7 @@ object DownloadProgressHolder {
     fun removeProgress(repoId: String) {
         filenameMap.remove(repoId)
         _progress.value = _progress.value.toMutableMap().apply { remove(repoId) }
+        _status.value = _status.value.toMutableMap().apply { remove(repoId) }
     }
     
     fun getFilename(repoId: String): String? = filenameMap[repoId]
@@ -344,16 +631,64 @@ data class RepoFiles(
 data class PendingDownload(
     val filename: String,
     val repoId: String,
+    val progressKey: String,
     val type: com.example.llamadroid.data.db.ModelType,
     val destPath: String,
-    val isVision: Boolean = false
+    val isVision: Boolean = false,
+    val sdCapabilities: String? = null,
+    val sdFamily: String? = null,
+    val sdVariant: String? = null,
+    val sdCompatProfiles: String? = null,
+    val onnxCapabilities: String? = null,
+    val onnxAssetKind: String? = null,
+    val onnxPipelineFamily: String? = null,
+    val onnxReferenceUri: String? = null,
+    val onnxReferencePath: String? = null,
+    val onnxInstallKind: String? = null,
+    val onnxInstallDirPath: String? = null
 )
 
 object PendingDownloadHolder {
     private val pendingDownloads = mutableMapOf<String, PendingDownload>()
     
-    fun addPending(filename: String, repoId: String, type: com.example.llamadroid.data.db.ModelType, destPath: String, isVision: Boolean = false) {
-        pendingDownloads[filename] = PendingDownload(filename, repoId, type, destPath, isVision)
+    fun addPending(
+        filename: String,
+        repoId: String,
+        progressKey: String = repoId,
+        type: com.example.llamadroid.data.db.ModelType,
+        destPath: String,
+        isVision: Boolean = false,
+        sdCapabilities: String? = null,
+        sdFamily: String? = null,
+        sdVariant: String? = null,
+        sdCompatProfiles: String? = null,
+        onnxCapabilities: String? = null,
+        onnxAssetKind: String? = null,
+        onnxPipelineFamily: String? = null,
+        onnxReferenceUri: String? = null,
+        onnxReferencePath: String? = null,
+        onnxInstallKind: String? = null,
+        onnxInstallDirPath: String? = null
+    ) {
+        pendingDownloads[filename] = PendingDownload(
+            filename = filename,
+            repoId = repoId,
+            progressKey = progressKey,
+            type = type,
+            destPath = destPath,
+            isVision = isVision,
+            sdCapabilities = sdCapabilities,
+            sdFamily = sdFamily,
+            sdVariant = sdVariant,
+            sdCompatProfiles = sdCompatProfiles,
+            onnxCapabilities = onnxCapabilities,
+            onnxAssetKind = onnxAssetKind,
+            onnxPipelineFamily = onnxPipelineFamily,
+            onnxReferenceUri = onnxReferenceUri,
+            onnxReferencePath = onnxReferencePath,
+            onnxInstallKind = onnxInstallKind,
+            onnxInstallDirPath = onnxInstallDirPath
+        )
     }
     
     fun getPending(filename: String): PendingDownload? = pendingDownloads[filename]
@@ -362,4 +697,3 @@ object PendingDownloadHolder {
         pendingDownloads.remove(filename)
     }
 }
-

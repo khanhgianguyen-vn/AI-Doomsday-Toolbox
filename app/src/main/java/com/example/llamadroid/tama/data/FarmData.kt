@@ -32,6 +32,33 @@ data class PlantedCrop(
     val isDecayed: Boolean = false
 )
 
+@Serializable
+enum class ComposterSlotState {
+    EMPTY,
+    PROCESSING,
+    READY
+}
+
+@Serializable
+data class ComposterSlot(
+    val state: ComposterSlotState = ComposterSlotState.EMPTY,
+    val startedAt: Long? = null,
+    val readyAt: Long? = null,
+    val inputItemId: String? = null
+)
+
+@Serializable
+data class WellSlot(
+    val hasWater: Boolean = false,
+    val cycleStartedAt: Long? = null
+)
+
+@Serializable
+data class WellUpgradeState(
+    val speedLevel: Int = 0,
+    val slots: List<WellSlot> = emptyList()
+)
+
 /**
  * Static definitions for crop types and their properties.
  */
@@ -78,6 +105,7 @@ data class InventoryItem(
 @Serializable
 enum class ItemType(val emoji: String) {
     FOOD("🍖"),
+    POTION("🧪"),
     TOY("🎮"),
     MEDICINE("💊"),
     SEED("🌱"),

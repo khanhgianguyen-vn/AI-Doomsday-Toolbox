@@ -72,6 +72,9 @@ class FileServerService : Service() {
     
     override fun onDestroy() {
         stopServer()
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -139,6 +142,8 @@ class FileServerService : Service() {
         _serverUrls.value = emptyList()
         folderUri = null
         WakeLockManager.release("FileServerService")
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
     }
     
     private fun getAllLocalIpAddresses(): List<Pair<String, String>> {
@@ -192,6 +197,7 @@ class FileServerService : Service() {
         
         override fun serve(session: IHTTPSession): Response {
             val uri = session.uri.trimStart('/')
+            @Suppress("DEPRECATION")
             val params = session.parms ?: emptyMap()
             Log.d(TAG, "Request: $uri, params: $params")
             

@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -20,14 +21,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.llamadroid.R
+
+private const val URL_ANNOTATION_TAG = "url"
+private val HyperlinkBlue = Color(0xFF1A73E8)
+private val PlainUrlPattern = Regex("""(?i)(https?://|www\.)[^\s<>\[\]{}"']+""")
+private val TrailingUrlPunctuation = setOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
 
 /**
  * Lightweight Markdown renderer for chat messages.
@@ -133,12 +141,12 @@ private fun CodeBlockView(block: MdBlock.CodeBlock) {
                 ) {
                     Icon(
                         Icons.Default.ContentCopy,
-                        contentDescription = "Copy",
+                        contentDescription = stringResource(R.string.llama_copy_code),
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Copy",
+                        text = stringResource(R.string.llama_copy_code),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -184,39 +192,64 @@ private fun MarkdownSpannedText(content: String, textColor: Color) {
             when {
                 // Headers
                 trimmed.startsWith("### ") -> {
-                    Text(
-                        text = buildInlineAnnotated(trimmed.removePrefix("### "), textColor, codeStyle),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
+                    MarkdownInlineText(
+                        text = trimmed.removePrefix("### "),
+                        textColor = textColor,
+                        codeStyle = codeStyle,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
                 trimmed.startsWith("## ") -> {
-                    Text(
-                        text = buildInlineAnnotated(trimmed.removePrefix("## "), textColor, codeStyle),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
+                    MarkdownInlineText(
+                        text = trimmed.removePrefix("## "),
+                        textColor = textColor,
+                        codeStyle = codeStyle,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(top = 6.dp)
                     )
                 }
                 trimmed.startsWith("# ") -> {
-                    Text(
-                        text = buildInlineAnnotated(trimmed.removePrefix("# "), textColor, codeStyle),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
+                    MarkdownInlineText(
+                        text = trimmed.removePrefix("# "),
+                        textColor = textColor,
+                        codeStyle = codeStyle,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
+                // Task lists
+                trimmed.matches(Regex("""^[-*]\s+\[[ xX]]\s+.*""")) -> {
+                    val checked = trimmed.contains("[x]", ignoreCase = true)
+                    val itemText = trimmed.replace(Regex("""^[-*]\s+\[[ xX]]\s+"""), "")
+                    Row(
+                        modifier = Modifier.padding(start = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = null,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        MarkdownInlineText(
+                            text = itemText,
+                            textColor = textColor,
+                            codeStyle = codeStyle,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
                 // Bullet lists
                 trimmed.startsWith("- ") || trimmed.startsWith("* ") -> {
-                    Row(modifier = Modifier.padding(start = 8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(start = 8.dp)) {
                         Text("• ", color = textColor, fontSize = 16.sp)
-                        Text(
-                            text = buildInlineAnnotated(trimmed.drop(2), textColor, codeStyle),
-                            fontSize = 16.sp
+                        MarkdownInlineText(
+                            text = trimmed.drop(2),
+                            textColor = textColor,
+                            codeStyle = codeStyle,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -224,11 +257,14 @@ private fun MarkdownSpannedText(content: String, textColor: Color) {
                 trimmed.matches(Regex("^\\d+\\.\\s.*")) -> {
                     val number = trimmed.substringBefore(".")
                     val rest = trimmed.substringAfter(". ")
-                    Row(modifier = Modifier.padding(start = 8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(start = 8.dp)) {
                         Text("$number. ", color = textColor, fontSize = 16.sp)
-                        Text(
-                            text = buildInlineAnnotated(rest, textColor, codeStyle),
-                            fontSize = 16.sp
+                        MarkdownInlineText(
+                            text = rest,
+                            textColor = textColor,
+                            codeStyle = codeStyle,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -238,14 +274,43 @@ private fun MarkdownSpannedText(content: String, textColor: Color) {
                 }
                 // Regular paragraph
                 else -> {
-                    Text(
-                        text = buildInlineAnnotated(trimmed, textColor, codeStyle),
-                        fontSize = 16.sp
+                    MarkdownInlineText(
+                        text = trimmed,
+                        textColor = textColor,
+                        codeStyle = codeStyle,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun MarkdownInlineText(
+    text: String,
+    textColor: Color,
+    codeStyle: SpanStyle,
+    modifier: Modifier = Modifier,
+    style: TextStyle = TextStyle.Default
+) {
+    val uriHandler = LocalUriHandler.current
+    val annotated = remember(text, textColor, codeStyle) {
+        buildInlineAnnotated(text, textColor, codeStyle)
+    }
+    ClickableText(
+        text = annotated,
+        modifier = modifier,
+        style = style.copy(color = textColor),
+        onClick = { offset ->
+            annotated
+                .getStringAnnotations(URL_ANNOTATION_TAG, offset, offset)
+                .firstOrNull()
+                ?.let { annotation ->
+                    runCatching { uriHandler.openUri(annotation.item) }
+                }
+        }
+    )
 }
 
 // ─── Inline Span Builder ─────────────────────────────────────────────────────
@@ -260,6 +325,27 @@ private fun buildInlineAnnotated(
         var i = 0
         while (i < text.length) {
             when {
+                text[i] == '[' && (i == 0 || text[i - 1] != '!') -> {
+                    val markdownLink = parseMarkdownLinkAt(text, i)
+                    if (markdownLink != null) {
+                        appendHyperlink(
+                            label = markdownLink.label.ifBlank { markdownLink.url },
+                            url = markdownLink.url
+                        )
+                        i = markdownLink.endExclusive
+                    } else {
+                        append(text[i])
+                        i++
+                    }
+                }
+                plainUrlAt(text, i) != null -> {
+                    val plainUrl = plainUrlAt(text, i)!!
+                    appendHyperlink(plainUrl.displayText, plainUrl.url)
+                    if (plainUrl.trailingText.isNotEmpty()) {
+                        append(plainUrl.trailingText)
+                    }
+                    i = plainUrl.endExclusive
+                }
                 // Inline code: `...`
                 text[i] == '`' && i + 1 < text.length -> {
                     val endTick = text.indexOf('`', i + 1)
@@ -308,7 +394,71 @@ private fun buildInlineAnnotated(
                 }
             }
         }
-        // Set default color for any spans that don't have explicit color
-        addStyle(SpanStyle(color = defaultColor), 0, length)
     }
+}
+
+private data class ParsedMarkdownLink(
+    val label: String,
+    val url: String,
+    val endExclusive: Int
+)
+
+private data class ParsedPlainUrl(
+    val displayText: String,
+    val trailingText: String,
+    val url: String,
+    val endExclusive: Int
+)
+
+private fun parseMarkdownLinkAt(text: String, start: Int): ParsedMarkdownLink? {
+    val labelEnd = text.indexOf("](", start + 1)
+    if (labelEnd <= start) return null
+    val urlStart = labelEnd + 2
+    val urlEnd = text.indexOf(')', urlStart)
+    if (urlEnd == -1) return null
+    val rawUrl = text.substring(urlStart, urlEnd).trim()
+    val normalizedUrl = normalizeBrowserUrl(rawUrl) ?: return null
+    return ParsedMarkdownLink(
+        label = text.substring(start + 1, labelEnd),
+        url = normalizedUrl,
+        endExclusive = urlEnd + 1
+    )
+}
+
+private fun plainUrlAt(text: String, start: Int): ParsedPlainUrl? {
+    val match = PlainUrlPattern.find(text, start)?.takeIf { it.range.first == start } ?: return null
+    val raw = match.value
+    val display = raw.trimEnd { it in TrailingUrlPunctuation }
+    if (display.isBlank()) return null
+    val normalizedUrl = normalizeBrowserUrl(display) ?: return null
+    return ParsedPlainUrl(
+        displayText = display,
+        trailingText = raw.drop(display.length),
+        url = normalizedUrl,
+        endExclusive = match.range.last + 1
+    )
+}
+
+private fun normalizeBrowserUrl(rawUrl: String): String? {
+    val trimmed = rawUrl.trim()
+    return when {
+        trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true) -> trimmed
+        trimmed.startsWith("www.", ignoreCase = true) -> "https://$trimmed"
+        else -> null
+    }
+}
+
+private fun AnnotatedString.Builder.appendHyperlink(label: String, url: String) {
+    val start = length
+    append(label)
+    addStringAnnotation(URL_ANNOTATION_TAG, url, start, length)
+    addStyle(
+        SpanStyle(
+            color = HyperlinkBlue,
+            textDecoration = TextDecoration.Underline
+        ),
+        start,
+        length
+    )
 }

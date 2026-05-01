@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 
 data class OllamaUiState(
     val servers: List<OllamaServerEntity> = emptyList(),
+    val selectedServerId: Long? = null,
     val selectedServer: OllamaServerEntity? = null,
     val models: List<OllamaModel> = emptyList(),
     val isLoading: Boolean = false,
@@ -41,10 +42,18 @@ class OllamaViewModel(
     init {
         viewModelScope.launch {
             repository.savedServers.collect { servers ->
-                _uiState.value = _uiState.value.copy(servers = servers)
-                // Select first server if none selected and servers exist
-                if (_uiState.value.selectedServer == null && servers.isNotEmpty()) {
+                val currentState = _uiState.value
+                val selectedServer = resolveSelectedOllamaServer(servers, currentState.selectedServerId)
+                val hadSelection = currentState.selectedServerId != null
+                _uiState.value = currentState.copy(
+                    servers = servers,
+                    selectedServer = selectedServer,
+                    selectedServerId = selectedServer?.id
+                )
+                if (!hadSelection && servers.isNotEmpty()) {
                     selectServer(servers.first())
+                } else if (hadSelection && selectedServer == null) {
+                    _uiState.value = _uiState.value.copy(models = emptyList())
                 }
             }
         }
@@ -60,15 +69,27 @@ class OllamaViewModel(
                 val hasNewCompletion = completedModels.any { it !in lastCompletedModels }
                 lastCompletedModels = completedModels
                 if (hasNewCompletion) {
-                    _uiState.value.selectedServer?.let { fetchModels(it) }
+                    resolveSelectedServer()?.let { fetchModels(it) }
                 }
             }
         }
     }
 
     fun selectServer(server: OllamaServerEntity) {
-        _uiState.value = _uiState.value.copy(selectedServer = server)
+        _uiState.value = _uiState.value.copy(
+            selectedServerId = server.id,
+            selectedServer = server
+        )
         fetchModels(server)
+    }
+
+    fun refreshSelectedServerModels() {
+        resolveSelectedServer()?.let { fetchModels(it) }
+    }
+
+    private fun resolveSelectedServer(): OllamaServerEntity? {
+        val state = _uiState.value
+        return resolveSelectedOllamaServer(state.servers, state.selectedServerId)
     }
 
     fun fetchModels(server: OllamaServerEntity) {
@@ -102,8 +123,9 @@ class OllamaViewModel(
     fun deleteServer(server: OllamaServerEntity) {
         viewModelScope.launch {
             repository.deleteServer(server)
-            if (_uiState.value.selectedServer == server) {
+            if (_uiState.value.selectedServerId == server.id) {
                 _uiState.value = _uiState.value.copy(
+                    selectedServerId = null,
                     selectedServer = null,
                     models = emptyList()
                 )
@@ -114,11 +136,15 @@ class OllamaViewModel(
     fun updateServer(server: OllamaServerEntity) {
         viewModelScope.launch {
             repository.updateServer(server)
+            if (_uiState.value.selectedServerId == server.id) {
+                _uiState.value = _uiState.value.copy(selectedServer = server)
+                fetchModels(server)
+            }
         }
     }
 
     fun pullModel(modelName: String) {
-        val server = uiState.value.selectedServer ?: return
+        val server = resolveSelectedServer() ?: return
         runtimeManager.pullModel(server.url, modelName)
     }
 
@@ -149,11 +175,11 @@ class OllamaViewModel(
     }
 
     fun deleteModel(modelName: String) {
-        val server = uiState.value.selectedServer ?: return
+        val server = resolveSelectedServer() ?: return
         viewModelScope.launch {
             try {
                 repository.deleteModel(server.url, modelName)
-                fetchModels(server)
+                resolveSelectedServer()?.let { fetchModels(it) }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     error = appContext.getString(R.string.ollama_error_delete_model, e.message ?: e.javaClass.simpleName)
@@ -163,7 +189,7 @@ class OllamaViewModel(
     }
     
     fun createModel(name: String, fromModel: String, modelfile: String) {
-        val server = uiState.value.selectedServer ?: return
+        val server = resolveSelectedServer() ?: return
         val normalizedName = repository.normalizeCreateModelName(name)
         if (!repository.isValidCreateModelName(normalizedName)) {
             _uiState.value = _uiState.value.copy(
@@ -186,7 +212,7 @@ class OllamaViewModel(
     }
     
     fun getModelInfo(modelName: String, onResult: (String, String) -> Unit) {
-        val server = uiState.value.selectedServer ?: return
+        val server = resolveSelectedServer() ?: return
         viewModelScope.launch {
             try {
                 val info = repository.getModelInfo(server.url, modelName)

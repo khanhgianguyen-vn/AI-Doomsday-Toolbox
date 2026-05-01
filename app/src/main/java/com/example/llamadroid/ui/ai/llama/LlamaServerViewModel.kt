@@ -4,16 +4,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.llamadroid.data.api.LlamaApi
-import com.example.llamadroid.data.api.LlamaModelsResponse
+import com.example.llamadroid.data.api.OllamaApi
+import com.example.llamadroid.data.api.OllamaModel
+import com.example.llamadroid.data.api.OllamaShowRequest
 import com.example.llamadroid.data.model.LlamaServerEntity
+import com.example.llamadroid.data.model.buildLlamaServerBaseUrl
+import com.example.llamadroid.data.model.deriveOllamaCapabilityState
 import com.example.llamadroid.data.repository.LlamaRepository
 import com.example.llamadroid.util.DebugLog
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -22,6 +29,7 @@ import java.util.concurrent.TimeUnit
 class LlamaServerViewModel(
     private val repository: LlamaRepository
 ) : ViewModel() {
+    private val ollamaJson = Json { ignoreUnknownKeys = true }
 
     private val _servers = MutableStateFlow<List<LlamaServerEntity>>(emptyList())
     val servers = _servers.asStateFlow()
@@ -34,19 +42,21 @@ class LlamaServerViewModel(
         }
     }
 
-    fun addServer(name: String, host: String, port: Int, supportsVision: Boolean = false) {
+    fun saveServer(server: LlamaServerEntity) {
         viewModelScope.launch {
-            val server = LlamaServerEntity(name = name, host = host, port = port, supportsVision = supportsVision)
-            val id = repository.saveServer(server)
-            // Auto-fetch model name after adding
-            fetchModelName(server.copy(id = id))
+            val savedServer = if (server.id == 0L) {
+                val id = repository.saveServer(server)
+                server.copy(id = id)
+            } else {
+                repository.updateServer(server)
+                server
+            }
+            refreshServerMetadata(savedServer)
         }
     }
 
     fun updateServer(server: LlamaServerEntity) {
-        viewModelScope.launch {
-            repository.updateServer(server)
-        }
+        saveServer(server)
     }
 
     fun deleteServer(server: LlamaServerEntity) {
@@ -65,46 +75,148 @@ class LlamaServerViewModel(
     }
 
     fun fetchModelName(server: LlamaServerEntity) {
+        refreshServerMetadata(server)
+    }
+
+    fun refreshServerMetadata(server: LlamaServerEntity) {
         viewModelScope.launch {
-            try {
-                val baseUrl = if (server.host.startsWith("http")) {
-                    "${server.host}:${server.port}/"
-                } else {
-                    "http://${server.host}:${server.port}/"
-                }
-
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(5, TimeUnit.SECONDS)
-                    .readTimeout(5, TimeUnit.SECONDS)
-                    .build()
-
-                val api = Retrofit.Builder()
-                    .baseUrl(baseUrl)
-                    .client(client)
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build()
-                    .create(LlamaApi::class.java)
-
-                val response = withContext(Dispatchers.IO) {
-                    api.getModels().execute()
-                }
-
-                if (response.isSuccessful) {
-                    val modelName = response.body()?.data?.firstOrNull()?.id
-                    if (modelName != null) {
-                        repository.updateServerModelName(server.id, modelName)
-                        DebugLog.log("Fetched model name for ${server.name}: $modelName")
-                    }
-                } else {
-                    DebugLog.log("Failed to fetch model name: ${response.code()}")
-                    repository.updateServerModelName(server.id, null)
-                }
-            } catch (e: Exception) {
-                DebugLog.log("Error fetching model name: ${e.message}")
-                repository.updateServerModelName(server.id, null)
+            when {
+                server.isOllamaEngine() -> refreshOllamaMetadata(server)
+                else -> refreshLlamaServerMetadata(server)
             }
         }
     }
+
+    fun loadOllamaModels(
+        host: String,
+        port: Int,
+        onResult: (Result<List<OllamaModel>>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    fetchOllamaModels(buildLlamaServerBaseUrl(host, port))
+                        .sortedBy { it.name.lowercase() }
+                }
+            }
+            onResult(result)
+        }
+    }
+
+    fun loadOllamaCapabilities(
+        host: String,
+        port: Int,
+        modelName: String,
+        onResult: (Result<Pair<Boolean, Boolean>>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val info = fetchOllamaModelInfo(
+                        baseUrl = buildLlamaServerBaseUrl(host, port),
+                        modelName = modelName
+                    )
+                    val capabilities = deriveOllamaCapabilityState(info.capabilities)
+                    capabilities.supportsVision to capabilities.supportsAudio
+                }
+            }
+            onResult(result)
+        }
+    }
+
+    private suspend fun refreshLlamaServerMetadata(server: LlamaServerEntity) {
+        try {
+            val modelName = withContext(Dispatchers.IO) {
+                fetchLlamaServerModelName(server)
+            }
+            repository.updateServerModelName(server.id, modelName)
+            if (modelName != null) {
+                DebugLog.log("Fetched llama-server model name for ${server.name}: $modelName")
+            }
+        } catch (e: Exception) {
+            DebugLog.log("Error fetching llama-server model name: ${e.message}")
+            repository.updateServerModelName(server.id, null)
+        }
+    }
+
+    private suspend fun refreshOllamaMetadata(server: LlamaServerEntity) {
+        val modelName = server.modelName?.trim().orEmpty()
+        if (modelName.isBlank()) {
+            repository.updateServerModelMetadata(
+                id = server.id,
+                modelName = null,
+                supportsVision = false,
+                supportsAudio = false
+            )
+            return
+        }
+
+        try {
+            val info = withContext(Dispatchers.IO) {
+                fetchOllamaModelInfo(server.baseUrl(), modelName)
+            }
+            val capabilities = deriveOllamaCapabilityState(info.capabilities)
+            repository.updateServerModelMetadata(
+                id = server.id,
+                modelName = modelName,
+                supportsVision = capabilities.supportsVision,
+                supportsAudio = capabilities.supportsAudio
+            )
+            DebugLog.log(
+                "Fetched Ollama metadata for ${server.name}: $modelName vision=${capabilities.supportsVision} audio=${capabilities.supportsAudio}"
+            )
+        } catch (e: Exception) {
+            DebugLog.log("Error fetching Ollama metadata: ${e.message}")
+            repository.updateServerModelMetadata(
+                id = server.id,
+                modelName = modelName,
+                supportsVision = false,
+                supportsAudio = false
+            )
+        }
+    }
+
+    private fun buildLlamaApi(baseUrl: String): LlamaApi {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(LlamaApi::class.java)
+    }
+
+    private fun buildOllamaApi(baseUrl: String): OllamaApi {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(client)
+            .addConverterFactory(ollamaJson.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(OllamaApi::class.java)
+    }
+
+    private fun fetchLlamaServerModelName(server: LlamaServerEntity): String? {
+        val response = buildLlamaApi(server.baseUrl()).getModels().execute()
+        if (!response.isSuccessful) {
+            throw IllegalStateException("HTTP ${response.code()}")
+        }
+        return response.body()?.data?.firstOrNull()?.id
+    }
+
+    private suspend fun fetchOllamaModels(baseUrl: String): List<OllamaModel> =
+        buildOllamaApi(baseUrl).getTags().models
+
+    private suspend fun fetchOllamaModelInfo(baseUrl: String, modelName: String) =
+        buildOllamaApi(baseUrl).showModel(OllamaShowRequest(name = modelName))
 }
 
 class LlamaServerViewModelFactory(private val repository: LlamaRepository) : ViewModelProvider.Factory {
@@ -116,4 +228,3 @@ class LlamaServerViewModelFactory(private val repository: LlamaRepository) : Vie
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
-

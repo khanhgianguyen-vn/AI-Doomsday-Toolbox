@@ -39,6 +39,7 @@ import com.example.llamadroid.service.LlamaService
 import com.example.llamadroid.service.WorkerInfo
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.util.GGUFParser
+import com.example.llamadroid.ui.components.DraftIntTextField
 import com.example.llamadroid.ui.navigation.Screen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -2604,9 +2605,10 @@ fun RemoteMasterCard(modifier: Modifier = Modifier) {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = remotePort.toString(),
-                                onValueChange = { newVal -> newVal.filter { c -> c.isDigit() }.toIntOrNull()?.let { DistributedService.setRemoteControlPort(it) } },
+                            DraftIntTextField(
+                                value = remotePort,
+                                onValueChange = DistributedService::setRemoteControlPort,
+                                valueRange = 1..65535,
                                 label = { Text(stringResource(R.string.dist_remote_port)) },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true

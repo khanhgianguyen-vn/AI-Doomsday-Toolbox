@@ -19,8 +19,12 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
- * AgentViewModel - Handles business logic for the AI Agent chat
+ * AgentViewModel - Legacy helper for the AI Agent area
  * 
+ * Note: AgentScreen now owns the authoritative conversation restore/save/delete
+ * flow. This class is retained for older helper paths, but it must not diverge
+ * into a second source of truth for active project switching or persistence.
+ *
  * Extracted from AgentScreen to improve testability and maintainability.
  * Manages:
  * - Message sending and LLM interactions
@@ -85,14 +89,6 @@ class AgentViewModel(
         
         // Initialize Ollama settings
         ollamaService.initFromSettings()
-        
-        // Restore last conversation
-        viewModelScope.launch {
-            val lastId = settingsRepository.lastAgentConversationId.value
-            if (lastId > 0) {
-                loadConversation(lastId)
-            }
-        }
     }
 
     // ========== RATE LIMITING ==========
@@ -139,9 +135,15 @@ class AgentViewModel(
         }
     }
 
+    @Deprecated(
+        message = "AgentScreen owns authoritative conversation restore. Keep AgentViewModel as helper-only.",
+        level = DeprecationLevel.WARNING
+    )
     suspend fun loadConversation(conversationId: Long) {
         _currentConversationId.value = conversationId
         settingsRepository.setLastAgentConversationId(conversationId)
+        AgentService.clearTransientConversationState()
+        AgentService.clearAllSessions()
         
         val conv = db.agentChatDao().getConversation(conversationId)
         if (conv != null) {
@@ -161,6 +163,7 @@ class AgentViewModel(
         val restoredMessages = entities.map { AgentService.chatMessageFromEntity(it) }
         AgentService.resetMessageCounter(restoredMessages.maxOfOrNull { it.sequenceNumber } ?: 0)
         AgentService.setMessages(restoredMessages)
+        AgentService.restoreHardCompactionStateFromBrain()
         if (restoredMessages.isNotEmpty()) {
             AgentService.addDebugLog("📜 Restored ${restoredMessages.size} messages")
         }
@@ -171,6 +174,10 @@ class AgentViewModel(
         )
     }
 
+    @Deprecated(
+        message = "AgentScreen owns authoritative conversation activation and creation.",
+        level = DeprecationLevel.WARNING
+    )
     suspend fun createNewConversation(projectName: String = ""): Long {
         val folderName = if (projectName.isNotBlank()) {
             projectName.lowercase().replace(Regex("[^a-z0-9_-]"), "_")
@@ -185,6 +192,7 @@ class AgentViewModel(
         )
         
         val newId = db.agentChatDao().insertConversation(conversation)
+        AgentService.clearTransientConversationState()
         AgentService.clearMessages()
         AgentService.clearAllSessions()
         StagedFileCache.clear()
@@ -207,6 +215,10 @@ class AgentViewModel(
         return newId
     }
 
+    @Deprecated(
+        message = "AgentScreen owns authoritative conversation persistence.",
+        level = DeprecationLevel.WARNING
+    )
     suspend fun saveCurrentConversation() {
         val convId = _currentConversationId.value ?: return
         val messages = AgentService.messages.value
@@ -224,12 +236,18 @@ class AgentViewModel(
         
         // Save messages
         db.agentChatDao().deleteAllMessagesInConversation(convId)
-        val entities = messages.map { msg ->
+        val entities = messages
+            .filterNot { AgentService.isTransientCompactionStatusMessageForPersistence(it) }
+            .map { msg ->
             AgentService.chatMessageToEntity(msg, convId)
-        }
+            }
         db.agentChatDao().insertMessages(entities)
     }
 
+    @Deprecated(
+        message = "AgentScreen owns authoritative conversation deletion and fallback selection.",
+        level = DeprecationLevel.WARNING
+    )
     suspend fun deleteConversation(conversationId: Long, projectFolder: String?) {
         db.agentChatDao().deleteConversationById(conversationId)
         

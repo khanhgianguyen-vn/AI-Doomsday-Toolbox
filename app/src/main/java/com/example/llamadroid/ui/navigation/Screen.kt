@@ -9,6 +9,9 @@ sealed class Screen(val route: String) {
     // AI screens
     object AIHub : Screen("ai_hub")              // Landing page for AI features
     object ImageGen : Screen("image_gen")        // Stable Diffusion image generation
+    object ImageGenUpscale : Screen("image_gen_upscale") // Isolated legacy-style SD upscale screen
+    object OnnxImageGen : Screen("onnx_image_gen") // ONNX Runtime image generation
+    object VideoGen : Screen("video_gen")        // Stable Diffusion video generation
     object AudioTranscription : Screen("audio_transcription") // WhisperCPP
     object VideoUpscaler : Screen("video_upscaler")           // Real-ESRGAN video upscaling
     object NotesManager : Screen("notes_manager")             // Unified notes manager
@@ -17,6 +20,7 @@ sealed class Screen(val route: String) {
     object ModelHub : Screen("model_hub")        // Landing page for model management
     object LLMModels : Screen("llm_models")      // LlamaCpp model management
     object SDModels : Screen("sd_models")        // SD model management
+    object OnnxModels : Screen("onnx_models")    // ONNX model management
     object WhisperModels : Screen("whisper_models") // Whisper model management
     // Kiwix screens
     object KiwixHub : Screen("kiwix_hub")        // Landing page for Kiwix
@@ -49,7 +53,11 @@ sealed class Screen(val route: String) {
     // Tama virtual pet
     object Tama : Screen("tama")                               // Virtual pet companion
     object TamaChat : Screen("tama_chat")                     // AI Chat with pet
+    object TamaGallery : Screen("tama_gallery")               // Tama art gallery
+    object Arcade : Screen("arcade")                          // Tama arcade hub and minigames
     object Farm : Screen("farm")                               // Farming grid
+    object Barn : Screen("farm_barn")                          // Barn sub-area
+    object Coop : Screen("farm_coop")                          // Chicken coop sub-area
     object Store : Screen("store")                             // Farm supply store
     object SubtitleBurn : Screen("subtitle_burn")              // Subtitle burning tool
     object Dungeon : Screen("dungeon")                         // Dungeon selection
@@ -61,6 +69,7 @@ sealed class Screen(val route: String) {
     // Native Llama Client
     object LlamaServerList : Screen("llama_server_list")       // Server management (entry point)
     object LlamaChatList : Screen("llama_chat_list")           // Chat history
+    object LlamaScheduler : Screen("llama_scheduler")           // Scheduled native Llama tasks
     object LlamaChat : Screen("llama_chat/{chatId}/{serverId}") { // Chat interface
         fun createRoute(chatId: Long, serverId: Long): String = "llama_chat/$chatId/$serverId"
     }

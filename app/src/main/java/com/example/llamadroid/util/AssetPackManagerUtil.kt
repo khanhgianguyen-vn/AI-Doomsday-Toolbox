@@ -2,6 +2,7 @@ package com.example.llamadroid.util
 
 import android.content.Context
 import android.util.Log
+import com.example.llamadroid.BuildConfig
 import com.example.llamadroid.R
 import com.google.android.play.core.assetpacks.AssetPackManager
 import com.google.android.play.core.assetpacks.AssetPackManagerFactory
@@ -57,6 +58,25 @@ object AssetPackManagerUtil {
     private fun getAssetPackManager(context: Context): AssetPackManager {
         return AssetPackManagerFactory.getInstance(context)
     }
+
+    private fun isFatApkBuild(): Boolean = BuildConfig.IS_FAT_APK_BUILD
+
+    private fun hasBundledPackAssets(context: Context, pack: AssetPack): Boolean {
+        return when (pack) {
+            AssetPack.UPSCALER -> {
+                try {
+                    !context.assets.list("upscaler_models").isNullOrEmpty()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to inspect bundled assets for ${pack.packName}", e)
+                    false
+                }
+            }
+        }
+    }
+
+    private fun missingBundledPackMessage(pack: AssetPack): String {
+        return "Fat APK is missing bundled assets for ${pack.packName}"
+    }
     
     /**
      * Get the directory where extracted binaries are stored
@@ -81,19 +101,13 @@ object AssetPackManagerUtil {
         if (markerFile.exists()) {
             return true
         }
-        
-        // Fallback for Fat APK / Bundled Assets:
-        // If assets are present in the APK (AssetManager), consider it ready.
-        // The Service will handle extraction if needed.
-        if (pack == AssetPack.UPSCALER) {
-            try {
-                val models = context.assets.list("upscaler_models")
-                if (!models.isNullOrEmpty()) {
-                    return true
-                }
-            } catch (e: Exception) {
-                // Ignore
+
+        if (isFatApkBuild()) {
+            val isBundled = hasBundledPackAssets(context, pack)
+            if (!isBundled) {
+                Log.e(TAG, missingBundledPackMessage(pack))
             }
+            return isBundled
         }
         
         return false
@@ -111,8 +125,6 @@ object AssetPackManagerUtil {
         }
         
         try {
-            val assetManager = context.assets
-            
             // Extract native binaries
             extractAssetDirectory(context, "native", binDir)
             
@@ -211,6 +223,17 @@ object AssetPackManagerUtil {
      * Download ALL asset packs at once (called on first launch)
      */
     fun downloadAllPacks(context: Context): Flow<InstallState> = callbackFlow {
+        if (isFatApkBuild()) {
+            val missingPack = AssetPack.ALL.firstOrNull { !hasBundledPackAssets(context, it) }
+            if (missingPack == null) {
+                trySend(InstallState.Completed)
+            } else {
+                trySend(InstallState.Failed(missingBundledPackMessage(missingPack)))
+            }
+            close()
+            return@callbackFlow
+        }
+
         val manager = getAssetPackManager(context)
         val allPackNames = AssetPack.ALL.map { it.packName }.toSet()
         
@@ -277,6 +300,16 @@ object AssetPackManagerUtil {
      * Download a single asset pack (and its dependencies)
      */
     fun downloadPack(context: Context, pack: AssetPack): Flow<InstallState> = callbackFlow {
+        if (isFatApkBuild()) {
+            if (hasBundledPackAssets(context, pack)) {
+                trySend(InstallState.Completed)
+            } else {
+                trySend(InstallState.Failed(missingBundledPackMessage(pack)))
+            }
+            close()
+            return@callbackFlow
+        }
+
         val manager = getAssetPackManager(context)
         
         // Collect all packs needed (including dependencies)
@@ -360,6 +393,11 @@ object AssetPackManagerUtil {
      * Use this to access non-binary assets like models.
      */
     fun getExtractedPath(context: Context, pack: AssetPack): String? {
+        if (isFatApkBuild()) {
+            val extractedDir = File(getBinariesDir(context), pack.packName)
+            return extractedDir.absolutePath.takeIf { extractedDir.exists() }
+        }
+
         val manager = getAssetPackManager(context)
         val packLocation = manager.getPackLocation(pack.packName)
         return packLocation?.assetsPath()
@@ -381,6 +419,11 @@ object AssetPackManagerUtil {
         
         val assetsPath = packLocation.assetsPath()
         val binDir = getBinariesDir(context)
+        if (assetsPath == null) {
+            Log.w(TAG, "Asset path is null for ${pack.packName}")
+            File(binDir, ".${pack.packName}_extracted").createNewFile()
+            return
+        }
         
         // Extract everything relative to assets root
         // For binaries, we don't need them here anymore (they are in feature module).

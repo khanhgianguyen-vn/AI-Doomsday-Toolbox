@@ -46,7 +46,7 @@ data class LlamaStreamOptions(
 @Keep
 data class LlamaChatMessage(
     @SerializedName("role") val role: String,
-    @SerializedName("content") val content: Any // String or List<Map> for vision
+    @SerializedName("content") val content: Any // String or List<Map> for multimodal turns
 )
 
 @Keep

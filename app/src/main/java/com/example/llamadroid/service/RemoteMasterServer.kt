@@ -983,7 +983,7 @@ object SelfSignedCertGenerator {
         try {
             // Try using android.security.keystore or legacy approach
             val builderClass = Class.forName("com.android.org.bouncycastle.x509.X509V3CertificateGenerator")
-            val builder = builderClass.newInstance()
+            val builder = builderClass.getDeclaredConstructor().newInstance()
             
             val setSerialNumber = builderClass.getMethod("setSerialNumber", java.math.BigInteger::class.java)
             setSerialNumber.invoke(builder, java.math.BigInteger.valueOf(System.currentTimeMillis()))

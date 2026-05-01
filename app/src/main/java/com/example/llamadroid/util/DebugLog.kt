@@ -34,7 +34,10 @@ object DebugLog {
         "/Users/",
         "/mnt/",
         "prebuilt/linux",
-        "toolchains/llvm"
+        "toolchains/llvm",
+        "[VIDEO-GEN] Heartbeat:",
+        "[StableDiffusionService] Heartbeat:",
+        "Heartbeat: activeModes="
     )
     
     fun log(message: String) {

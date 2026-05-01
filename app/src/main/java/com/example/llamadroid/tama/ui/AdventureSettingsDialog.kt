@@ -1,75 +1,116 @@
 package com.example.llamadroid.tama.ui
 
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
+import com.example.llamadroid.data.db.AppDatabase
+import com.example.llamadroid.data.db.ModelType
+import com.example.llamadroid.onnx.isOnnxTxt2ImgBundle
+import com.example.llamadroid.service.RemoteSummaryBackendConfig
+import com.example.llamadroid.service.RemoteSummaryClientFactory
+import com.example.llamadroid.service.RemoteSummaryMetadata
 import com.example.llamadroid.tama.adventure.DungeonType
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
+import com.example.llamadroid.tama.adventure.localizedName
+import com.example.llamadroid.ui.components.DraftFloatTextField
+import com.example.llamadroid.ui.components.DraftIntTextField
+import com.example.llamadroid.ui.components.RemoteSummaryBackendEditor
 
-/**
- * Settings dialog for adventure system - Ollama config, prompts, model selection.
- */
 @Composable
 fun AdventureSettingsDialog(
     onDismiss: () -> Unit,
     settingsRepository: SettingsRepository
 ) {
-    val scope = rememberCoroutineScope()
-    
-    // Collect settings
-    val adventureModel by settingsRepository.adventureModel.collectAsState()
-    val adventureSummarizerModel by settingsRepository.adventureSummarizerModel.collectAsState()
-    val adventureOllamaUrl by settingsRepository.adventureOllamaUrl.collectAsState()
-    val adventureOllamaThreads by settingsRepository.adventureOllamaThreads.collectAsState()
-    val adventureOllamaNumCtx by settingsRepository.adventureOllamaNumCtx.collectAsState()
-    val adventureOllamaMmap by settingsRepository.adventureOllamaMmap.collectAsState()
+    val context = LocalContext.current
+    val storyModel by settingsRepository.adventureModel.collectAsState()
+    val summarizerModel by settingsRepository.adventureSummarizerModel.collectAsState()
+    val backend by settingsRepository.adventureBackend.collectAsState()
+    val ollamaUrl by settingsRepository.adventureOllamaUrl.collectAsState()
+    val llamaServerUrl by settingsRepository.adventureLlamaServerUrl.collectAsState()
+    val llamaServerModelLabel by settingsRepository.adventureLlamaServerModelLabel.collectAsState()
+    val llamaServerContextTokens by settingsRepository.adventureLlamaServerContextTokens.collectAsState()
+    val llamaServerContextLabel by settingsRepository.adventureLlamaServerContextLabel.collectAsState()
+    val adventureLanguage by settingsRepository.adventureLanguage.collectAsState()
+    val worldImageEnabled by settingsRepository.adventureWorldImageEnabled.collectAsState()
+    val stageImagesEnabled by settingsRepository.adventureStageImagesEnabled.collectAsState()
+    val onnxFilename by settingsRepository.adventureOnnxModelFilename.collectAsState()
+    val onnxSteps by settingsRepository.adventureOnnxSteps.collectAsState()
+    val onnxCfg by settingsRepository.adventureOnnxCfg.collectAsState()
+    val onnxResolution by settingsRepository.adventureOnnxResolution.collectAsState()
     val adventureSystemPrompt by settingsRepository.adventureSystemPrompt.collectAsState()
     val adventureSummarizerPrompt by settingsRepository.adventureSummarizerPrompt.collectAsState()
-    
-    // Local state for editing
-    var localUrl by remember { mutableStateOf(adventureOllamaUrl) }
-    var localCtxText by remember { mutableStateOf(adventureOllamaNumCtx.toString()) }
-    var availableModels by remember { mutableStateOf<List<String>>(emptyList()) }
-    var isLoadingModels by remember { mutableStateOf(false) }
-    var showStoryModelDropdown by remember { mutableStateOf(false) }
-    var showSummarizerModelDropdown by remember { mutableStateOf(false) }
+
+    val txt2ImgModels by AppDatabase.getDatabase(context.applicationContext)
+        .modelDao()
+        .getModelsByTypes(listOf(ModelType.ONNX_IMAGE_GEN))
+        .collectAsState(initial = emptyList())
+    val installedTxt2ImgModels = remember(txt2ImgModels) {
+        txt2ImgModels.filter { it.isOnnxTxt2ImgBundle() }
+    }
+
+    var showStoryModelMenu by remember { mutableStateOf(false) }
+    var showSummarizerModelMenu by remember { mutableStateOf(false) }
+    var showOnnxModelMenu by remember { mutableStateOf(false) }
+    var showLanguageMenu by remember { mutableStateOf(false) }
     var showSystemPromptEditor by remember { mutableStateOf(false) }
     var showSummarizerPromptEditor by remember { mutableStateOf(false) }
-    var showDungeonPromptsEditor by remember { mutableStateOf(false) }
-    
-    // Fetch models on URL change
-    LaunchedEffect(localUrl) {
-        if (localUrl.isNotBlank()) {
-            isLoadingModels = true
-            availableModels = fetchOllamaModels(localUrl)
-            isLoadingModels = false
+    var showDungeonThemesDialog by remember { mutableStateOf(false) }
+    var availableOllamaModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    fun persistMetadata(metadata: RemoteSummaryMetadata) {
+        availableOllamaModels = metadata.availableModels
+        settingsRepository.setAdventureLlamaServerModelLabel(metadata.serverModelLabel)
+        settingsRepository.setAdventureLlamaServerContextTokens(metadata.serverContextTokens)
+        settingsRepository.setAdventureLlamaServerContextLabel(metadata.serverContextLabel)
+    }
+
+    LaunchedEffect(storyModel) {
+        if (storyModel.isNotBlank() && availableOllamaModels.isEmpty()) {
+            availableOllamaModels = listOf(storyModel).distinct()
         }
     }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { 
+        title = {
             Text(
-                "⚔️ Adventure Settings",
+                stringResource(R.string.adventure_settings_title),
                 fontFamily = FontFamily.Monospace
             )
         },
@@ -80,245 +121,217 @@ fun AdventureSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Ollama URL
-                Text("Ollama URL", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                OutlinedTextField(
-                    value = localUrl,
-                    onValueChange = { newUrl ->
-                        localUrl = newUrl
-                        settingsRepository.setAdventureOllamaUrl(newUrl)
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                // Refresh models button
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            isLoadingModels = true
-                            availableModels = fetchOllamaModels(localUrl)
-                            isLoadingModels = false
-                        }
-                    },
-                    enabled = !isLoadingModels
-                ) {
-                    Text(if (isLoadingModels) "Loading..." else "🔄 Refresh Models (${availableModels.size})")
-                }
-                
-                // Story Model Dropdown
-                Text("Story Model", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                ModelDropdown(
-                    selectedModel = adventureModel,
-                    availableModels = availableModels,
-                    expanded = showStoryModelDropdown,
-                    onExpandChange = { showStoryModelDropdown = it },
-                    onModelSelect = { 
-                        settingsRepository.setAdventureModel(it)
-                        showStoryModelDropdown = false
-                    }
-                )
-                
-                // Summarizer Model Dropdown
-                Text("Summarizer Model", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                ModelDropdown(
-                    selectedModel = adventureSummarizerModel,
-                    availableModels = availableModels,
-                    expanded = showSummarizerModelDropdown,
-                    onExpandChange = { showSummarizerModelDropdown = it },
-                    onModelSelect = { 
-                        settingsRepository.setAdventureSummarizerModel(it)
-                        showSummarizerModelDropdown = false
-                    }
-                )
-                
-                // MMAP Toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("MMAP (Memory Map)", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                        Text("Enable for faster loading", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    }
-                    Switch(
-                        checked = adventureOllamaMmap,
-                        onCheckedChange = { settingsRepository.setAdventureOllamaMmap(it) }
-                    )
-                }
-                
-                // Language Picker
-                val adventureLanguage by settingsRepository.adventureLanguage.collectAsState()
-                var showLanguageDropdown by remember { mutableStateOf(false) }
-                val languages = listOf(
-                    "English", "Spanish", "French", "German", "Italian", 
-                    "Portuguese", "Russian", "Chinese", "Japanese", "Korean"
-                )
-                
-                Text("Story Language", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                Box {
-                    OutlinedTextField(
-                        value = adventureLanguage,
-                        onValueChange = {},
-                        readOnly = true,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        trailingIcon = {
-                            IconButton(onClick = { showLanguageDropdown = !showLanguageDropdown }) {
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Select language")
-                            }
-                        }
-                    )
-                    
-                    DropdownMenu(
-                        expanded = showLanguageDropdown,
-                        onDismissRequest = { showLanguageDropdown = false }
-                    ) {
-                        languages.forEach { lang ->
-                            DropdownMenuItem(
-                                text = { Text(lang, fontFamily = FontFamily.Monospace, fontSize = 12.sp) },
-                                onClick = { 
-                                    settingsRepository.setAdventureLanguage(lang)
-                                    showLanguageDropdown = false
-                                }
+                RemoteSummaryBackendEditor(
+                    title = stringResource(R.string.adventure_backend_section_title),
+                    backend = backend,
+                    onBackendChange = settingsRepository::setAdventureBackend,
+                    ollamaUrl = ollamaUrl,
+                    onOllamaUrlChange = settingsRepository::setAdventureOllamaUrl,
+                    llamaServerUrl = llamaServerUrl,
+                    onLlamaServerUrlChange = settingsRepository::setAdventureLlamaServerUrl,
+                    ollamaModel = storyModel,
+                    onOllamaModelSelected = settingsRepository::setAdventureModel,
+                    llamaServerModelLabel = llamaServerModelLabel,
+                    llamaServerContextLabel = llamaServerContextLabel,
+                    llamaServerContextTokens = llamaServerContextTokens,
+                    requestedContextForWarning = null,
+                    fetchMetadata = {
+                        RemoteSummaryClientFactory.fromConfig(
+                            RemoteSummaryBackendConfig(
+                                backend = backend,
+                                baseUrl = if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+                                    llamaServerUrl.trim()
+                                } else {
+                                    ollamaUrl.trim()
+                                },
+                                model = if (backend == SettingsRepository.PDF_BACKEND_OLLAMA) {
+                                    storyModel.trim().ifBlank { null }
+                                } else {
+                                    llamaServerModelLabel?.trim()?.ifBlank { null }
+                                },
+                                timeoutMinutes = 1
                             )
-                        }
-                    }
-                }
-                
-                // Threads
-                Text("Threads: $adventureOllamaThreads", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                Slider(
-                    value = adventureOllamaThreads.toFloat(),
-                    onValueChange = { settingsRepository.setAdventureOllamaThreads(it.toInt()) },
-                    valueRange = 1f..16f,
-                    steps = 15
+                        ).fetchMetadata()
+                    },
+                    onMetadataLoaded = ::persistMetadata
                 )
-                
-                // Context Size - Slider + Input
-                Text("Context Size", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Slider(
-                        value = adventureOllamaNumCtx.toFloat(),
-                        onValueChange = { 
-                            val newVal = it.toInt()
-                            settingsRepository.setAdventureOllamaNumCtx(newVal)
-                            localCtxText = newVal.toString()
-                        },
-                        valueRange = 1024f..32768f,
-                        modifier = Modifier.weight(1f)
+
+                if (backend == SettingsRepository.PDF_BACKEND_OLLAMA) {
+                    AdventureModelDropdown(
+                        title = stringResource(R.string.adventure_story_model_title),
+                        selectedModel = storyModel,
+                        availableModels = availableOllamaModels,
+                        expanded = showStoryModelMenu,
+                        onExpandChange = { showStoryModelMenu = it },
+                        onModelSelect = {
+                            settingsRepository.setAdventureModel(it)
+                            showStoryModelMenu = false
+                        }
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedTextField(
-                        value = localCtxText,
-                        onValueChange = { input ->
-                            localCtxText = input
-                            input.toIntOrNull()?.let { value ->
-                                if (value in 1024..65536) {
-                                    settingsRepository.setAdventureOllamaNumCtx(value)
+                    AdventureModelDropdown(
+                        title = stringResource(R.string.adventure_summarizer_model_title),
+                        selectedModel = summarizerModel,
+                        availableModels = availableOllamaModels,
+                        expanded = showSummarizerModelMenu,
+                        onExpandChange = { showSummarizerModelMenu = it },
+                        onModelSelect = {
+                            settingsRepository.setAdventureSummarizerModel(it)
+                            showSummarizerModelMenu = false
+                        }
+                    )
+                } else {
+                    Text(
+                        stringResource(R.string.adventure_llama_server_model_note),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                AdventureLanguageSelector(
+                    selectedLanguage = adventureLanguage,
+                    expanded = showLanguageMenu,
+                    onExpandChange = { showLanguageMenu = it },
+                    onLanguageSelected = {
+                        settingsRepository.setAdventureLanguage(it)
+                        showLanguageMenu = false
+                    }
+                )
+
+                AdventureToggleRow(
+                    title = stringResource(R.string.adventure_world_image_toggle_title),
+                    description = stringResource(R.string.adventure_world_image_toggle_desc),
+                    checked = worldImageEnabled,
+                    onCheckedChange = settingsRepository::setAdventureWorldImageEnabled
+                )
+                AdventureToggleRow(
+                    title = stringResource(R.string.adventure_stage_image_toggle_title),
+                    description = stringResource(R.string.adventure_stage_image_toggle_desc),
+                    checked = stageImagesEnabled,
+                    onCheckedChange = settingsRepository::setAdventureStageImagesEnabled
+                )
+
+                if (worldImageEnabled || stageImagesEnabled) {
+                    Text(
+                        stringResource(R.string.adventure_world_image_section_title),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp
+                    )
+                    Box {
+                        OutlinedTextField(
+                            value = onnxFilename ?: "",
+                            onValueChange = {},
+                            modifier = Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.adventure_onnx_model_title)) },
+                            trailingIcon = {
+                                IconButton(onClick = { showOnnxModelMenu = !showOnnxModelMenu }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                                 }
                             }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.width(80.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                        )
+                        DropdownMenu(
+                            expanded = showOnnxModelMenu,
+                            onDismissRequest = { showOnnxModelMenu = false }
+                        ) {
+                            installedTxt2ImgModels.forEach { model ->
+                                DropdownMenuItem(
+                                    text = { Text(model.filename, fontFamily = FontFamily.Monospace, fontSize = 12.sp) },
+                                    onClick = {
+                                        settingsRepository.setAdventureOnnxModelFilename(model.filename)
+                                        showOnnxModelMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    NumericAdventureField(
+                        label = stringResource(R.string.adventure_onnx_steps_title),
+                        value = onnxSteps,
+                        onValueChange = settingsRepository::setAdventureOnnxSteps
+                    )
+                    DecimalAdventureField(
+                        label = stringResource(R.string.adventure_onnx_cfg_title),
+                        value = onnxCfg,
+                        onValueChange = settingsRepository::setAdventureOnnxCfg
+                    )
+                    NumericAdventureField(
+                        label = stringResource(R.string.adventure_onnx_resolution_title),
+                        value = onnxResolution,
+                        onValueChange = settingsRepository::setAdventureOnnxResolution
                     )
                 }
-                
-                HorizontalDivider()
-                
-                // Prompt editors
-                Text("Prompts", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                
-                TextButton(
-                    onClick = { showSystemPromptEditor = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("✏️ Edit System Prompt")
+
+                TextButton(onClick = { showSystemPromptEditor = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.adventure_edit_system_prompt))
                 }
-                
-                TextButton(
-                    onClick = { showSummarizerPromptEditor = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("✏️ Edit Summarizer Prompt")
+                TextButton(onClick = { showSummarizerPromptEditor = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.adventure_edit_summarizer_prompt))
                 }
-                
-                TextButton(
-                    onClick = { showDungeonPromptsEditor = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("🏰 View Dungeon Themes")
+                TextButton(onClick = { showDungeonThemesDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.adventure_view_dungeon_themes))
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.action_close))
             }
         }
     )
-    
-    // System prompt editor
+
     if (showSystemPromptEditor) {
         PromptEditorDialog(
-            title = "System Prompt",
+            title = stringResource(R.string.adventure_edit_system_prompt),
             prompt = adventureSystemPrompt,
-            onSave = { 
+            onSave = {
                 settingsRepository.setAdventureSystemPrompt(it)
                 showSystemPromptEditor = false
             },
             onDismiss = { showSystemPromptEditor = false }
         )
     }
-    
-    // Summarizer prompt editor
+
     if (showSummarizerPromptEditor) {
         PromptEditorDialog(
-            title = "Summarizer Prompt",
+            title = stringResource(R.string.adventure_edit_summarizer_prompt),
             prompt = adventureSummarizerPrompt,
-            onSave = { 
+            onSave = {
                 settingsRepository.setAdventureSummarizerPrompt(it)
                 showSummarizerPromptEditor = false
             },
             onDismiss = { showSummarizerPromptEditor = false }
         )
     }
-    
-    // Dungeon themes viewer
-    if (showDungeonPromptsEditor) {
-        DungeonThemesDialog(
-            onDismiss = { showDungeonPromptsEditor = false }
-        )
+
+    if (showDungeonThemesDialog) {
+        DungeonThemesDialog(onDismiss = { showDungeonThemesDialog = false })
     }
 }
 
 @Composable
-fun ModelDropdown(
+private fun AdventureModelDropdown(
+    title: String,
     selectedModel: String,
     availableModels: List<String>,
     expanded: Boolean,
     onExpandChange: (Boolean) -> Unit,
     onModelSelect: (String) -> Unit
 ) {
+    Text(title, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
     Box {
         OutlinedTextField(
             value = selectedModel,
-            onValueChange = { onModelSelect(it) },
-            singleLine = true,
+            onValueChange = onModelSelect,
             modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
             trailingIcon = {
                 IconButton(onClick = { onExpandChange(!expanded) }) {
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Select model")
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                 }
             }
         )
-        
         DropdownMenu(
             expanded = expanded && availableModels.isNotEmpty(),
             onDismissRequest = { onExpandChange(false) }
@@ -326,7 +339,10 @@ fun ModelDropdown(
             availableModels.forEach { model ->
                 DropdownMenuItem(
                     text = { Text(model, fontFamily = FontFamily.Monospace, fontSize = 12.sp) },
-                    onClick = { onModelSelect(model) }
+                    onClick = {
+                        onModelSelect(model)
+                        onExpandChange(false)
+                    }
                 )
             }
         }
@@ -334,21 +350,108 @@ fun ModelDropdown(
 }
 
 @Composable
+private fun AdventureLanguageSelector(
+    selectedLanguage: String,
+    expanded: Boolean,
+    onExpandChange: (Boolean) -> Unit,
+    onLanguageSelected: (String) -> Unit
+) {
+    val languages = listOf(
+        "English", "Spanish", "French", "German", "Italian",
+        "Portuguese", "Russian", "Chinese", "Japanese", "Korean"
+    )
+    Text(stringResource(R.string.adventure_language_title), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+    Box {
+        OutlinedTextField(
+            value = selectedLanguage,
+            onValueChange = {},
+            modifier = Modifier.fillMaxWidth(),
+            readOnly = true,
+            singleLine = true,
+            trailingIcon = {
+                IconButton(onClick = { onExpandChange(!expanded) }) {
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                }
+            }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { onExpandChange(false) }) {
+            languages.forEach { language ->
+                DropdownMenuItem(
+                    text = { Text(language, fontFamily = FontFamily.Monospace, fontSize = 12.sp) },
+                    onClick = { onLanguageSelected(language) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdventureToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text(
+                description,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun NumericAdventureField(
+    label: String,
+    value: Int,
+    onValueChange: (Int) -> Unit
+) {
+    DraftIntTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun DecimalAdventureField(
+    label: String,
+    value: Float,
+    onValueChange: (Float) -> Unit
+) {
+    DraftFloatTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(label) }
+    )
+}
+
+@Composable
 fun DungeonThemesDialog(
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     var selectedDungeon by remember { mutableStateOf(DungeonType.entries.first()) }
-    
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🏰 Dungeon Themes", fontFamily = FontFamily.Monospace) },
+        title = { Text(stringResource(R.string.adventure_view_dungeon_themes), fontFamily = FontFamily.Monospace) },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(400.dp)
             ) {
-                // Dungeon selector - horizontal scroll
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -359,44 +462,37 @@ fun DungeonThemesDialog(
                         TextButton(
                             onClick = { selectedDungeon = dungeon },
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = if (dungeon == selectedDungeon) 
-                                    MaterialTheme.colorScheme.primary 
-                                else 
+                                contentColor = if (dungeon == selectedDungeon) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
                                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                }
                             )
                         ) {
                             Text(dungeon.emoji, fontSize = 18.sp)
                         }
                     }
                 }
-                
-                // Selected dungeon info
                 Text(
-                    selectedDungeon.displayName,
+                    selectedDungeon.localizedName(context),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
-                
-                // Theme prompt (read-only, scrollable)
                 OutlinedTextField(
                     value = selectedDungeon.stylePrompt,
                     onValueChange = {},
                     readOnly = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
-                    textStyle = LocalTextStyle.current.copy(
-                        fontFamily = FontFamily.Monospace, 
-                        fontSize = 11.sp
-                    )
+                        .weight(1f),
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.action_close))
             }
         }
     )
@@ -409,8 +505,7 @@ fun PromptEditorDialog(
     onSave: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var editedPrompt by remember { mutableStateOf(prompt) }
-    
+    var editedPrompt by remember(prompt) { mutableStateOf(prompt) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, fontFamily = FontFamily.Monospace) },
@@ -426,42 +521,13 @@ fun PromptEditorDialog(
         },
         confirmButton = {
             TextButton(onClick = { onSave(editedPrompt) }) {
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     )
-}
-
-/**
- * Fetch available models from Ollama server.
- */
-suspend fun fetchOllamaModels(baseUrl: String): List<String> = withContext(Dispatchers.IO) {
-    try {
-        val url = URL("${baseUrl.trimEnd('/')}/api/tags")
-        val connection = url.openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 5000
-        connection.readTimeout = 5000
-        
-        if (connection.responseCode == 200) {
-            val response = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
-            
-            // Parse JSON response to extract model names
-            val modelNames = mutableListOf<String>()
-            val regex = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"")
-            regex.findAll(response).forEach { match ->
-                modelNames.add(match.groupValues[1])
-            }
-            modelNames
-        } else {
-            emptyList()
-        }
-    } catch (e: Exception) {
-        emptyList()
-    }
 }

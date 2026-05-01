@@ -75,4 +75,7 @@ interface AiRuntimeJobDao {
 
     @Query("DELETE FROM ai_runtime_jobs WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED') AND updatedAt < :olderThan")
     suspend fun deleteTerminalJobsOlderThan(olderThan: Long)
+
+    @Query("DELETE FROM ai_runtime_jobs WHERE jobId = :jobId")
+    suspend fun deleteById(jobId: String)
 }

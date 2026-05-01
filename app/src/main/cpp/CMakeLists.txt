@@ -4,4 +4,5 @@ project("cpufeatures")
 add_library(cpufeatures SHARED CpuFeatures.cpp)
 
 find_library(log-lib log)
+
 target_link_libraries(cpufeatures ${log-lib})

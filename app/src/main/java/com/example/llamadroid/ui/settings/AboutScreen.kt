@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.llamadroid.R
 import com.example.llamadroid.BuildConfig
+import com.example.llamadroid.ui.components.AppScreenScaffold
 
 /**
  * About screen with credits, donations, and library info.
@@ -31,23 +32,15 @@ import com.example.llamadroid.BuildConfig
 fun AboutScreen(navController: NavController) {
     val context = LocalContext.current
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.about_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    AppScreenScaffold(
+        title = stringResource(R.string.about_title),
+        subtitle = stringResource(R.string.settings_about_desc),
+        onBack = { navController.popBackStack() }
+    ) { _ ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -212,6 +205,11 @@ fun AboutScreen(navController: NavController) {
                             url = "https://ffmpeg.org"
                         )
                         LibraryItem(
+                            name = "Stable Diffusion Android (SDAI)",
+                            description = stringResource(R.string.about_sdai_desc),
+                            url = "https://github.com/ShiftHackZ/Stable-Diffusion-Android"
+                        )
+                        LibraryItem(
                             name = "Kiwix-tools",
                             description = stringResource(R.string.about_zim_desc),
                             url = "https://github.com/kiwix/kiwix-tools"
@@ -243,22 +241,22 @@ fun AboutScreen(navController: NavController) {
                         LibraryItem(
                             name = "Big-AGI",
                             description = stringResource(R.string.about_big_agi_desc),
-                            url = "https://github.com/enricoros/big-AGI"
+                            url = "https://github.com/ManuXD32/big-AGI/tree/v2-dev"
                         )
                         LibraryItem(
                             name = "Oobabooga",
                             description = stringResource(R.string.about_oobabooga_desc),
-                            url = "https://github.com/oobabooga/text-generation-webui"
+                            url = "https://github.com/ManuXD32/textgen"
                         )
                         LibraryItem(
                             name = "FastSDCPU",
                             description = stringResource(R.string.about_fastsdcpu_desc),
-                            url = "https://github.com/rupeshs/fastsdcpu"
+                            url = "https://github.com/ManuXD32/fastsdcpu"
                         )
                         LibraryItem(
                             name = "AUTOMATIC1111 / Stable Diffusion WebUI",
                             description = stringResource(R.string.about_sd_sketch_desc),
-                            url = "https://github.com/AUTOMATIC1111/stable-diffusion-webui"
+                            url = "https://github.com/ManuXD32/stable-diffusion-webui"
                         )
                         LibraryItem(
                             name = "Termux",

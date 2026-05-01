@@ -14,7 +14,10 @@ data class StorySchematic(
     val keyEvents: List<String>,             // Major plot points
     val possibleEndings: List<String>,       // How story could conclude
     val tone: String,                        // Horror, mystery, action, etc.
-    val difficulty: String                   // How harsh consequences are
+    val difficulty: String,                  // How harsh consequences are
+    val worldImagePath: String? = null,
+    val worldImagePrompt: String? = null,
+    val worldImageNegativePrompt: String? = null
 )
 
 /**
@@ -25,7 +28,10 @@ data class AdventureStage(
     val stageNumber: Int,
     val storyContent: String,                // LLM-generated narrative
     val userResponse: String? = null,        // Player's choice
-    val summary: String? = null              // Summarized for context
+    val summary: String? = null,             // Summarized for context
+    val imagePath: String? = null,
+    val imagePrompt: String? = null,
+    val imageNegativePrompt: String? = null
 )
 
 /**

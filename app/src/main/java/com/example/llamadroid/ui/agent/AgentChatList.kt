@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.llamadroid.service.AgentService
+import com.example.llamadroid.service.isBackgroundCommandReminder
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -41,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import androidx.compose.ui.text.input.ImeAction
 import com.example.llamadroid.ui.ai.llama.MarkdownText
+import coil.compose.AsyncImage
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -50,6 +52,13 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 @Composable
 private fun agentRoleLabel(roleName: String): String {
@@ -61,6 +70,15 @@ private fun agentRoleLabel(roleName: String): String {
         "SUMMARIZER" -> stringResource(R.string.agent_role_summarizer)
         else -> roleName
     }
+}
+
+private fun formatAgentMessageTimestamp(timestamp: Long, locale: Locale = Locale.getDefault()): String {
+    val nowCalendar = Calendar.getInstance()
+    val messageCalendar = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val isSameDay = nowCalendar.get(Calendar.YEAR) == messageCalendar.get(Calendar.YEAR) &&
+        nowCalendar.get(Calendar.DAY_OF_YEAR) == messageCalendar.get(Calendar.DAY_OF_YEAR)
+    val pattern = if (isSameDay) "HH:mm" else "MMM dd HH:mm"
+    return SimpleDateFormat(pattern, locale).format(Date(timestamp))
 }
 
 @Composable
@@ -93,7 +111,8 @@ fun AgentChatList(
 
             messages.filter { msg ->
                 when {
-                    msg.role == "system" -> msg.content.contains("ready")
+                    msg.role == "system" -> msg.content.contains("ready") || AgentService.isTransientCompactionStatusMessageForUi(msg)
+                    !showAllOutput && isBackgroundCommandReminder(msg.toolName, msg.content, msg.toolOutput) -> false
                     msg.role == "tool" && msg.toolCallId != null && assistantTrackedToolCalls.contains(msg.toolCallId) -> false
                     else -> true
                 }
@@ -148,11 +167,27 @@ fun ChatMessageBubble(
     val isSystem = message.role == "system"
     val isAssistant = message.role == "assistant"
     val isDelegation = message.isDelegation
+    val isCompactionStatus = AgentService.isTransientCompactionStatusMessageForUi(message)
+    val formattedTimestamp = remember(message.timestamp) { formatAgentMessageTimestamp(message.timestamp) }
+    val imageFile = remember(message.imagePath) { message.imagePath?.let(::File)?.takeIf { it.exists() } }
+    var showImagePreview by remember(message.imagePath) { mutableStateOf(false) }
+    val toolPreviewImagePath = remember(message.toolOutput) {
+        message.toolOutput
+            ?.lineSequence()
+            ?.firstOrNull { it.startsWith("PREVIEW_IMAGE_PATH:") }
+            ?.substringAfter(':')
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+    val toolPreviewImageFile = remember(toolPreviewImagePath) {
+        toolPreviewImagePath?.let(::File)?.takeIf { it.exists() }
+    }
     
     var delegationExpanded by remember { mutableStateOf(false) }
     
     val textColor = when {
         isUser -> MaterialTheme.colorScheme.onPrimary
+        isCompactionStatus -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
     
@@ -170,8 +205,11 @@ fun ChatMessageBubble(
                 .then(if (message.isStreaming) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(20.dp)) else Modifier)
                 .then(if (isDelegation) Modifier.clickable { delegationExpanded = !delegationExpanded } else Modifier),
             colors = CardDefaults.cardColors(
-                containerColor = if (isUser) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f) 
-                                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                containerColor = when {
+                    isUser -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
+                    isCompactionStatus -> Color(0xFF2E7D32).copy(alpha = 0.92f)
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                }
             ),
             shape = RoundedCornerShape(
                 topStart = 20.dp,
@@ -209,6 +247,14 @@ fun ChatMessageBubble(
                         else -> stringResource(R.string.agent_approve_generic_title, message.toolName ?: "Tool")
                     }
                     Text(text = title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    if (message.content.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = message.content,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                    }
                     Spacer(modifier = Modifier.height(10.dp))
                     Surface(
                         color = Color.Black.copy(alpha = 0.05f), 
@@ -263,6 +309,26 @@ fun ChatMessageBubble(
                 } else {
                     // Thought process
                     ThinkingBlock(message = message)
+
+                    if (imageFile != null) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .clickable { showImagePreview = true }
+                        ) {
+                            AsyncImage(
+                                model = imageFile,
+                                contentDescription = stringResource(R.string.agent_image_attachment_title),
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 140.dp, max = 260.dp)
+                            )
+                        }
+                    }
 
                     // Tool Call block
                     message.toolName?.let { tool ->
@@ -326,18 +392,38 @@ fun ChatMessageBubble(
                                         // Tool Results (legacy/finished)
                                         message.toolOutput?.let { output ->
                                             Spacer(modifier = Modifier.height(10.dp))
-                                            Surface(
-                                                color = Color.Black.copy(alpha = 0.05f),
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                SelectionContainer {
-                                                    Text(
-                                                        text = output,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        fontSize = 11.sp,
-                                                        modifier = Modifier.padding(8.dp)
-                                                    )
+                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                if (toolPreviewImageFile != null) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { showImagePreview = true }
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = toolPreviewImageFile,
+                                                            contentDescription = stringResource(R.string.agent_image_attachment_title),
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .heightIn(min = 160.dp, max = 260.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Surface(
+                                                    color = Color.Black.copy(alpha = 0.05f),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    SelectionContainer {
+                                                        Text(
+                                                            text = output.replaceFirst(Regex("(?m)^PREVIEW_IMAGE_PATH:.*$"), "").trim(),
+                                                            fontFamily = FontFamily.Monospace,
+                                                            fontSize = 11.sp,
+                                                            modifier = Modifier.padding(8.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -412,29 +498,33 @@ fun ChatMessageBubble(
             }
         }
         
-        // ========== Action Row Below Bubble (like Llama Native) ==========
-        if (!message.isStreaming && !isSystem) {
+        if (!message.isStreaming) {
+            val roleLabel = when {
+                isUser -> stringResource(R.string.agent_user_label)
+                isTool -> stringResource(R.string.agent_tool_label, message.toolName ?: "Tool")
+                isSystem -> stringResource(R.string.agent_system_label)
+                message.customAgentName != null -> stringResource(R.string.agent_custom_agent_label, message.customAgentName)
+                message.agentRole != null -> stringResource(R.string.agent_role_label, agentRoleLabel(message.agentRole))
+                else -> stringResource(R.string.agent_assistant_label)
+            }
             Row(
                 modifier = Modifier.padding(start = 4.dp, top = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Agent/User label
-                val roleLabel = when {
-                    isUser -> stringResource(R.string.agent_user_label)
-                    isTool -> stringResource(R.string.agent_tool_label, message.toolName ?: "Tool")
-                    message.customAgentName != null -> stringResource(R.string.agent_custom_agent_label, message.customAgentName)
-                    message.agentRole != null -> stringResource(R.string.agent_role_label, agentRoleLabel(message.agentRole))
-                    else -> stringResource(R.string.agent_assistant_label)
-                }
                 Text(
-                    text = roleLabel,
+                    text = "$formattedTimestamp · $roleLabel",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                // Copy
+            }
+        }
+
+        // ========== Action Row Below Bubble (like Llama Native) ==========
+        if (!message.isStreaming && !isSystem) {
+            Row(
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
                     Icons.Default.ContentCopy,
                     stringResource(R.string.action_copy),
@@ -444,10 +534,9 @@ fun ChatMessageBubble(
                     },
                     tint = MaterialTheme.colorScheme.outline
                 )
-                
+
                 Spacer(modifier = Modifier.width(8.dp))
-                
-                // Edit (for user, assistant, and plans)
+
                 if ((isUser || isAssistant || message.isPlan) && !isEditing) {
                     Icon(
                         Icons.Default.Edit,
@@ -457,8 +546,7 @@ fun ChatMessageBubble(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                
-                // Regenerate (assistant only)
+
                 if (isAssistant) {
                     Icon(
                         Icons.Default.Refresh,
@@ -468,14 +556,38 @@ fun ChatMessageBubble(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                
-                // Delete
+
                 Icon(
                     Icons.Default.Delete,
                     stringResource(R.string.action_delete),
                     modifier = Modifier.size(14.dp).clickable { onDelete() },
                     tint = MaterialTheme.colorScheme.outline
                 )
+            }
+        }
+    }
+
+    if (showImagePreview && (imageFile != null || toolPreviewImageFile != null)) {
+        Dialog(onDismissRequest = { showImagePreview = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    AsyncImage(
+                        model = imageFile ?: toolPreviewImageFile,
+                        contentDescription = stringResource(R.string.agent_image_attachment_title),
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 220.dp, max = 520.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(onClick = { showImagePreview = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text(stringResource(R.string.action_close))
+                    }
+                }
             }
         }
     }

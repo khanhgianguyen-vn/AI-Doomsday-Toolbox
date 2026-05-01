@@ -96,21 +96,13 @@ object WakeLockManager {
         synchronized(wifiLockSync) {
             if (wifiLock == null) {
                 val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
-                
-                // Use WIFI_MODE_FULL_HIGH_PERF on Android 10+ (API 29+), deprecated but still best for this use case
-                // On newer APIs, this might need adjustment if battery optimizations are aggressive
-                wifiLock = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    wifiManager.createWifiLock(
-                        android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                        "LlamaDroid:AppWifiLock"
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    wifiManager.createWifiLock(
-                        android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                        "LlamaDroid:AppWifiLock"
-                    )
-                }
+
+                // Keep the chosen mode explicit in one place instead of branching to identical code paths.
+                @Suppress("DEPRECATION")
+                wifiLock = wifiManager.createWifiLock(
+                    android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "LlamaDroid:AppWifiLock"
+                )
                 wifiLock?.setReferenceCounted(false)
             }
             
@@ -140,4 +132,6 @@ object WakeLockManager {
             }
         }
     }
+
+    fun isWifiHeld(): Boolean = wifiLock?.isHeld == true
 }

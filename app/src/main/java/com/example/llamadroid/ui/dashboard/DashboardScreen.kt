@@ -44,6 +44,9 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.llamadroid.service.FileServerService
+import com.example.llamadroid.ui.components.AppContentColumn
+import com.example.llamadroid.ui.components.AppPageBackground
+import com.example.llamadroid.ui.components.AppPageHeader
 import kotlinx.coroutines.launch
 
 
@@ -68,37 +71,18 @@ fun DashboardScreen(
     
     val scrollState = rememberScrollState()
     
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                )
-            )
-            .verticalScroll(scrollState)
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        // Header
-        Column {
-            Text(
-                stringResource(R.string.app_name),
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 32.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                stringResource(R.string.ai_hub_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    AppPageBackground {
+        AppContentColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+        AppPageHeader(
+            eyebrow = "HOME",
+            title = stringResource(R.string.app_name),
+            subtitle = stringResource(R.string.ai_hub_subtitle)
+        )
         
         // Server Status Card (Hero)
         Card(
@@ -1010,6 +994,7 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
         }
     }
 }

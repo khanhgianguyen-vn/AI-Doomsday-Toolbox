@@ -77,7 +77,8 @@ data class OllamaShowResponse(
     val modelfile: String = "",
     val parameters: String = "",
     val template: String = "",
-    val details: OllamaModelDetails? = null
+    val details: OllamaModelDetails? = null,
+    val capabilities: List<String> = emptyList()
 )
 
 @Serializable

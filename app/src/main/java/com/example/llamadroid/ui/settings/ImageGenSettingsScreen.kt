@@ -17,8 +17,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
 import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
-import com.example.llamadroid.data.db.AppDatabase
-import com.example.llamadroid.data.db.ModelType
+import com.example.llamadroid.onnx.OnnxBackendOverride
+import com.example.llamadroid.onnx.OnnxExecutionMode
+import com.example.llamadroid.onnx.OnnxGraphOptimizationLevel
+import com.example.llamadroid.onnx.OnnxRuntimeBackend
+import com.example.llamadroid.ui.components.AppScreenScaffold
+import com.example.llamadroid.ui.components.DraftFloatTextField
+import com.example.llamadroid.ui.components.DraftIntTextField
+import com.example.llamadroid.ui.components.DraftNullableIntTextField
 
 /**
  * Image Generation Settings - Thread controls and output folder
@@ -28,7 +34,6 @@ import com.example.llamadroid.data.db.ModelType
 fun ImageGenSettingsScreen(navController: NavController) {
     val context = LocalContext.current
     val settingsRepo = remember { SettingsRepository(context) }
-    val db = remember { AppDatabase.getDatabase(context) }
     
     val sdTxt2imgThreads by settingsRepo.sdTxt2imgThreads.collectAsState()
     val sdImg2imgThreads by settingsRepo.sdImg2imgThreads.collectAsState()
@@ -40,23 +45,15 @@ fun ImageGenSettingsScreen(navController: NavController) {
     val sdVaeRelativeTileSize by settingsRepo.sdVaeRelativeTileSize.collectAsState()
     val sdTensorTypeRules by settingsRepo.sdTensorTypeRules.collectAsState()
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.imagegen_settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    AppScreenScaffold(
+        title = stringResource(R.string.imagegen_settings_title),
+        subtitle = stringResource(R.string.settings_imagegen_desc),
+        onBack = { navController.popBackStack() }
+    ) { _ ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // txt2img Threads
@@ -151,7 +148,7 @@ fun ImageGenSettingsScreen(navController: NavController) {
                     }
                 }
             }
-            
+
             // Memory Optimization
             item {
                 Card(
@@ -248,5 +245,374 @@ fun ImageGenSettingsScreen(navController: NavController) {
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NativeChatOnnxToolSettingsCard(
+    model: String,
+    availableModels: List<String>,
+    onModelChange: (String?) -> Unit,
+    width: Int,
+    onWidthChange: (Int) -> Unit,
+    height: Int,
+    onHeightChange: (Int) -> Unit,
+    steps: Int,
+    onStepsChange: (Int) -> Unit,
+    cfg: Float,
+    onCfgChange: (Float) -> Unit,
+    seed: String,
+    onSeedChange: (String) -> Unit,
+    negativePrompt: String,
+    onNegativePromptChange: (String) -> Unit,
+    backend: OnnxRuntimeBackend,
+    onBackendChange: (OnnxRuntimeBackend) -> Unit,
+    runtimeThreads: Int?,
+    onRuntimeThreadsChange: (Int?) -> Unit,
+    graphOptimizationLevel: OnnxGraphOptimizationLevel,
+    onGraphOptimizationLevelChange: (OnnxGraphOptimizationLevel) -> Unit,
+    unetBackendOverride: OnnxBackendOverride,
+    onUnetBackendOverrideChange: (OnnxBackendOverride) -> Unit,
+    vaeDecoderBackendOverride: OnnxBackendOverride,
+    onVaeDecoderBackendOverrideChange: (OnnxBackendOverride) -> Unit,
+    vaeEncoderBackendOverride: OnnxBackendOverride,
+    onVaeEncoderBackendOverrideChange: (OnnxBackendOverride) -> Unit,
+    intraOpThreads: Int?,
+    onIntraOpThreadsChange: (Int?) -> Unit,
+    interOpThreads: Int?,
+    onInterOpThreadsChange: (Int?) -> Unit,
+    executionMode: OnnxExecutionMode,
+    onExecutionModeChange: (OnnxExecutionMode) -> Unit,
+    memoryPatternOptimization: Boolean,
+    onMemoryPatternOptimizationChange: (Boolean) -> Unit,
+    cpuArenaAllocator: Boolean,
+    onCpuArenaAllocatorChange: (Boolean) -> Unit,
+    nnapiCpuDisabled: Boolean,
+    onNnapiCpuDisabledChange: (Boolean) -> Unit,
+    nnapiUseFp16: Boolean,
+    onNnapiUseFp16Change: (Boolean) -> Unit
+) {
+    var modelExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                stringResource(R.string.native_chat_image_generation_settings_title),
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                stringResource(R.string.native_chat_image_generation_settings_desc),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            ExposedDropdownMenuBox(
+                expanded = modelExpanded,
+                onExpandedChange = { modelExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = onModelChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(),
+                    label = { Text(stringResource(R.string.agent_image_generation_model_label)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded) },
+                    singleLine = true
+                )
+                ExposedDropdownMenu(
+                    expanded = modelExpanded,
+                    onDismissRequest = { modelExpanded = false }
+                ) {
+                    availableModels.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = {
+                                onModelChange(option)
+                                modelExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NativeChatOnnxNumberField(
+                    value = width,
+                    onValueChange = onWidthChange,
+                    label = stringResource(R.string.onnx_image_gen_width_label),
+                    modifier = Modifier.weight(1f)
+                )
+                NativeChatOnnxNumberField(
+                    value = height,
+                    onValueChange = onHeightChange,
+                    label = stringResource(R.string.onnx_image_gen_height_label),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NativeChatOnnxNumberField(
+                    value = steps,
+                    onValueChange = onStepsChange,
+                    label = stringResource(R.string.onnx_image_gen_steps_label),
+                    modifier = Modifier.weight(1f)
+                )
+                NativeChatOnnxFloatField(
+                    value = cfg,
+                    onValueChange = onCfgChange,
+                    label = stringResource(R.string.onnx_image_gen_cfg_label),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            OutlinedTextField(
+                value = seed,
+                onValueChange = onSeedChange,
+                label = { Text(stringResource(R.string.onnx_image_gen_seed_label)) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(stringResource(R.string.onnx_image_gen_seed_placeholder)) },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                )
+            )
+
+            OutlinedTextField(
+                value = negativePrompt,
+                onValueChange = onNegativePromptChange,
+                label = { Text(stringResource(R.string.native_chat_image_generation_negative_prompt_label)) },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4
+            )
+
+            Text(
+                stringResource(R.string.native_chat_image_generation_runtime_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            NativeChatOnnxEnumDropdown(
+                label = stringResource(R.string.onnx_image_gen_backend_label),
+                selected = backend,
+                values = OnnxRuntimeBackend.entries,
+                labelFor = {
+                    when (it) {
+                        OnnxRuntimeBackend.CPU -> stringResource(R.string.onnx_image_gen_backend_cpu)
+                        OnnxRuntimeBackend.NNAPI -> stringResource(R.string.onnx_image_gen_backend_nnapi)
+                    }
+                },
+                onSelected = onBackendChange
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NativeChatOnnxOptionalNumberField(
+                    value = runtimeThreads,
+                    onValueChange = onRuntimeThreadsChange,
+                    label = stringResource(R.string.onnx_image_gen_runtime_threads_label),
+                    modifier = Modifier.weight(1f)
+                )
+                NativeChatOnnxEnumDropdown(
+                    label = stringResource(R.string.onnx_image_gen_graph_opt_title),
+                    selected = graphOptimizationLevel,
+                    values = OnnxGraphOptimizationLevel.entries,
+                    labelFor = { it.name },
+                    onSelected = onGraphOptimizationLevelChange,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NativeChatOnnxOptionalNumberField(
+                    value = intraOpThreads,
+                    onValueChange = onIntraOpThreadsChange,
+                    label = stringResource(R.string.onnx_image_gen_intra_threads_label),
+                    modifier = Modifier.weight(1f)
+                )
+                NativeChatOnnxOptionalNumberField(
+                    value = interOpThreads,
+                    onValueChange = onInterOpThreadsChange,
+                    label = stringResource(R.string.onnx_image_gen_inter_threads_label),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            NativeChatOnnxEnumDropdown(
+                label = stringResource(R.string.onnx_image_gen_execution_mode_title),
+                selected = executionMode,
+                values = OnnxExecutionMode.entries,
+                labelFor = { it.name },
+                onSelected = onExecutionModeChange
+            )
+
+            Text(
+                stringResource(R.string.native_chat_image_generation_component_backends_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            NativeChatOnnxEnumDropdown(
+                label = stringResource(R.string.onnx_image_gen_component_backend_unet),
+                selected = unetBackendOverride,
+                values = OnnxBackendOverride.entries,
+                labelFor = { it.name },
+                onSelected = onUnetBackendOverrideChange
+            )
+            NativeChatOnnxEnumDropdown(
+                label = stringResource(R.string.onnx_image_gen_component_backend_vae_decoder),
+                selected = vaeDecoderBackendOverride,
+                values = OnnxBackendOverride.entries,
+                labelFor = { it.name },
+                onSelected = onVaeDecoderBackendOverrideChange
+            )
+            NativeChatOnnxEnumDropdown(
+                label = stringResource(R.string.onnx_image_gen_component_backend_vae_encoder),
+                selected = vaeEncoderBackendOverride,
+                values = OnnxBackendOverride.entries,
+                labelFor = { it.name },
+                onSelected = onVaeEncoderBackendOverrideChange
+            )
+
+            NativeChatOnnxSwitchRow(
+                title = stringResource(R.string.onnx_image_gen_memory_pattern_label),
+                checked = memoryPatternOptimization,
+                onCheckedChange = onMemoryPatternOptimizationChange
+            )
+            NativeChatOnnxSwitchRow(
+                title = stringResource(R.string.onnx_image_gen_cpu_arena_label),
+                checked = cpuArenaAllocator,
+                onCheckedChange = onCpuArenaAllocatorChange
+            )
+            NativeChatOnnxSwitchRow(
+                title = stringResource(R.string.onnx_image_gen_nnapi_cpu_disabled_label),
+                checked = nnapiCpuDisabled,
+                onCheckedChange = onNnapiCpuDisabledChange
+            )
+            NativeChatOnnxSwitchRow(
+                title = stringResource(R.string.onnx_image_gen_nnapi_fp16_label),
+                checked = nnapiUseFp16,
+                onCheckedChange = onNnapiUseFp16Change
+            )
+        }
+    }
+}
+
+@Composable
+private fun NativeChatOnnxNumberField(
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    DraftIntTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun NativeChatOnnxFloatField(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    DraftFloatTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun NativeChatOnnxOptionalNumberField(
+    value: Int?,
+    onValueChange: (Int?) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    DraftNullableIntTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T : Enum<T>> NativeChatOnnxEnumDropdown(
+    label: String,
+    selected: T,
+    values: List<T>,
+    labelFor: @Composable (T) -> String,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = labelFor(selected),
+            onValueChange = {},
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            values.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(labelFor(option)) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NativeChatOnnxSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
     }
 }

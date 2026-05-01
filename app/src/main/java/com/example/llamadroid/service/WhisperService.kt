@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Binder
 import android.os.IBinder
 import androidx.documentfile.provider.DocumentFile
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.data.binary.BinaryRepository
 import com.example.llamadroid.data.db.AppDatabase
@@ -108,31 +109,43 @@ class WhisperService : Service() {
             UnifiedNotificationManager.updateProgress(it, progress, text)
         }
     }
+
+    private fun finishForegroundTask() {
+        notificationTaskId?.let(UnifiedNotificationManager::dismissTask)
+        notificationTaskId = null
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        stopSelf()
+    }
     
     /**
      * Transcribe audio file using WhisperCPP
      */
     suspend fun transcribe(config: WhisperConfig): Result<WhisperResult> = withContext(Dispatchers.IO) {
+        var wavFile: File? = null
+        var process: Process? = null
         try {
             _state.value = WhisperState.Converting
-            updateNotification("Converting audio...")
+            updateNotification(getString(R.string.whisper_status_converting))
             
             // Step 1: Convert audio to 16-bit WAV using ffmpeg
-            val wavFile = File(cacheDir, "whisper_input.wav")
+            wavFile = File(cacheDir, "whisper_input.wav")
             val convertResult = convertAudioToWav(config.audioPath, wavFile.absolutePath)
             if (convertResult.isFailure) {
-                _state.value = WhisperState.Error(convertResult.exceptionOrNull()?.message ?: "Audio conversion failed")
+                _state.value = WhisperState.Error(
+                    convertResult.exceptionOrNull()?.message
+                        ?: getString(R.string.whisper_error_audio_conversion_failed)
+                )
                 return@withContext Result.failure(convertResult.exceptionOrNull()!!)
             }
             
             _state.value = WhisperState.Transcribing
-            updateNotification("Transcribing audio...")
+            updateNotification(getString(R.string.whisper_status_transcribing))
             
             // Step 2: Run whisper-cli using BinaryRepository
             val binaryRepo = BinaryRepository(applicationContext)
             val whisperBinary = binaryRepo.getWhisperCliBinary()
             if (whisperBinary == null || !whisperBinary.exists()) {
-                val error = "Whisper binary not found"
+                val error = getString(R.string.whisper_error_binary_not_found)
                 _state.value = WhisperState.Error(error)
                 return@withContext Result.failure(Exception(error))
             }
@@ -177,11 +190,12 @@ class WhisperService : Service() {
             processBuilder.directory(filesDir)
             processBuilder.redirectErrorStream(true)
             
-            currentProcess = processBuilder.start()
+            process = processBuilder.start()
+            currentProcess = process
             
             // Read output
             val output = StringBuilder()
-            val reader = BufferedReader(InputStreamReader(currentProcess!!.inputStream))
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
             var line: String?
             while (reader.readLine().also { line = it } != null) {
                 output.appendLine(line)
@@ -189,11 +203,10 @@ class WhisperService : Service() {
                 DebugLog.log("[WHISPER] ${line ?: ""}")
             }
             
-            val exitCode = currentProcess!!.waitFor()
-            currentProcess = null
+            val exitCode = process.waitFor()
             
             if (exitCode != 0) {
-                val error = "Whisper failed with exit code $exitCode"
+                val error = getString(R.string.whisper_error_failed_with_exit_code, exitCode)
                 _state.value = WhisperState.Error(error)
                 return@withContext Result.failure(Exception(error))
             }
@@ -258,10 +271,8 @@ class WhisperService : Service() {
             }
             
             // Clean up temp files
-            wavFile.delete()
-            
             _state.value = WhisperState.Completed
-            updateNotification("Transcription complete")
+            updateNotification(getString(R.string.whisper_status_complete))
             
             // Get result text - use TXT if available, otherwise use first available format
             val resultText = results[WhisperOutputFormat.TXT] 
@@ -298,6 +309,17 @@ class WhisperService : Service() {
         } catch (e: Exception) {
             _state.value = WhisperState.Error(e.message ?: "Unknown error")
             Result.failure(e)
+        } finally {
+            runCatching {
+                if (process?.isAlive == true) {
+                    process.destroy()
+                }
+            }
+            if (currentProcess === process) {
+                currentProcess = null
+            }
+            wavFile?.takeIf { it.exists() }?.delete()
+            finishForegroundTask()
         }
     }
     
@@ -306,8 +328,9 @@ class WhisperService : Service() {
             val binaryRepo = BinaryRepository(applicationContext)
             val ffmpegBinary = binaryRepo.getFFmpegBinary()
             if (ffmpegBinary == null || !ffmpegBinary.exists()) {
-                DebugLog.log("[WHISPER] ffmpeg binary not found")
-                return@withContext Result.failure(Exception("ffmpeg binary not found"))
+                val error = getString(R.string.whisper_error_ffmpeg_not_found)
+                DebugLog.log("[WHISPER] $error")
+                return@withContext Result.failure(Exception(error))
             }
             
             DebugLog.log("[WHISPER] Input file: $inputPath")
@@ -356,9 +379,13 @@ class WhisperService : Service() {
                     it.contains("Invalid", ignoreCase = true) ||
                     it.contains("No such", ignoreCase = true)
                 }.joinToString("; ")
-                val errorMsg = errorLines.ifEmpty { "ffmpeg exit code $exitCode" }
+                val errorMsg = errorLines.ifEmpty {
+                    getString(R.string.whisper_error_ffmpeg_exit_code, exitCode)
+                }
                 DebugLog.log("[WHISPER] ffmpeg conversion failed: $errorMsg")
-                return@withContext Result.failure(Exception("Audio conversion failed: $errorMsg"))
+                return@withContext Result.failure(
+                    Exception(getString(R.string.whisper_error_audio_conversion_detail, errorMsg))
+                )
             }
             
             val outputFile = File(outputPath)
@@ -381,7 +408,7 @@ class WhisperService : Service() {
         currentProcess?.destroy()
         currentProcess = null
         _state.value = WhisperState.Idle
-        updateNotification("Transcription cancelled")
+        updateNotification(getString(R.string.whisper_status_cancelled))
     }
     
     companion object {

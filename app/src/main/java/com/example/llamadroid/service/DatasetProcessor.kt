@@ -1,9 +1,10 @@
 package com.example.llamadroid.service
 
 import android.content.Context
-import com.example.llamadroid.data.api.CompletionRequest
-import com.example.llamadroid.data.api.CompletionResponse
+import android.net.Uri
+import androidx.room.withTransaction
 import com.example.llamadroid.data.api.LlamaServerApi
+import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.data.db.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,7 @@ class DatasetProcessor(
     private val context: Context,
     private val dao: DatasetDao
 ) {
+    private val db = AppDatabase.getDatabase(context)
     
     // Progress state
     data class Progress(
@@ -46,13 +48,22 @@ class DatasetProcessor(
         class Questions(projectId: Long, val questionPrompt: String, name: String) : Job(name, projectId)
         class Answers(projectId: Long, val answerPrompt: String, name: String) : Job(name, projectId)
         class Rating(projectId: Long, val reviewPrompt: String, name: String) : Job(name, projectId)
+        class ImportPdf(projectId: Long, val sourceUri: String, val sourceName: String, name: String) : Job(name, projectId)
+        class ImportTxt(projectId: Long, val sourceUri: String, val sourceName: String, name: String) : Job(name, projectId)
+    }
+
+    enum class JobOutcome {
+        SUCCESS,
+        FAILED,
+        CANCELLED
+    }
+
+    interface RuntimeHooks {
+        fun onJobStarted(job: Job)
+        fun onJobFinished(job: Job?, outcome: JobOutcome, errorMessage: String? = null)
     }
     
     companion object {
-        private const val CHANNEL_ID = "dataset_processing"
-        private const val NOTIFICATION_ID = 9999
-        
-        // Static state that survives navigation
         private val _progress = MutableStateFlow<Progress?>(null)
         val progress = _progress.asStateFlow()
         
@@ -62,26 +73,40 @@ class DatasetProcessor(
         // Job queue
         private val _jobQueue = MutableStateFlow<List<Job>>(emptyList())
         val jobQueue = _jobQueue.asStateFlow()
+
+        private val _activeJob = MutableStateFlow<Job?>(null)
+        val activeJob = _activeJob.asStateFlow()
         
         private var processingJob: kotlinx.coroutines.Job? = null
         private val processingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         
-        // Application context for notifications (set from Application or Activity)
-        private var appContext: android.content.Context? = null
         private var processorInstance: DatasetProcessor? = null
-        
-        fun setApplicationContext(context: android.content.Context) {
-            appContext = context.applicationContext
-        }
+        private var runtimeHooks: RuntimeHooks? = null
         
         fun setProcessor(processor: DatasetProcessor) {
             processorInstance = processor
         }
+
+        fun setRuntimeHooks(hooks: RuntimeHooks?) {
+            runtimeHooks = hooks
+        }
         
         fun queueJob(job: Job) {
-            _jobQueue.value = _jobQueue.value + job
-            // Start processing if not already running
-            if (!_isProcessing.value) {
+            queueJobs(listOf(job))
+        }
+
+        fun queueJobs(jobs: List<Job>) {
+            if (jobs.isEmpty()) return
+            _jobQueue.value = _jobQueue.value + jobs
+            // Start processing only when there is no active handoff in flight.
+            if (!_isProcessing.value && _activeJob.value == null) {
+                processNextJob()
+            }
+        }
+
+        fun restoreQueuedJobs(jobs: List<Job>) {
+            _jobQueue.value = jobs
+            if (!_isProcessing.value && _activeJob.value == null) {
                 processNextJob()
             }
         }
@@ -118,73 +143,56 @@ class DatasetProcessor(
             
             val job = queue.first()
             _jobQueue.value = queue.drop(1)
-            
+            _activeJob.value = job
+            runtimeHooks?.onJobStarted(job)
             processorInstance?.executeJob(job)
         }
         
-        fun onJobComplete() {
-            if (_jobQueue.value.isNotEmpty()) {
+        private fun completeActiveJob(
+            outcome: JobOutcome,
+            errorMessage: String? = null,
+            advanceQueue: Boolean = false
+        ) {
+            val finishedJob = _activeJob.value
+            _activeJob.value = null
+            runtimeHooks?.onJobFinished(finishedJob, outcome, errorMessage)
+            if (advanceQueue && _jobQueue.value.isNotEmpty()) {
                 processNextJob()
             }
         }
         
         fun cancel() {
             processingJob?.cancel()
-            _isProcessing.value = false
-            updateProgressInternal(null)
         }
-        
+
         fun cancelAll() {
-            processingJob?.cancel()
             _jobQueue.value = emptyList()
+            processingJob?.cancel()
+        }
+
+        fun cancelAllImmediately() {
+            _jobQueue.value = emptyList()
+            processingJob?.cancel()
+            processingJob = null
+            _progress.value = null
             _isProcessing.value = false
-            updateProgressInternal(null)
+            _activeJob.value = null
         }
         
-        // Internal method for updating progress and showing notification
         private fun updateProgressInternal(progress: Progress?) {
             _progress.value = progress
-            
-            // Show or cancel notification globally
-            appContext?.let { ctx ->
-                if (progress != null) {
-                    showNotification(ctx, progress)
-                } else {
-                    cancelNotification(ctx)
-                }
-            }
         }
-        
-        private fun showNotification(context: android.content.Context, progress: Progress) {
-            // Create channel (required for Android 8+)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val channel = android.app.NotificationChannel(
-                    CHANNEL_ID,
-                    context.getString(R.string.dataset_processing_notif),
-                    android.app.NotificationManager.IMPORTANCE_LOW
-                )
-                val manager = context.getSystemService(android.app.NotificationManager::class.java)
-                manager.createNotificationChannel(channel)
-            }
-            
-            val notification = androidx.core.app.NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_menu_sort_by_size)
-                .setContentTitle("${progress.stage}: ${progress.current}/${progress.total}")
-                .setContentText(progress.currentItem)
-                .setProgress(progress.total, progress.current, false)
-                .setOngoing(true)
-                .setSilent(true)
-                .build()
-            
-            try {
-                androidx.core.app.NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-            } catch (_: SecurityException) {
-                // Permission not granted
-            }
-        }
-        
-        private fun cancelNotification(context: android.content.Context) {
-            androidx.core.app.NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+
+        private fun finishCurrentJob(
+            outcome: JobOutcome,
+            errorMessage: String? = null,
+            advanceQueue: Boolean = false
+        ) {
+            completeActiveJob(
+                outcome = outcome,
+                errorMessage = errorMessage,
+                advanceQueue = advanceQueue
+            )
         }
     }
     
@@ -195,6 +203,35 @@ class DatasetProcessor(
     
     private fun setProcessing(value: Boolean) {
         _isProcessing.value = value
+    }
+
+    private fun createBackend(project: DatasetProjectEntity): DatasetLlmBackend {
+        return when (normalizeDatasetBackend(project.backend)) {
+            SettingsRepository.PDF_BACKEND_OLLAMA -> {
+                if (project.ollamaModel.isNullOrBlank()) {
+                    throw IllegalStateException(context.getString(R.string.dataset_ollama_model_required))
+                }
+                OllamaDatasetLlmBackend(project)
+            }
+
+            else -> LlamaServerDatasetLlmBackend(createApi(project.serverUrl))
+        }
+    }
+
+    private suspend fun showProcessingError(projectId: Long, throwable: Throwable) {
+        updateProgress(
+            Progress(
+                stage = context.getString(R.string.dataset_stage_error),
+                current = 0,
+                total = 0,
+                currentItem = context.getString(
+                    R.string.dataset_server_error_param,
+                    throwable.message?.take(80) ?: context.getString(R.string.error_generic)
+                ),
+                projectId = projectId
+            )
+        )
+        delay(3000)
     }
     
     // Create Retrofit with custom server URL
@@ -228,6 +265,260 @@ class DatasetProcessor(
         }
         return chunks
     }
+
+    private fun importFileLabel(typeLabel: String, fileName: String): String =
+        context.getString(R.string.dataset_import_file_diag, typeLabel, fileName)
+
+    private fun pdfImportDiagnostics(
+        fileName: String,
+        extraction: PdfExtractionResult? = null,
+        chunkCount: Int? = null
+    ): String = buildString {
+        append(importFileLabel(context.getString(R.string.file_type_pdf), fileName))
+        extraction?.let {
+            append('\n')
+            append(
+                context.getString(
+                    R.string.dataset_import_pdf_pages_diag,
+                    it.totalPages,
+                    it.textLayerPages,
+                    it.ocrPages,
+                    it.emptyPages
+                )
+            )
+            append('\n')
+            append(context.getString(R.string.dataset_import_text_chars_diag, it.text.length))
+        }
+        chunkCount?.let {
+            append('\n')
+            append(context.getString(R.string.dataset_import_chunks_diag, it))
+        }
+    }
+
+    private fun txtImportDiagnostics(
+        fileName: String,
+        textCharacters: Int? = null,
+        chunkCount: Int? = null
+    ): String = buildString {
+        append(importFileLabel(context.getString(R.string.file_type_text), fileName))
+        textCharacters?.let {
+            append('\n')
+            append(context.getString(R.string.dataset_import_text_chars_diag, it))
+        }
+        chunkCount?.let {
+            append('\n')
+            append(context.getString(R.string.dataset_import_chunks_diag, it))
+        }
+    }
+
+    private suspend fun saveImportedSource(
+        projectId: Long,
+        sourceType: SourceType,
+        sourceUri: String,
+        sourceName: String,
+        text: String,
+        chunkTexts: List<String>
+    ) {
+        db.withTransaction {
+            val existingSource = dao.getSourceByProjectAndUri(projectId, sourceUri)
+            if (existingSource != null) {
+                if (dao.getChunkCountForSource(existingSource.id) > 0) {
+                    return@withTransaction
+                }
+                dao.deleteChunksForSource(existingSource.id)
+                dao.deleteSource(existingSource)
+            }
+            val sourceId = dao.insertSource(
+                DatasetSourceEntity(
+                    projectId = projectId,
+                    type = sourceType,
+                    uri = sourceUri,
+                    name = sourceName,
+                    extractedText = text
+                )
+            )
+            dao.insertChunks(
+                chunkTexts.mapIndexed { index, chunkText ->
+                    DatasetChunkEntity(
+                        projectId = projectId,
+                        sourceId = sourceId,
+                        chunkIndex = index,
+                        originalText = chunkText
+                    )
+                }
+            )
+        }
+    }
+
+    fun runImportPdf(project: DatasetProjectEntity, sourceUri: String, sourceName: String) {
+        processingJob = processingScope.launch {
+            setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
+            val fileName = sourceName.ifBlank { context.getString(R.string.file_type_pdf) }
+
+            try {
+                val uri = Uri.parse(sourceUri)
+                val pdfService = PDFService(context)
+
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_preparing),
+                        1,
+                        4,
+                        pdfImportDiagnostics(fileName),
+                        project.id
+                    )
+                )
+
+                ensureActive()
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_extracting_pdf),
+                        2,
+                        4,
+                        pdfImportDiagnostics(fileName),
+                        project.id
+                    )
+                )
+                val extraction = pdfService.extractTextDetailed(uri).getOrThrow()
+
+                ensureActive()
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_chunking),
+                        3,
+                        4,
+                        pdfImportDiagnostics(fileName, extraction),
+                        project.id
+                    )
+                )
+                val chunkTexts = withContext(Dispatchers.Default) {
+                    chunkText(extraction.text, project.chunkSize)
+                }
+
+                ensureActive()
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_saving),
+                        4,
+                        4,
+                        pdfImportDiagnostics(fileName, extraction, chunkTexts.size),
+                        project.id
+                    )
+                )
+                saveImportedSource(
+                    projectId = project.id,
+                    sourceType = SourceType.PDF,
+                    sourceUri = sourceUri,
+                    sourceName = fileName,
+                    text = extraction.text,
+                    chunkTexts = chunkTexts
+                )
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
+            } finally {
+                setProcessing(false)
+                updateProgress(null)
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
+            }
+        }
+    }
+
+    fun runImportTxt(project: DatasetProjectEntity, sourceUri: String, sourceName: String) {
+        processingJob = processingScope.launch {
+            setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
+            val fileName = sourceName.ifBlank { context.getString(R.string.file_type_text) }
+
+            try {
+                val uri = Uri.parse(sourceUri)
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_preparing),
+                        1,
+                        4,
+                        txtImportDiagnostics(fileName),
+                        project.id
+                    )
+                )
+
+                ensureActive()
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_reading_txt),
+                        2,
+                        4,
+                        txtImportDiagnostics(fileName),
+                        project.id
+                    )
+                )
+                val text = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.bufferedReader().readText()
+                    } ?: error(context.getString(R.string.dataset_import_error_cannot_open_file))
+                }
+
+                ensureActive()
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_chunking),
+                        3,
+                        4,
+                        txtImportDiagnostics(fileName, text.length),
+                        project.id
+                    )
+                )
+                val chunkTexts = withContext(Dispatchers.Default) {
+                    chunkText(text, project.chunkSize)
+                }
+
+                ensureActive()
+                updateProgress(
+                    Progress(
+                        context.getString(R.string.dataset_import_stage_saving),
+                        4,
+                        4,
+                        txtImportDiagnostics(fileName, text.length, chunkTexts.size),
+                        project.id
+                    )
+                )
+                saveImportedSource(
+                    projectId = project.id,
+                    sourceType = SourceType.TXT,
+                    sourceUri = sourceUri,
+                    sourceName = fileName,
+                    text = text,
+                    chunkTexts = chunkTexts
+                )
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
+            } finally {
+                setProcessing(false)
+                updateProgress(null)
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
+            }
+        }
+    }
     
     // Build context (50% of prev and next chunks)
     fun buildContext(chunks: List<String>, index: Int): Triple<String, String, String> {
@@ -247,69 +538,77 @@ class DatasetProcessor(
     // ========== LLM Calls ==========
     
     private suspend fun callLLM(
-        api: LlamaServerApi,
+        backend: DatasetLlmBackend,
         prompt: String,
         maxTokens: Int,
         temperature: Float,
         stop: List<String> = emptyList()
     ): String {
-        return try {
-            val response = api.completion(CompletionRequest(
-                prompt = prompt,
-                n_predict = maxTokens,
-                temperature = temperature,
-                stop = stop
-            ))
-            response.content.trim()
-        } catch (e: Exception) {
-            throw e
+        return backend.complete(prompt, maxTokens, temperature, stop)
+    }
+    
+    private suspend fun cleanChunk(
+        backend: DatasetLlmBackend,
+        chunk: String,
+        prevContext: String,
+        nextContext: String,
+        prompt: String,
+        maxTokens: Int,
+        temperature: Float
+    ): String {
+        val formattedPrompt = prompt
+            .replace("{prev_chunk_50%}", prevContext)
+            .replace("{chunk}", chunk)
+            .replace("{next_chunk_50%}", nextContext)
+        
+        return callLLM(backend, formattedPrompt, maxTokens, temperature)
+    }
+
+    private fun applyFinalLanguageInstruction(prompt: String, finalLanguage: String): String {
+        val language = finalLanguage.trim()
+        val instruction = if (language.isBlank()) {
+            "Final language: use the same language as the source/context. Keep required fixed phrases and machine-readable tokens exactly as written."
+        } else {
+            "Final language: write the final dataset output in $language. Keep required fixed phrases and machine-readable tokens exactly as written."
+        }
+        return if (prompt.contains("{final_language_instruction}")) {
+            prompt.replace("{final_language_instruction}", instruction)
+        } else {
+            "$instruction\n\n$prompt"
         }
     }
     
-    suspend fun cleanChunk(
-        api: LlamaServerApi,
+    private suspend fun generateQuestion(
+        backend: DatasetLlmBackend,
         chunk: String,
         prevContext: String,
         nextContext: String,
         prompt: String,
+        finalLanguage: String,
         maxTokens: Int,
         temperature: Float
     ): String {
-        val formattedPrompt = prompt
+        val formattedPrompt = applyFinalLanguageInstruction(prompt, finalLanguage)
             .replace("{prev_chunk_50%}", prevContext)
             .replace("{chunk}", chunk)
             .replace("{next_chunk_50%}", nextContext)
         
-        return callLLM(api, formattedPrompt, maxTokens, temperature)
+        val response = callLLM(backend, formattedPrompt, maxTokens, temperature, listOf("\n"))
+        return backend.normalizeQuestionOutput(response)
     }
     
-    suspend fun generateQuestion(
-        api: LlamaServerApi,
-        chunk: String,
-        prevContext: String,
-        nextContext: String,
-        prompt: String,
-        maxTokens: Int,
-        temperature: Float
-    ): String {
-        val formattedPrompt = prompt
-            .replace("{prev_chunk_50%}", prevContext)
-            .replace("{chunk}", chunk)
-            .replace("{next_chunk_50%}", nextContext)
-        
-        return callLLM(api, formattedPrompt, maxTokens, temperature, listOf("\n"))
-    }
-    
-    suspend fun generateAnswer(
-        api: LlamaServerApi,
+    private suspend fun generateAnswer(
+        backend: DatasetLlmBackend,
         question: String,
         context: String,
         prompt: String,
+        finalLanguage: String,
         useCoT: Boolean,
         maxTokens: Int,
         temperature: Float
     ): String {
-        var formattedPrompt = prompt.replace("{question}", question)
+        var formattedPrompt = applyFinalLanguageInstruction(prompt, finalLanguage)
+            .replace("{question}", question)
             .replace("{context}", context)
         
         if (useCoT) {
@@ -319,25 +618,24 @@ class DatasetProcessor(
             formattedPrompt = formattedPrompt.replace("{if CoT: Think step by step before answering.}", "")
         }
         
-        return callLLM(api, formattedPrompt, maxTokens, temperature)
+        return callLLM(backend, formattedPrompt, maxTokens, temperature)
     }
     
-    suspend fun rateQA(
-        api: LlamaServerApi,
+    private suspend fun rateQA(
+        backend: DatasetLlmBackend,
         question: String,
         answer: String,
         context: String,
         prompt: String,
-        maxTokens: Int,
-        temperature: Float
+        finalLanguage: String
     ): Pair<Int, String> {
-        val formattedPrompt = prompt
+        val formattedPrompt = applyFinalLanguageInstruction(prompt, finalLanguage)
             .replace("{question}", question)
             .replace("{answer}", answer)
             .replace("{context}", context)
         
         // Allow more tokens for justification
-        val response = callLLM(api, formattedPrompt, 250, 0.1f)
+        val response = callLLM(backend, formattedPrompt, 250, 0.1f)
         
         // Extract FINAL score from response - look for specific patterns in priority order
         val score = extractFinalScore(response)
@@ -385,10 +683,12 @@ class DatasetProcessor(
     ) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             com.example.llamadroid.util.DebugLog.log("[Dataset] Starting cleaning stage for project ${project.id}")
             
             try {
-                val api = createApi(project.serverUrl)
+                val backend = createBackend(project)
                 val pendingChunks = dao.getChunksByStatus(project.id, ChunkStatus.PENDING)
                 val total = pendingChunks.size
                 com.example.llamadroid.util.DebugLog.log("[Dataset] Found $total pending chunks to clean")
@@ -396,6 +696,7 @@ class DatasetProcessor(
                 if (total == 0) {
                     updateProgress(Progress(context.getString(R.string.dataset_stage_done), 0, 0, context.getString(R.string.dataset_no_chunks_clean), project.id))
                     com.example.llamadroid.util.DebugLog.log("[Dataset] No chunks to clean, done")
+                    outcome = JobOutcome.SUCCESS
                     return@launch
                 }
                 
@@ -412,12 +713,18 @@ class DatasetProcessor(
                         val sortedChunks = allChunks.sortedBy { it.chunkIndex }
                         val chunkTexts = sortedChunks.map { it.cleanedText ?: it.originalText }
                         val currentIndex = sortedChunks.indexOfFirst { it.id == chunk.id }
+                        if (currentIndex < 0) {
+                            com.example.llamadroid.util.DebugLog.log(
+                                "[Dataset] Skipping deleted chunk ${chunk.id} during cleaning"
+                            )
+                            return@forEachIndexed
+                        }
                         
                         val (prev, _, next) = buildContext(chunkTexts, currentIndex)
                         
                         com.example.llamadroid.util.DebugLog.log("[Dataset] Calling LLM for chunk ${chunk.id}...")
                         val cleanedText = cleanChunk(
-                            api, chunk.originalText, prev, next,
+                            backend, chunk.originalText, prev, next,
                             cleanPrompt, project.maxTokens, project.temperature
                         )
                         com.example.llamadroid.util.DebugLog.log("[Dataset] LLM response received, length=${cleanedText.length}")
@@ -435,15 +742,24 @@ class DatasetProcessor(
                     }
                 }
                 com.example.llamadroid.util.DebugLog.log("[Dataset] Cleaning stage COMPLETED for all $total chunks")
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+                com.example.llamadroid.util.DebugLog.log("[Dataset] Cleaning stage CANCELLED")
             } catch (e: Exception) {
                 com.example.llamadroid.util.DebugLog.log("[Dataset] Cleaning stage ERROR: ${e.message}")
-                updateProgress(Progress(context.getString(R.string.dataset_stage_error), 0, 0, context.getString(R.string.dataset_server_error_param, e.message?.take(50)), project.id))
-                // Don't throw - just show error in progress
-                kotlinx.coroutines.delay(3000)
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
             } finally {
                 com.example.llamadroid.util.DebugLog.log("[Dataset] Cleaning stage FINISHED, resetting state")
                 setProcessing(false)
                 updateProgress(null)
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -454,9 +770,11 @@ class DatasetProcessor(
     ) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             
             try {
-                val api = createApi(project.serverUrl)
+                val backend = createBackend(project)
                 val cleanedChunks = dao.getChunksByStatus(project.id, ChunkStatus.CLEANED)
                 val total = cleanedChunks.size * project.questionsPerChunk
                 var current = 0
@@ -471,6 +789,12 @@ class DatasetProcessor(
                     val sortedChunks = allChunks.sortedBy { it.chunkIndex }
                     val chunkTexts = sortedChunks.map { it.cleanedText ?: it.originalText }
                     val currentIndex = sortedChunks.indexOfFirst { it.id == chunk.id }
+                    if (currentIndex < 0) {
+                        com.example.llamadroid.util.DebugLog.log(
+                            "[Dataset] Skipping deleted chunk ${chunk.id} during question generation"
+                        )
+                        return@forEach
+                    }
                     val (prev, _, next) = buildContext(chunkTexts, currentIndex)
                     
                     // Generate N questions per chunk
@@ -481,8 +805,8 @@ class DatasetProcessor(
                         updateProgress(Progress(context.getString(R.string.dataset_stage_questions), current, total, context.getString(R.string.dataset_chunk_q_param, chunk.chunkIndex, i+1), project.id))
                         
                         val question = generateQuestion(
-                            api, cleanedText, prev, next,
-                            questionPrompt, project.maxTokens, project.temperature
+                            backend, cleanedText, prev, next,
+                            questionPrompt, project.finalLanguage, project.maxTokens, project.temperature
                         )
                         
                         // Only add unique questions
@@ -497,9 +821,21 @@ class DatasetProcessor(
                         }
                     }
                 }
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -510,9 +846,11 @@ class DatasetProcessor(
     ) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             
             try {
-                val api = createApi(project.serverUrl)
+                val backend = createBackend(project)
                 val unanswered = dao.getQAByStatus(project.id, QAStatus.QUESTIONED)
                 val total = unanswered.size
                 
@@ -524,8 +862,8 @@ class DatasetProcessor(
                     val context = chunk.cleanedText ?: chunk.originalText
                     
                     val answer = generateAnswer(
-                        api, qa.question, context,
-                        answerPrompt, project.useCoT, project.maxTokens, project.temperature
+                        backend, qa.question, context,
+                        answerPrompt, project.finalLanguage, project.useCoT, project.maxTokens, project.temperature
                     )
                     
                     dao.updateQA(qa.copy(
@@ -533,9 +871,21 @@ class DatasetProcessor(
                         status = QAStatus.ANSWERED
                     ))
                 }
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -546,9 +896,11 @@ class DatasetProcessor(
     ) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             
             try {
-                val api = createApi(project.serverUrl)
+                val backend = createBackend(project)
                 val answered = dao.getQAByStatus(project.id, QAStatus.ANSWERED)
                 val total = answered.size
                 
@@ -560,8 +912,8 @@ class DatasetProcessor(
                     val context = chunk.cleanedText ?: chunk.originalText
                     
                     val (score, justification) = rateQA(
-                        api, qa.question, qa.answer ?: "", context,
-                        reviewPrompt, project.maxTokens, project.temperature
+                        backend, qa.question, qa.answer ?: "", context,
+                        reviewPrompt, project.finalLanguage
                     )
                     
                     dao.updateQA(qa.copy(
@@ -570,9 +922,21 @@ class DatasetProcessor(
                         status = QAStatus.REVIEWED
                     ))
                 }
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -586,10 +950,12 @@ class DatasetProcessor(
     ) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             com.example.llamadroid.util.DebugLog.log("[Regen] Starting regenerate answers for ${qaIds.size} items")
             
             try {
-                val api = createApi(project.serverUrl)
+                val backend = createBackend(project)
                 val qaList = qaIds.mapNotNull { id -> dao.getQA(id) }
                 val total = qaList.size
                 
@@ -602,8 +968,8 @@ class DatasetProcessor(
                     val context = chunk.cleanedText ?: chunk.originalText
                     
                     val newAnswer = generateAnswer(
-                        api, qa.question, context, answerPrompt,
-                        project.useCoT, project.maxTokens, project.temperature
+                        backend, qa.question, context, answerPrompt,
+                        project.finalLanguage, project.useCoT, project.maxTokens, project.temperature
                     )
                     
                     dao.updateQA(qa.copy(
@@ -614,10 +980,21 @@ class DatasetProcessor(
                     ))
                 }
                 com.example.llamadroid.util.DebugLog.log("[Regen] Completed regenerate answers")
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
-                onJobComplete()
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -629,10 +1006,12 @@ class DatasetProcessor(
     ) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             com.example.llamadroid.util.DebugLog.log("[Regen] Starting regenerate ratings for ${qaIds.size} items")
             
             try {
-                val api = createApi(project.serverUrl)
+                val backend = createBackend(project)
                 val qaList = qaIds.mapNotNull { id -> dao.getQA(id) }.filter { it.answer != null }
                 val total = qaList.size
                 
@@ -645,8 +1024,8 @@ class DatasetProcessor(
                     val context = chunk.cleanedText ?: chunk.originalText
                     
                     val (score, justification) = rateQA(
-                        api, qa.question, qa.answer ?: "", context,
-                        reviewPrompt, project.maxTokens, project.temperature
+                        backend, qa.question, qa.answer ?: "", context,
+                        reviewPrompt, project.finalLanguage
                     )
                     
                     dao.updateQA(qa.copy(
@@ -656,10 +1035,21 @@ class DatasetProcessor(
                     ))
                 }
                 com.example.llamadroid.util.DebugLog.log("[Regen] Completed regenerate ratings")
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
-                onJobComplete()
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -671,10 +1061,12 @@ class DatasetProcessor(
     ) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             com.example.llamadroid.util.DebugLog.log("[Regen] Starting regenerate questions for ${chunkIds.size} chunks")
             
             try {
-                val api = createApi(project.serverUrl)
+                val backend = createBackend(project)
                 val chunks = chunkIds.mapNotNull { id -> dao.getChunk(id) }
                 val total = chunks.size
                 
@@ -689,14 +1081,23 @@ class DatasetProcessor(
                     // Get context from surrounding chunks
                     val allChunks = dao.getChunksByStatus(project.id, ChunkStatus.CLEANED)
                     val chunkIdx = allChunks.indexOfFirst { c -> c.id == chunk.id }
+                    if (chunkIdx < 0) {
+                        com.example.llamadroid.util.DebugLog.log(
+                            "[Regen] Skipping deleted chunk ${chunk.id} during question regeneration"
+                        )
+                        return@forEachIndexed
+                    }
                     val prevContext = if (chunkIdx > 0) allChunks[chunkIdx - 1].originalText.takeLast(500) else ""
                     val nextContext = if (chunkIdx < allChunks.size - 1) allChunks[chunkIdx + 1].originalText.take(500) else ""
                     val text = chunk.cleanedText ?: chunk.originalText
                     
                     // Generate new questions
-                    repeat(5) {
+                    repeat(project.questionsPerChunk) {
                         ensureActive()
-                        val question = generateQuestion(api, text, prevContext, nextContext, questionPrompt, project.maxTokens, project.temperature)
+                        val question = generateQuestion(
+                            backend, text, prevContext, nextContext,
+                            questionPrompt, project.finalLanguage, project.maxTokens, project.temperature
+                        )
                         if (question.isNotBlank()) {
                             dao.insertQA(DatasetQAEntity(
                                 projectId = project.id,
@@ -708,10 +1109,21 @@ class DatasetProcessor(
                     }
                 }
                 com.example.llamadroid.util.DebugLog.log("[Regen] Completed regenerate questions")
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(project.id, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
-                onJobComplete()
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -721,21 +1133,41 @@ class DatasetProcessor(
     fun runRegenSingleAnswer(projectId: Long, qaId: Long, answerPrompt: String) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             com.example.llamadroid.util.DebugLog.log("[Regen] Starting single answer regen for QA $qaId")
             
             try {
-                val project = dao.getProject(projectId) ?: return@launch
-                val qa = dao.getQA(qaId) ?: return@launch
-                val api = createApi(project.serverUrl)
+                val project = dao.getProject(projectId) ?: run {
+                    com.example.llamadroid.util.DebugLog.log(
+                        "[Regen] Skipping single answer regen: project $projectId no longer exists"
+                    )
+                    outcome = JobOutcome.SUCCESS
+                    return@launch
+                }
+                val qa = dao.getQA(qaId) ?: run {
+                    com.example.llamadroid.util.DebugLog.log(
+                        "[Regen] Skipping single answer regen: QA $qaId no longer exists"
+                    )
+                    outcome = JobOutcome.SUCCESS
+                    return@launch
+                }
+                val backend = createBackend(project)
                 
                 updateProgress(Progress(context.getString(R.string.dataset_job_regen_answer), 1, 1, qa.question.take(30) + "...", projectId))
                 
-                val chunk = dao.getChunk(qa.chunkId) ?: return@launch
+                val chunk = dao.getChunk(qa.chunkId) ?: run {
+                    com.example.llamadroid.util.DebugLog.log(
+                        "[Regen] Skipping single answer regen: chunk ${qa.chunkId} no longer exists"
+                    )
+                    outcome = JobOutcome.SUCCESS
+                    return@launch
+                }
                 val context = chunk.cleanedText ?: chunk.originalText
                 
                 val newAnswer = generateAnswer(
-                    api, qa.question, context, answerPrompt,
-                    project.useCoT, project.maxTokens, project.temperature
+                    backend, qa.question, context, answerPrompt,
+                    project.finalLanguage, project.useCoT, project.maxTokens, project.temperature
                 )
                 
                 dao.updateQA(qa.copy(
@@ -745,10 +1177,21 @@ class DatasetProcessor(
                     status = QAStatus.ANSWERED
                 ))
                 com.example.llamadroid.util.DebugLog.log("[Regen] Completed single answer regen")
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(projectId, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
-                onJobComplete()
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -756,22 +1199,48 @@ class DatasetProcessor(
     fun runRegenSingleRating(projectId: Long, qaId: Long, reviewPrompt: String) {
         processingJob = processingScope.launch {
             setProcessing(true)
+            var outcome = JobOutcome.CANCELLED
+            var errorMessage: String? = null
             com.example.llamadroid.util.DebugLog.log("[Regen] Starting single rating regen for QA $qaId")
             
             try {
-                val project = dao.getProject(projectId) ?: return@launch
-                val qa = dao.getQA(qaId) ?: return@launch
-                if (qa.answer == null) return@launch
-                val api = createApi(project.serverUrl)
+                val project = dao.getProject(projectId) ?: run {
+                    com.example.llamadroid.util.DebugLog.log(
+                        "[Regen] Skipping single rating regen: project $projectId no longer exists"
+                    )
+                    outcome = JobOutcome.SUCCESS
+                    return@launch
+                }
+                val qa = dao.getQA(qaId) ?: run {
+                    com.example.llamadroid.util.DebugLog.log(
+                        "[Regen] Skipping single rating regen: QA $qaId no longer exists"
+                    )
+                    outcome = JobOutcome.SUCCESS
+                    return@launch
+                }
+                if (qa.answer == null) {
+                    com.example.llamadroid.util.DebugLog.log(
+                        "[Regen] Skipping single rating regen: QA $qaId has no answer"
+                    )
+                    outcome = JobOutcome.SUCCESS
+                    return@launch
+                }
+                val backend = createBackend(project)
                 
                 updateProgress(Progress(context.getString(R.string.dataset_job_regen_rating), 1, 1, qa.question.take(30) + "...", projectId))
                 
-                val chunk = dao.getChunk(qa.chunkId) ?: return@launch
+                val chunk = dao.getChunk(qa.chunkId) ?: run {
+                    com.example.llamadroid.util.DebugLog.log(
+                        "[Regen] Skipping single rating regen: chunk ${qa.chunkId} no longer exists"
+                    )
+                    outcome = JobOutcome.SUCCESS
+                    return@launch
+                }
                 val context = chunk.cleanedText ?: chunk.originalText
                 
                 val (score, justification) = rateQA(
-                    api, qa.question, qa.answer ?: "", context,
-                    reviewPrompt, project.maxTokens, project.temperature
+                    backend, qa.question, qa.answer, context,
+                    reviewPrompt, project.finalLanguage
                 )
                 
                 dao.updateQA(qa.copy(
@@ -780,10 +1249,21 @@ class DatasetProcessor(
                     status = QAStatus.REVIEWED
                 ))
                 com.example.llamadroid.util.DebugLog.log("[Regen] Completed single rating regen")
+                outcome = JobOutcome.SUCCESS
+            } catch (cancelled: CancellationException) {
+                errorMessage = cancelled.message
+            } catch (e: Exception) {
+                outcome = JobOutcome.FAILED
+                errorMessage = e.message
+                showProcessingError(projectId, e)
             } finally {
                 setProcessing(false)
                 updateProgress(null)
-                onJobComplete()
+                finishCurrentJob(
+                    outcome = outcome,
+                    errorMessage = errorMessage,
+                    advanceQueue = outcome == JobOutcome.SUCCESS
+                )
             }
         }
     }
@@ -793,7 +1273,14 @@ class DatasetProcessor(
     fun executeJob(job: Job) {
         processingScope.launch {
             val project = dao.getProject(job.projectId) ?: run {
-                onJobComplete()
+                com.example.llamadroid.util.DebugLog.log(
+                    "[Dataset] Skipping job ${job.name}: project ${job.projectId} no longer exists"
+                )
+                finishCurrentJob(
+                    outcome = JobOutcome.SUCCESS,
+                    errorMessage = null,
+                    advanceQueue = true
+                )
                 return@launch
             }
             
@@ -808,17 +1295,27 @@ class DatasetProcessor(
                 is Job.Questions -> runQuestionStage(project, job.questionPrompt)
                 is Job.Answers -> runAnswerStage(project, job.answerPrompt)
                 is Job.Rating -> runRatingStage(project, job.reviewPrompt)
+                is Job.ImportPdf -> runImportPdf(project, job.sourceUri, job.sourceName)
+                is Job.ImportTxt -> runImportTxt(project, job.sourceUri, job.sourceName)
             }
         }
     }
     
     private suspend fun runRegenSingleClean(project: DatasetProjectEntity, chunkId: Long, cleanPrompt: String) {
+        var outcome = JobOutcome.CANCELLED
+        var errorMessage: String? = null
         try {
             _isProcessing.value = true
-            val chunk = dao.getChunk(chunkId) ?: return
+            val chunk = dao.getChunk(chunkId) ?: run {
+                com.example.llamadroid.util.DebugLog.log(
+                    "[Dataset] Skipping single clean regen: chunk $chunkId no longer exists"
+                )
+                outcome = JobOutcome.SUCCESS
+                return
+            }
             _progress.value = Progress(context.getString(R.string.dataset_job_regen_clean), 1, 1, chunk.originalText.take(50) + "...", project.id)
             
-            val api = createApi(project.serverUrl)
+            val backend = createBackend(project)
             
             // Get all chunks for context
             val allChunks = dao.getChunksByStatus(project.id, ChunkStatus.PENDING) + 
@@ -838,17 +1335,27 @@ Next context: {next_chunk_50%}
 
 Cleaned text:""" else cleanPrompt
             
-            val cleanedText = cleanChunk(api, chunk.originalText, prev, next, prompt, project.maxTokens, project.temperature)
+            val cleanedText = cleanChunk(backend, chunk.originalText, prev, next, prompt, project.maxTokens, project.temperature)
             
             if (cleanedText.isNotBlank()) {
                 dao.updateChunk(chunk.copy(cleanedText = cleanedText.trim(), status = ChunkStatus.CLEANED))
             }
+            outcome = JobOutcome.SUCCESS
+        } catch (cancelled: CancellationException) {
+            errorMessage = cancelled.message
         } catch (e: Exception) {
             com.example.llamadroid.util.DebugLog.log("[Dataset] ERROR in runRegenSingleClean: ${e.message}")
+            outcome = JobOutcome.FAILED
+            errorMessage = e.message
+            showProcessingError(project.id, e)
         } finally {
             _isProcessing.value = false
             _progress.value = null
-            onJobComplete()
+            finishCurrentJob(
+                outcome = outcome,
+                errorMessage = errorMessage,
+                advanceQueue = outcome == JobOutcome.SUCCESS
+            )
         }
     }
 }

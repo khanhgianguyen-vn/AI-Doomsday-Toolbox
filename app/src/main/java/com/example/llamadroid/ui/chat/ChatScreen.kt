@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.res.stringResource
@@ -24,6 +25,7 @@ import com.example.llamadroid.R
 import androidx.navigation.NavController
 import com.example.llamadroid.ui.ai.applyKeyboardAwareInsetsFix
 import com.example.llamadroid.ui.ai.injectKeyboardViewportFix
+import androidx.lifecycle.LifecycleEventObserver
 
 // Singleton WebView holder to persist across navigation
 object ChatWebViewHolder {
@@ -38,6 +40,7 @@ fun ChatScreen(
     navController: NavController
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var fileUploadCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     var isLoading by remember { mutableStateOf(!ChatWebViewHolder.isLoaded) }
     var hasError by remember { mutableStateOf(false) }
@@ -101,7 +104,7 @@ fun ChatScreen(
     }
     
     // Set up callbacks (needs to be done each recomposition since lambdas may change)
-    DisposableEffect(webView) {
+    DisposableEffect(webView, lifecycleOwner) {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 return false
@@ -169,12 +172,28 @@ fun ChatScreen(
             }
         }
         
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE ||
+                event == androidx.lifecycle.Lifecycle.Event.ON_STOP
+            ) {
+                // Keep the retained WebView alive while the phone is locked or the activity pauses.
+                webView.resumeTimers()
+                webView.onResume()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        webView.resumeTimers()
+        webView.onResume()
+
         // Load URL only if not already loaded
         if (!ChatWebViewHolder.isLoaded) {
             webView.loadUrl("http://127.0.0.1:8080/")
         }
         
-        onDispose { }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
     
     Box(modifier = Modifier.fillMaxSize()) {

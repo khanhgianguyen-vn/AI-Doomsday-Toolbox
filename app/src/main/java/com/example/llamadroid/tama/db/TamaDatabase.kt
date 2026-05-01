@@ -14,17 +14,24 @@ import com.example.llamadroid.util.DebugLog
     entities = [
         TamaPetEntity::class,
         TamaEventEntity::class,
+        TamaQuestEntity::class,
+        TamaQuestChecklistItemEntity::class,
+        TamaDeepDreamRunEntity::class,
+        TamaStudyLabelEntity::class,
+        TamaStudySessionEntity::class,
         TamaLocationEntity::class,
         TamaNpcEntity::class,
         TamaSummaryEntity::class,
         TamaChatMessageEntity::class,
         FarmTileEntity::class,
         FarmUpgradeEntity::class,
+        FarmLivestockEntity::class,
         AdventureSessionEntity::class,
         AdventureStageEntity::class,
-        DungeonProgressEntity::class
+        DungeonProgressEntity::class,
+        TamaArtworkEntity::class
     ],
-    version = 14,
+    version = 33,
     exportSchema = true
 )
 abstract class TamaDatabase : RoomDatabase() {

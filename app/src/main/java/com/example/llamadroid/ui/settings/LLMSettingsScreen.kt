@@ -23,6 +23,9 @@ import com.example.llamadroid.data.db.ModelType
 import com.example.llamadroid.data.db.SavedCommandEntity
 import com.example.llamadroid.data.db.SavedCommandScopes
 import androidx.compose.foundation.clickable
+import com.example.llamadroid.ui.components.AppScreenScaffold
+import com.example.llamadroid.ui.components.DraftFloatTextField
+import com.example.llamadroid.ui.components.DraftIntTextField
 import kotlinx.coroutines.launch
 
 /**
@@ -45,11 +48,8 @@ fun LLMSettingsScreen(navController: NavController) {
     val speculativeEnabled by settingsRepo.speculativeEnabled.collectAsState()
     val draftModelPath by settingsRepo.draftModelPath.collectAsState()
     val draftMaxTokens by settingsRepo.draftMaxTokens.collectAsState()
-    var draftMaxText by remember(draftMaxTokens) { mutableStateOf(draftMaxTokens.toString()) }
     val draftMinTokens by settingsRepo.draftMinTokens.collectAsState()
-    var draftMinText by remember(draftMinTokens) { mutableStateOf(draftMinTokens.toString()) }
     val draftPMin by settingsRepo.draftPMin.collectAsState()
-    var draftPMinText by remember(draftPMin) { mutableStateOf(draftPMin.toString()) }
     val flashAttentionEnabled by settingsRepo.flashAttentionEnabled.collectAsState()
     
     // Custom Commands Additions
@@ -91,25 +91,16 @@ fun LLMSettingsScreen(navController: NavController) {
     
     var showLlmSelector by remember { mutableStateOf(false) }
     var showDraftSelector by remember { mutableStateOf(false) }
-    var ctxText by remember(ctxSize) { mutableStateOf(ctxSize.toString()) }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.llm_settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    AppScreenScaffold(
+        title = stringResource(R.string.llm_settings_title),
+        subtitle = stringResource(R.string.settings_llm_desc),
+        onBack = { navController.popBackStack() }
+    ) { _ ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Active Model
@@ -269,15 +260,10 @@ fun LLMSettingsScreen(navController: NavController) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(stringResource(R.string.llm_context_size), fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = ctxText,
-                            onValueChange = { newValue ->
-                                ctxText = newValue.filter { it.isDigit() }
-                                val parsed = ctxText.toIntOrNull()
-                                if (parsed != null && parsed in 128..131072) {
-                                    settingsRepo.setContextSize(parsed)
-                                }
-                            },
+                        DraftIntTextField(
+                            value = ctxSize,
+                            onValueChange = settingsRepo::setContextSize,
+                            valueRange = 128..131072,
                             label = { Text(stringResource(R.string.llm_context_hint)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -605,36 +591,27 @@ fun LLMSettingsScreen(navController: NavController) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 // Max tokens
-                                OutlinedTextField(
-                                    value = draftMaxText,
-                                    onValueChange = { newValue ->
-                                        draftMaxText = newValue.filter { it.isDigit() }
-                                        draftMaxText.toIntOrNull()?.let { settingsRepo.setDraftMaxTokens(it) }
-                                    },
+                                DraftIntTextField(
+                                    value = draftMaxTokens,
+                                    onValueChange = settingsRepo::setDraftMaxTokens,
                                     label = { Text(stringResource(R.string.dist_speculative_draft_max)) },
                                     modifier = Modifier.weight(1f),
                                     singleLine = true
                                 )
 
                                 // Min tokens
-                                OutlinedTextField(
-                                    value = draftMinText,
-                                    onValueChange = { newValue ->
-                                        draftMinText = newValue.filter { it.isDigit() }
-                                        draftMinText.toIntOrNull()?.let { settingsRepo.setDraftMinTokens(it) }
-                                    },
+                                DraftIntTextField(
+                                    value = draftMinTokens,
+                                    onValueChange = settingsRepo::setDraftMinTokens,
                                     label = { Text(stringResource(R.string.dist_speculative_draft_min)) },
                                     modifier = Modifier.weight(1f),
                                     singleLine = true
                                 )
 
                                 // p-min
-                                OutlinedTextField(
-                                    value = draftPMinText,
-                                    onValueChange = { newValue ->
-                                        draftPMinText = newValue.filter { it.isDigit() || it == '.' }
-                                        draftPMinText.toFloatOrNull()?.let { settingsRepo.setDraftPMin(it) }
-                                    },
+                                DraftFloatTextField(
+                                    value = draftPMin,
+                                    onValueChange = settingsRepo::setDraftPMin,
                                     label = { Text(stringResource(R.string.dist_speculative_draft_p_min)) },
                                     modifier = Modifier.weight(1f),
                                     singleLine = true

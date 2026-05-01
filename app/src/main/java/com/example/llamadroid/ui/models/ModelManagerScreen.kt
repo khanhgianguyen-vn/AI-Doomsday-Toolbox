@@ -29,6 +29,10 @@ import androidx.navigation.NavController
 import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.ModelType
 import com.example.llamadroid.data.model.ModelRepository
+import com.example.llamadroid.ui.components.AppContentColumn
+import com.example.llamadroid.ui.components.AppPageBackground
+import com.example.llamadroid.ui.components.AppPageHeader
+import com.example.llamadroid.ui.components.AppSectionCard
 import com.example.llamadroid.util.Downloader
 import com.example.llamadroid.util.FormatUtils
 import kotlinx.coroutines.Dispatchers
@@ -53,69 +57,54 @@ fun ModelManagerScreen(navController: NavController) {
     val progressMap by viewModel.downloadProgress.collectAsState()
     val activeDownloads = progressMap.filter { it.value < 1f }.size
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
+    AppPageBackground {
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppContentColumn(
+                modifier = Modifier.fillMaxWidth(),
+                bottomPadding = 8.dp,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppPageHeader(
+                    eyebrow = "MODELS",
+                    title = stringResource(R.string.nav_models),
+                    subtitle = stringResource(R.string.ai_hub_subtitle)
                 )
-            )
-    ) {
-        // Header
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                stringResource(R.string.nav_models),
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 32.sp
-                )
-            )
-            Text(
-                stringResource(R.string.ai_hub_subtitle), // "Manage your AI models" or similar
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        // Tab Row
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                title,
-                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
-                            )
-                            // Show badge for active downloads
-                            if (index == 1 && activeDownloads > 0) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                ) {
-                                    Text("$activeDownloads")
+                AppSectionCard {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            title,
+                                            fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        if (index == 1 && activeDownloads > 0) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Badge(
+                                                containerColor = MaterialTheme.colorScheme.primary
+                                            ) {
+                                                Text("$activeDownloads")
+                                            }
+                                        }
+                                    }
                                 }
-                            }
+                            )
                         }
                     }
-                )
+                }
             }
-        }
-        
-        when (selectedTab) {
-            0 -> InstalledTab(viewModel)
-            1 -> DownloadingTab(viewModel)
-            2 -> DiscoverTab(viewModel)
+            when (selectedTab) {
+                0 -> InstalledTab(viewModel)
+                1 -> DownloadingTab(viewModel)
+                2 -> DiscoverTab(viewModel)
+            }
         }
     }
 }
@@ -532,10 +521,16 @@ private suspend fun importModel(
             ModelType.SD_CHECKPOINT, ModelType.SD_UPSCALER -> "sd/checkpoints"
             ModelType.SD_DIFFUSION -> "sd/flux"
             ModelType.SD_CLIP_L -> "sd/clip_l"
+            ModelType.SD_CLIP_G -> "sd/clip_g"
             ModelType.SD_T5XXL -> "sd/t5xxl"
+            ModelType.SD_TAE -> "sd/tae"
             ModelType.SD_VAE -> "sd/vae"
             ModelType.SD_LORA -> "sd/lora"
             ModelType.SD_CONTROLNET -> "sd/controlnet"
+            ModelType.SD_PHOTOMAKER -> "sd/photomaker"
+            ModelType.ONNX_IMAGE_GEN,
+            ModelType.ONNX_BACKGROUND_REMOVAL,
+            ModelType.ONNX_IMAGE_UPSCALER -> "legacy/unsupported_media"
             ModelType.WHISPER -> "whisper"
         }
         
@@ -602,10 +597,16 @@ private suspend fun importModelWithProgress(
             ModelType.SD_CHECKPOINT, ModelType.SD_UPSCALER -> "sd/checkpoints"
             ModelType.SD_DIFFUSION -> "sd/flux"
             ModelType.SD_CLIP_L -> "sd/clip_l"
+            ModelType.SD_CLIP_G -> "sd/clip_g"
             ModelType.SD_T5XXL -> "sd/t5xxl"
+            ModelType.SD_TAE -> "sd/tae"
             ModelType.SD_VAE -> "sd/vae"
             ModelType.SD_LORA -> "sd/lora"
             ModelType.SD_CONTROLNET -> "sd/controlnet"
+            ModelType.SD_PHOTOMAKER -> "sd/photomaker"
+            ModelType.ONNX_IMAGE_GEN,
+            ModelType.ONNX_BACKGROUND_REMOVAL,
+            ModelType.ONNX_IMAGE_UPSCALER -> "legacy/unsupported_media"
             ModelType.WHISPER -> "whisper"
         }
         

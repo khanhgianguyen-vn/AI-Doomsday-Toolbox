@@ -38,6 +38,7 @@ import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.service.PDFSummaryService
 import com.example.llamadroid.service.RemoteSummaryClientFactory
 import com.example.llamadroid.service.RemoteSummaryMetadata
+import com.example.llamadroid.ui.components.AppScreenScaffold
 import com.example.llamadroid.ui.components.IntInputField
 import com.example.llamadroid.ui.components.IntSliderWithInput
 import com.example.llamadroid.ui.components.RemoteSummaryBackendEditor
@@ -72,23 +73,15 @@ fun PDFSettingsScreen(navController: NavController) {
         settingsRepo.setPdfSummaryLlamaServerContextLabel(metadata.serverContextLabel)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.pdf_settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    AppScreenScaffold(
+        title = stringResource(R.string.pdf_settings_title),
+        subtitle = stringResource(R.string.settings_subtitle),
+        onBack = { navController.popBackStack() }
+    ) { _ ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {

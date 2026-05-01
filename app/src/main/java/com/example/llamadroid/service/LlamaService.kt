@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import com.example.llamadroid.util.DebugLog
 import com.example.llamadroid.util.WakeLockManager
+import android.net.wifi.WifiManager
 import com.example.llamadroid.data.binary.BinaryRepository
 import com.example.llamadroid.util.GGUFParser
 
@@ -28,6 +29,7 @@ class LlamaService : Service() {
     // }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        var restartMode = START_NOT_STICKY
         try {
             DebugLog.log("LlamaService: onStartCommand action=${intent?.action}")
             when (intent?.action) {
@@ -70,6 +72,7 @@ class LlamaService : Service() {
                         Companion.updateState(ServerState.Error("No model selected"))
                         stopSelf()
                     } else {
+                        restartMode = START_REDELIVER_INTENT
                         startServer(modelPath, isEmbedding, mmprojPath, 
                             threadsOverride, contextSizeOverride, temperatureOverride, hostOverride, portOverride,
                             draftModelPath = draftModelPath, draftMax = draftMax, draftMin = draftMin, draftPMin = draftPMin,
@@ -90,6 +93,7 @@ class LlamaService : Service() {
                     if (newModelPath.isNullOrEmpty()) {
                         DebugLog.log("LlamaService: SWITCH_MODEL - No model path provided!")
                     } else {
+                        restartMode = START_REDELIVER_INTENT
                         DebugLog.log("LlamaService: SWITCH_MODEL to $newModelPath")
                         // Stop current server process without stopping the foreground service
                         processController.stop()
@@ -129,6 +133,7 @@ class LlamaService : Service() {
                     }
                 }
                 ACTION_PREVIEW_COMMAND -> {
+                    restartMode = START_NOT_STICKY
                      val modelPath = intent.getStringExtra(EXTRA_MODEL_PATH)
                      val isEmbedding = intent.getBooleanExtra(EXTRA_IS_EMBEDDING, false)
                      val mmprojPath = intent.getStringExtra(EXTRA_MMPROJ_PATH)
@@ -179,7 +184,10 @@ class LlamaService : Service() {
             DebugLog.log("LlamaService: CRASH in onStartCommand: ${e.message}")
             e.printStackTrace()
         }
-        return START_NOT_STICKY
+        DebugLog.log(
+            "LlamaService: onStartCommand returning ${if (restartMode == START_REDELIVER_INTENT) "START_REDELIVER_INTENT" else "START_NOT_STICKY"}"
+        )
+        return restartMode
     }
     
     private fun startServer(
@@ -217,8 +225,9 @@ class LlamaService : Service() {
             notificationTaskId = taskId
             startForeground(taskId, notification)
             
-            // Acquire WakeLock to keep server running
+            // Acquire CPU + Wi-Fi locks to keep the local server responsive while the screen is off.
             WakeLockManager.acquire(applicationContext, "LlamaService")
+            WakeLockManager.acquireWifiLock(applicationContext, "LlamaService")
             
             Companion.updateState(ServerState.Starting)
             DebugLog.log("LlamaService: Starting server for model: $modelPath")
@@ -558,8 +567,23 @@ class LlamaService : Service() {
         DistributedService.setInferenceRunning(false)
         Companion.updateState(ServerState.Stopped)
         WakeLockManager.release("LlamaService")
+        WakeLockManager.releaseWifiLock("LlamaService")
+        notificationTaskId?.let { taskId ->
+            UnifiedNotificationManager.dismissTask(taskId)
+        }
+        notificationTaskId = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    override fun onDestroy() {
+        notificationTaskId?.let { taskId ->
+            UnifiedNotificationManager.dismissTask(taskId)
+        }
+        notificationTaskId = null
+        WakeLockManager.release("LlamaService")
+        WakeLockManager.releaseWifiLock("LlamaService")
+        super.onDestroy()
     }
     
     private fun updateNotification(content: String) {

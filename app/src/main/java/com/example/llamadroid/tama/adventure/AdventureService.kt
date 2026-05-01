@@ -1,384 +1,637 @@
 package com.example.llamadroid.tama.adventure
 
 import android.content.Context
+import com.example.llamadroid.R
 import com.example.llamadroid.data.SettingsRepository
-import com.example.llamadroid.service.AdventureForegroundService
-import com.example.llamadroid.tama.db.*
+import com.example.llamadroid.data.db.AppDatabase
+import com.example.llamadroid.data.db.ModelType
+import com.example.llamadroid.onnx.OnnxImageGenConfig
+import com.example.llamadroid.onnx.OnnxImageGenMode
+import com.example.llamadroid.onnx.OnnxRuntimeBackend
+import com.example.llamadroid.onnx.OnnxRuntimeOptions
+import com.example.llamadroid.onnx.OnnxTxt2ImgPipeline
+import com.example.llamadroid.onnx.isOnnxTxt2ImgBundle
+import com.example.llamadroid.service.PDFSummaryLogic
+import com.example.llamadroid.service.RemoteSummaryBackendConfig
+import com.example.llamadroid.service.RemoteSummaryClientFactory
+import com.example.llamadroid.service.RemoteSummaryRequest
+import com.example.llamadroid.tama.db.AdventureSessionEntity
+import com.example.llamadroid.tama.db.AdventureStageEntity
+import com.example.llamadroid.tama.db.DungeonProgressEntity
+import com.example.llamadroid.tama.db.TamaDatabase
 import com.example.llamadroid.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.File
 import java.util.UUID
 
-/**
- * Manages text adventure interactions with the LLM.
- * Handles schematic generation (hidden from user), stage progression, and summarization.
- * Integrates with foreground service for background generation.
- */
 class AdventureService(
     private val database: TamaDatabase,
     private val settingsRepository: SettingsRepository,
-    private val context: Context? = null
+    private val context: Context
 ) {
-    private val json = Json { 
-        ignoreUnknownKeys = true 
+    private val json = Json {
+        ignoreUnknownKeys = true
         prettyPrint = true
     }
-    
-    /**
-     * Initialize a new adventure or continue an existing one.
-     * Schematic is generated and stored internally - never shown to user.
-     */
+
     suspend fun initializeOrContinue(
         petId: String,
-        dungeonType: DungeonType
+        dungeonType: DungeonType,
+        onProgress: (Float, String) -> Unit = { _, _ -> }
     ): Result<AdventureSession> = withContext(Dispatchers.IO) {
         try {
-            context?.let { AdventureForegroundService.start(it, "Starting adventure...") }
-            
-            // Check for existing active session
-            val existingSession = database.tamaDao().getActiveAdventureSession(petId)
-            if (existingSession != null && existingSession.dungeonType == dungeonType.name) {
+            val existingSession = database.tamaDao()
+                .getActiveAdventureSessionForDungeon(petId, dungeonType.name)
+            if (existingSession != null) {
                 val stages = database.tamaDao().getAdventureStages(existingSession.id)
-                val session = entityToSession(existingSession, stages)
-                context?.let { AdventureForegroundService.stop(it) }
-                return@withContext Result.success(session)
+                return@withContext Result.success(entityToSession(existingSession, stages))
             }
-            
-            context?.let { AdventureForegroundService.updateStatus(it, "Generating story structure...") }
-            
-            // STEP 1: Generate schematic first (hidden from user)
-            val schematic = generateSchematic(dungeonType)
-            if (schematic == null) {
-                context?.let { AdventureForegroundService.stop(it) }
-                return@withContext Result.failure(Exception("Failed to generate story schematic"))
+
+            onProgress(0.1f, context.getString(R.string.adventure_status_building_world))
+            var schematic = generateSchematic(dungeonType)
+                ?: return@withContext Result.failure(Exception(context.getString(R.string.adventure_error_schematic)))
+
+            val sessionId = UUID.randomUUID().toString()
+
+            if (settingsRepository.adventureWorldImageEnabled.value) {
+                onProgress(0.32f, context.getString(R.string.adventure_status_writing_image_prompts))
+                schematic = tryGenerateWorldImage(
+                    sessionId = sessionId,
+                    dungeonType = dungeonType,
+                    schematic = schematic,
+                    onProgress = onProgress
+                )
             }
-            
-            DebugLog.log("[Adventure] Schematic generated: ${schematic.totalStages} stages")
-            
+
             val session = AdventureSession(
-                id = UUID.randomUUID().toString(),
+                id = sessionId,
                 petId = petId,
                 dungeonType = dungeonType,
                 schematic = schematic
             )
-            
-            context?.let { AdventureForegroundService.updateStatus(it, "Writing opening scene...") }
-            
-            // STEP 2: Generate first stage (schematic NOT shown to user, just used for guidance)
-            val firstStage = generateStage(session, null)
-            if (firstStage == null) {
-                context?.let { AdventureForegroundService.stop(it) }
-                return@withContext Result.failure(Exception("Failed to generate first story stage"))
+
+            onProgress(0.72f, context.getString(R.string.adventure_status_writing_opening_scene))
+            val openingStage = generateStage(session, null)
+                ?: return@withContext Result.failure(Exception(context.getString(R.string.adventure_error_opening_scene)))
+            val openingStageWithImage = if (settingsRepository.adventureStageImagesEnabled.value) {
+                onProgress(0.80f, context.getString(R.string.adventure_status_writing_stage_image_prompts, openingStage.stageNumber))
+                tryGenerateStageImage(
+                    session = session,
+                    stage = openingStage,
+                    dungeonType = dungeonType,
+                    onProgress = onProgress
+                )
+            } else {
+                openingStage
             }
-            
-            val sessionWithStage = session.addStage(firstStage)
+
+            val sessionWithStage = session.addStage(openingStageWithImage)
             saveSession(sessionWithStage)
-            
-            context?.let { AdventureForegroundService.stop(it) }
             Result.success(sessionWithStage)
         } catch (e: Exception) {
-            DebugLog.log("[Adventure] Error: ${e.message}")
-            context?.let { AdventureForegroundService.stop(it) }
+            DebugLog.log("[Adventure] initializeOrContinue failed: ${e.message}")
             Result.failure(e)
         }
     }
-    
-    /**
-     * Submit player choice and generate next stage.
-     */
+
     suspend fun submitChoice(
         petId: String,
         dungeonType: DungeonType,
-        playerChoice: String
+        playerChoice: String,
+        onProgress: (Float, String) -> Unit = { _, _ -> }
     ): Result<AdventureSession> = withContext(Dispatchers.IO) {
         try {
-            context?.let { AdventureForegroundService.start(it, "Processing your choice...") }
-            
-            val sessionEntity = database.tamaDao().getActiveAdventureSession(petId)
-                ?: return@withContext Result.failure(Exception("No active adventure found"))
-            
+            onProgress(0.08f, context.getString(R.string.adventure_status_processing_choice))
+            val sessionEntity = database.tamaDao()
+                .getActiveAdventureSessionForDungeon(petId, dungeonType.name)
+                ?: return@withContext Result.failure(Exception(context.getString(R.string.adventure_error_no_active_session)))
+
             val stages = database.tamaDao().getAdventureStages(sessionEntity.id)
-            var session = entityToSession(sessionEntity, stages)
-            
-            // Update last stage with player response
-            session = session.updateLastStageWithResponse(playerChoice)
-            
-            context?.let { AdventureForegroundService.updateStatus(it, "Summarizing...") }
-            
-            // Summarize the latest stage
+            var session = entityToSession(sessionEntity, stages).updateLastStageWithResponse(playerChoice)
+
+            onProgress(0.36f, context.getString(R.string.adventure_status_summarizing_scene))
             val summary = summarizeStage(session.stages.last())
-            if (summary != null) {
+            if (!summary.isNullOrBlank()) {
                 val updatedStages = session.stages.toMutableList()
                 updatedStages[updatedStages.lastIndex] = updatedStages.last().copy(summary = summary)
                 session = session.copy(
                     stages = updatedStages,
-                    cumulativeSummary = session.cumulativeSummary + "\n" + summary
+                    cumulativeSummary = listOf(session.cumulativeSummary, summary)
+                        .filter(String::isNotBlank)
+                        .joinToString("\n")
                 )
             }
-            
-            // Check if we've reached the end
+
             if (session.currentStage >= session.schematic.totalStages) {
                 session = session.markCompleted()
-                
-                // Update dungeon progress
-                val progress = database.tamaDao().getDungeonProgress(petId)
-                if (progress == null) {
-                    database.tamaDao().saveDungeonProgress(
-                        DungeonProgressEntity(
-                            petId = petId,
-                            completedDungeonCount = 1,
-                            lastCompletedDungeonType = dungeonType.name
-                        )
-                    )
-                } else if (dungeonType.unlockOrder > progress.completedDungeonCount) {
-                    database.tamaDao().updateDungeonProgress(
-                        petId,
-                        progress.completedDungeonCount + 1,
-                        dungeonType.name
-                    )
-                }
-                
+                updateDungeonProgress(petId, dungeonType)
                 saveSession(session)
-                context?.let { AdventureForegroundService.stop(it) }
                 return@withContext Result.success(session)
             }
-            
-            context?.let { 
-                AdventureForegroundService.updateStatus(it, "Writing stage ${session.currentStage + 1}...") 
-            }
-            
-            // Generate next stage
+
+            onProgress(0.72f, context.getString(R.string.adventure_status_writing_next_scene, session.currentStage + 1))
             val nextStage = generateStage(session, playerChoice)
-            if (nextStage == null) {
-                context?.let { AdventureForegroundService.stop(it) }
-                return@withContext Result.failure(Exception("Failed to generate next stage"))
+                ?: return@withContext Result.failure(Exception(context.getString(R.string.adventure_error_next_scene)))
+            val nextStageWithImage = if (settingsRepository.adventureStageImagesEnabled.value) {
+                onProgress(0.80f, context.getString(R.string.adventure_status_writing_stage_image_prompts, nextStage.stageNumber))
+                tryGenerateStageImage(
+                    session = session,
+                    stage = nextStage,
+                    dungeonType = dungeonType,
+                    onProgress = onProgress
+                )
+            } else {
+                nextStage
             }
-            
-            session = session.addStage(nextStage)
+
+            session = session.addStage(nextStageWithImage)
             saveSession(session)
-            
-            context?.let { AdventureForegroundService.stop(it) }
             Result.success(session)
         } catch (e: Exception) {
-            DebugLog.log("[Adventure] Error submitting choice: ${e.message}")
-            context?.let { AdventureForegroundService.stop(it) }
+            DebugLog.log("[Adventure] submitChoice failed: ${e.message}")
             Result.failure(e)
         }
     }
-    
-    /**
-     * Reset adventure for a dungeon.
-     */
+
     suspend fun resetAdventure(petId: String, dungeonType: DungeonType) = withContext(Dispatchers.IO) {
-        val existingSession = database.tamaDao().getActiveAdventureSession(petId)
-        if (existingSession != null && existingSession.dungeonType == dungeonType.name) {
+        val existingSession = database.tamaDao().getLatestAdventureSessionForDungeon(petId, dungeonType.name)
+        if (existingSession != null) {
             database.tamaDao().deleteAdventureStages(existingSession.id)
             database.tamaDao().deleteAdventureSession(existingSession.id)
         }
     }
-    
-    // ========== LLM Interaction ==========
-    
-    /**
-     * Generate story schematic - INTERNAL USE ONLY.
-     * This is never shown to the user, only used to guide story generation.
-     */
+
     private suspend fun generateSchematic(dungeonType: DungeonType): StorySchematic? {
-        val dungeonPrompt = dungeonType.stylePrompt
-        
-        // Minimal prompt for schematic - just structural info
-        val prompt = """You are a story planner. Create a brief structural outline for a text adventure.
+        val prompt = """
+            You are a story planner for a retro handheld monster-pet adventure.
 
-DUNGEON THEME: $dungeonPrompt
+            DUNGEON THEME:
+            ${dungeonType.stylePrompt.trim()}
 
-Generate a story structure with these exact fields:
-TOTAL_STAGES: (pick a number between 8 and 20)
-STORY_THREAD: (one paragraph describing the main plot arc)
-KEY_EVENTS: (list 4-5 major plot points, one per line)
-POSSIBLE_ENDINGS: (list 2-3 possible endings, one per line)
-TONE: (one word: dark/mysterious/action/horror/epic)
-DIFFICULTY: (easy/medium/hard)
+            Create a brief structural outline with these exact fields:
+            TOTAL_STAGES: number between 8 and 20
+            STORY_THREAD: one paragraph with the main plot arc
+            KEY_EVENTS: 4-5 bullet points
+            POSSIBLE_ENDINGS: 2-3 bullet points
+            TONE: one short phrase
+            DIFFICULTY: easy, medium, or hard
 
-Be concise. This is internal planning only.
+            Keep it concise and practical.
+            Write everything in ${settingsRepository.adventureLanguage.value}.
+        """.trimIndent()
 
-IMPORTANT: Write EVERYTHING in ${settingsRepository.adventureLanguage.value}. Do not use any other language."""
-
-        DebugLog.log("[Adventure] Generating schematic for ${dungeonType.displayName}...")
-        val response = callOllama(prompt)
-        if (response == null) {
-            DebugLog.log("[Adventure] Schematic generation failed - Ollama returned null. Check URL/model settings.")
-            return null
-        }
-        
-        DebugLog.log("[Adventure] Schematic response length: ${response.length}")
+        val response = generateText(
+            userPrompt = prompt,
+            useSummarizer = false,
+            maxTokens = 700,
+            temperature = 0.7f
+        ) ?: return null
         return parseSchematic(response)
     }
-    
-    /**
-     * Generate a story stage.
-     * Uses schematic for guidance but NEVER outputs schematic content.
-     */
+
     private suspend fun generateStage(session: AdventureSession, playerChoice: String?): AdventureStage? {
         val systemPrompt = settingsRepository.adventureSystemPrompt.value
-        val dungeonPrompt = session.dungeonType.stylePrompt
-        
-        val contextBuilder = StringBuilder()
-        
-        // System instructions
-        contextBuilder.append("""$systemPrompt
-
-IMPORTANT RULES:
-- DO NOT mention or output any story structure, schematic, or planning information
-- DO NOT mention stage numbers, total stages, or how many stages remain
-- Just write immersive story content as if you are the narrator
-- ALWAYS end with 2-4 clear options for the player to choose from
-- WRITE EVERYTHING IN ${settingsRepository.adventureLanguage.value} ONLY. Do not switch to any other language.
-
-""")
-        
-        // Theme context
-        contextBuilder.append("SETTING: ${session.dungeonType.displayName}\n")
-        contextBuilder.append("THEME: $dungeonPrompt\n\n")
-        
-        // Story structure (internal guidance only)
-        contextBuilder.append("[INTERNAL GUIDANCE - do not output this]\n")
-        contextBuilder.append("Story arc: ${session.schematic.storyThread}\n")
-        contextBuilder.append("Key events to weave in: ${session.schematic.keyEvents.joinToString(", ")}\n")
-        contextBuilder.append("Tone: ${session.schematic.tone}\n")
-        contextBuilder.append("[END INTERNAL GUIDANCE]\n\n")
-        
-        // Previous story summary
-        if (session.cumulativeSummary.isNotBlank()) {
-            contextBuilder.append("STORY SO FAR:\n${session.cumulativeSummary}\n\n")
-        }
-        
-        // Player's choice
-        if (playerChoice != null) {
-            contextBuilder.append("THE PLAYER CHOSE: $playerChoice\n\n")
-        }
-        
-        // Stage instruction
         val stageNumber = session.currentStage + 1
         val totalStages = session.schematic.totalStages
         val progressPercent = (stageNumber * 100) / totalStages
-        
-        contextBuilder.append("Write the next scene of the adventure. ")
-        
-        when {
-            progressPercent < 20 -> contextBuilder.append("This is early in the story - set the scene and introduce the situation.")
-            progressPercent < 50 -> contextBuilder.append("Build tension and develop the plot.")
-            progressPercent < 80 -> contextBuilder.append("Things should be escalating toward the climax.")
-            progressPercent < 95 -> contextBuilder.append("This is near the end - approach the resolution.")
-            else -> contextBuilder.append("This is the final scene - bring the story to a satisfying conclusion.")
+        val previousMoments = session.stages.takeLast(3).joinToString("\n\n") { stage ->
+            buildString {
+                appendLine("Scene ${stage.stageNumber}: ${stage.storyContent.trim()}")
+                stage.userResponse?.takeIf(String::isNotBlank)?.let {
+                    appendLine("Player response: $it")
+                }
+                stage.summary?.takeIf(String::isNotBlank)?.let {
+                    appendLine("Scene summary: $it")
+                }
+            }.trim()
         }
-        
-        contextBuilder.append("\n\nRemember: End with clear options for the player like 'What do you do? A) ... B) ... C) ...'")
-        
-        val response = callOllama(contextBuilder.toString())
-        if (response == null) return null
-        
-        // Clean the response - remove any accidental schematic leakage
-        val cleanedResponse = response
-            .replace(Regex("\\[INTERNAL.*?\\].*?\\[END INTERNAL.*?\\]", RegexOption.DOT_MATCHES_ALL), "")
-            .replace(Regex("TOTAL_STAGES:.*", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("STORY_THREAD:.*", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("KEY_EVENTS:.*", RegexOption.IGNORE_CASE), "")
-            .trim()
-        
+
+        val userPrompt = buildString {
+            appendLine("SETTING: ${dungeonTypeLabel(session.dungeonType)}")
+            appendLine("THEME: ${session.dungeonType.stylePrompt.trim()}")
+            appendLine("LANGUAGE: ${settingsRepository.adventureLanguage.value}")
+            appendLine()
+            appendLine("HIDDEN STORY GUIDE:")
+            appendLine("Main arc: ${session.schematic.storyThread}")
+            appendLine("Key events: ${session.schematic.keyEvents.joinToString(", ")}")
+            appendLine("Possible endings: ${session.schematic.possibleEndings.joinToString(", ")}")
+            appendLine("Tone: ${session.schematic.tone}")
+            appendLine("Difficulty: ${session.schematic.difficulty}")
+            appendLine()
+            if (session.cumulativeSummary.isNotBlank()) {
+                appendLine("STORY SO FAR:")
+                appendLine(session.cumulativeSummary.trim())
+                appendLine()
+            }
+            if (previousMoments.isNotBlank()) {
+                appendLine("RECENT SCENES:")
+                appendLine(previousMoments)
+                appendLine()
+            }
+            if (!playerChoice.isNullOrBlank()) {
+                appendLine("LATEST PLAYER CHOICE:")
+                appendLine(playerChoice.trim())
+                appendLine()
+            }
+            append("Write scene $stageNumber of $totalStages. ")
+            when {
+                progressPercent < 20 -> append("This is the opening stretch, so establish the danger and curiosity.")
+                progressPercent < 50 -> append("Build momentum and reveal a meaningful new twist.")
+                progressPercent < 80 -> append("Escalate the stakes and make the consequences sharper.")
+                progressPercent < 95 -> append("Prepare the climax and narrow the possible outcomes.")
+                else -> append("This is the final scene, so deliver the resolution.")
+            }
+            appendLine()
+            appendLine()
+            appendLine("Rules:")
+            appendLine("- Stay fully in-world and immersive.")
+            appendLine("- Do not mention hidden planning notes, schemas, or stage counts.")
+            appendLine("- End with exactly 2 to 4 clear choices for the player.")
+            appendLine("- Keep this scene distinct from the recent scenes.")
+            appendLine("- Return only the story scene text.")
+        }
+
+        val response = generateText(
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+            useSummarizer = false,
+            maxTokens = 1100,
+            temperature = 0.85f
+        ) ?: return null
+
         return AdventureStage(
             stageNumber = stageNumber,
-            storyContent = cleanedResponse,
+            storyContent = response,
             userResponse = null,
             summary = null
         )
     }
-    
+
     private suspend fun summarizeStage(stage: AdventureStage): String? {
-        val summarizerPrompt = settingsRepository.adventureSummarizerPrompt.value
-        
-        val prompt = """$summarizerPrompt
+        val prompt = """
+            ${settingsRepository.adventureSummarizerPrompt.value}
 
-STAGE CONTENT:
-${stage.storyContent}
+            Language: ${settingsRepository.adventureLanguage.value}
 
-PLAYER RESPONSE: ${stage.userResponse ?: "N/A"}
+            Scene text:
+            ${stage.storyContent.trim()}
 
-Provide a 1-2 sentence summary of what happened."""
+            Player response:
+            ${stage.userResponse ?: "N/A"}
 
-        return callOllama(prompt, useSummarizer = true)?.trim()
+            Return only a brief 1-2 sentence summary.
+        """.trimIndent()
+        return generateText(
+            userPrompt = prompt,
+            useSummarizer = true,
+            maxTokens = 220,
+            temperature = 0.35f
+        )
     }
-    
-    private suspend fun callOllama(prompt: String, useSummarizer: Boolean = false): String? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val baseUrl = settingsRepository.adventureOllamaUrl.value.trimEnd('/')
-                val model = if (useSummarizer) {
-                    settingsRepository.adventureSummarizerModel.value
-                } else {
-                    settingsRepository.adventureModel.value
-                }
-                val numCtx = settingsRepository.adventureOllamaNumCtx.value
-                val useMmap = settingsRepository.adventureOllamaMmap.value
-                
-                val url = URL("$baseUrl/api/generate")
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
-                connection.connectTimeout = 30000
-                connection.readTimeout = 180000 // 3 minutes for longer generations
-                
-                val requestBody = """
-                    {
-                        "model": "$model",
-                        "prompt": ${json.encodeToString(prompt)},
-                        "stream": false,
-                        "options": {
-                            "num_ctx": $numCtx,
-                            "use_mmap": $useMmap
-                        }
-                    }
-                """.trimIndent()
-                
-                OutputStreamWriter(connection.outputStream).use { it.write(requestBody) }
-                
-                if (connection.responseCode == 200) {
-                    val response = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
-                    
-                    // Parse response using proper JSON parsing
-                    try {
-                        val jsonResponse = org.json.JSONObject(response)
-                        val content = jsonResponse.optString("response", null)
-                        if (content != null) {
-                            content
-                        } else {
-                            DebugLog.log("[Adventure] No 'response' field in Ollama response")
-                            null
-                        }
-                    } catch (e: Exception) {
-                        DebugLog.log("[Adventure] Could not parse Ollama JSON response: ${e.message}")
-                        null
-                    }
-                } else {
-                    DebugLog.log("[Adventure] Ollama error: ${connection.responseCode}")
-                    null
-                }
-            } catch (e: Exception) {
-                DebugLog.log("[Adventure] Ollama call failed: ${e.message}")
-                null
-            }
+
+    private suspend fun tryGenerateWorldImage(
+        sessionId: String,
+        dungeonType: DungeonType,
+        schematic: StorySchematic,
+        onProgress: (Float, String) -> Unit
+    ): StorySchematic {
+        val model = resolveAdventureImageModel() ?: return schematic
+
+        val positivePrompt = generateText(
+            systemPrompt = adventureImagePositivePromptSystem(),
+            userPrompt = adventureImagePositivePromptUser(dungeonType, schematic),
+            useSummarizer = false,
+            maxTokens = 320,
+            temperature = 0.55f
+        )?.ifBlank { null } ?: fallbackWorldImagePrompt(dungeonType, schematic)
+
+        val negativePrompt = generateText(
+            systemPrompt = adventureImageNegativePromptSystem(),
+            userPrompt = adventureImageNegativePromptUser(dungeonType, schematic),
+            useSummarizer = false,
+            maxTokens = 120,
+            temperature = 0.3f
+        )?.ifBlank { null } ?: "text, ui, watermark, realistic photo, blurry, cluttered foreground, extra people"
+
+        return runCatching {
+            onProgress(0.48f, context.getString(R.string.adventure_status_generating_world_image))
+            val resolution = settingsRepository.adventureOnnxResolution.value.coerceAtLeast(256)
+            val outputFile = File(File(context.filesDir, "adventure_worlds").apply { mkdirs() }, "$sessionId.png")
+            OnnxTxt2ImgPipeline().generate(
+                config = OnnxImageGenConfig(
+                    modelPath = model.path,
+                    modelName = model.filename,
+                    mode = OnnxImageGenMode.TXT2IMG,
+                    prompt = positivePrompt,
+                    negativePrompt = negativePrompt,
+                    width = resolution,
+                    height = resolution,
+                    steps = settingsRepository.adventureOnnxSteps.value.coerceAtLeast(1),
+                    cfgScale = settingsRepository.adventureOnnxCfg.value,
+                    seed = -1L,
+                    requestedWidth = resolution,
+                    requestedHeight = resolution,
+                    backend = OnnxRuntimeBackend.CPU,
+                    runtimeOptions = OnnxRuntimeOptions(),
+                    outputPath = outputFile.absolutePath
+                ),
+                onProgress = { _, _ -> }
+            )
+            schematic.copy(
+                worldImagePath = outputFile.absolutePath,
+                worldImagePrompt = positivePrompt,
+                worldImageNegativePrompt = negativePrompt
+            )
+        }.getOrElse { error ->
+            DebugLog.log("[Adventure] World image generation skipped: ${error.message}")
+            schematic
         }
     }
-    
+
+    private suspend fun tryGenerateStageImage(
+        session: AdventureSession,
+        stage: AdventureStage,
+        dungeonType: DungeonType,
+        onProgress: (Float, String) -> Unit
+    ): AdventureStage {
+        val model = resolveAdventureImageModel() ?: return stage
+        val positivePrompt = generateText(
+            systemPrompt = adventureImagePositivePromptSystem(),
+            userPrompt = adventureStageImagePositivePromptUser(
+                session = session,
+                stage = stage,
+                dungeonType = dungeonType
+            ),
+            useSummarizer = false,
+            maxTokens = 340,
+            temperature = 0.55f
+        )?.ifBlank { null } ?: fallbackStageImagePrompt(session, stage, dungeonType)
+
+        val negativePrompt = generateText(
+            systemPrompt = adventureImageNegativePromptSystem(),
+            userPrompt = adventureStageImageNegativePromptUser(
+                session = session,
+                stage = stage,
+                dungeonType = dungeonType
+            ),
+            useSummarizer = false,
+            maxTokens = 120,
+            temperature = 0.3f
+        )?.ifBlank { null } ?: "text, ui, watermark, realistic photo, blurry, cluttered foreground, extra people"
+
+        return runCatching {
+            onProgress(0.86f, context.getString(R.string.adventure_status_generating_stage_image, stage.stageNumber))
+            val resolution = settingsRepository.adventureOnnxResolution.value.coerceAtLeast(256)
+            val stageDir = File(File(context.filesDir, "adventure_worlds").apply { mkdirs() }, session.id).apply { mkdirs() }
+            val outputFile = File(stageDir, "stage_${stage.stageNumber}.png")
+            OnnxTxt2ImgPipeline().generate(
+                config = OnnxImageGenConfig(
+                    modelPath = model.path,
+                    modelName = model.filename,
+                    mode = OnnxImageGenMode.TXT2IMG,
+                    prompt = positivePrompt,
+                    negativePrompt = negativePrompt,
+                    width = resolution,
+                    height = resolution,
+                    steps = settingsRepository.adventureOnnxSteps.value.coerceAtLeast(1),
+                    cfgScale = settingsRepository.adventureOnnxCfg.value,
+                    seed = -1L,
+                    requestedWidth = resolution,
+                    requestedHeight = resolution,
+                    backend = OnnxRuntimeBackend.CPU,
+                    runtimeOptions = OnnxRuntimeOptions(),
+                    outputPath = outputFile.absolutePath
+                ),
+                onProgress = { _, _ -> }
+            )
+            stage.copy(
+                imagePath = outputFile.absolutePath,
+                imagePrompt = positivePrompt,
+                imageNegativePrompt = negativePrompt
+            )
+        }.getOrElse { error ->
+            DebugLog.log("[Adventure] Stage image generation skipped: ${error.message}")
+            stage
+        }
+    }
+
+    private suspend fun resolveAdventureImageModel() =
+        AppDatabase.getDatabase(context.applicationContext)
+            .modelDao()
+            .getModelsByTypesSync(listOf(ModelType.ONNX_IMAGE_GEN))
+            .filter { it.isOnnxTxt2ImgBundle() }
+            .let { models ->
+                val preferred = settingsRepository.adventureOnnxModelFilename.value
+                preferred?.let { selected ->
+                    models.firstOrNull { it.filename == selected || it.path == selected }
+                } ?: models.firstOrNull()
+            }
+
+    private fun adventureImagePositivePromptSystem(): String = """
+        You write one English positive prompt for local image generation.
+        Return only the prompt text, no JSON, no markdown, no label.
+        The prompt must clearly request:
+        - retro handheld game background illustration
+        - charming 1990s Tamagotchi-style scene
+        - flat colorful 2d art
+        - bold outlines
+        - cute toy-like shapes
+        - simple readable composition
+        - clear open center space when appropriate
+        - no text, no UI, no foreground clutter
+
+        Follow this example style closely:
+        retro handheld game background illustration, charming 1990s Tamagotchi-style room interior scene, flat colorful 2d art, large TV on the left, rounded sofa on the right, dining table in the center, shelf at the back, wall clock, rug on the floor, warm cozy mood, cute toy-like shapes, bold outlines, simple readable composition, clear open center space for pet tiles, no text, no UI, no people, no foreground objects
+    """.trimIndent()
+
+    private fun adventureImagePositivePromptUser(dungeonType: DungeonType, schematic: StorySchematic): String = """
+        Create one background prompt for the opening world image of this text adventure.
+        Dungeon: ${dungeonTypeLabel(dungeonType)}
+        Theme: ${dungeonType.stylePrompt.trim()}
+        Story thread: ${schematic.storyThread}
+        Key events: ${schematic.keyEvents.joinToString(", ")}
+        Tone: ${schematic.tone}
+        Difficulty: ${schematic.difficulty}
+
+        Make it feel like an explorable retro adventure location.
+        Return only the English positive prompt.
+    """.trimIndent()
+
+    private fun adventureStageImagePositivePromptUser(
+        session: AdventureSession,
+        stage: AdventureStage,
+        dungeonType: DungeonType
+    ): String = """
+        Create one background prompt for an in-story scene image.
+        Dungeon: ${dungeonTypeLabel(dungeonType)}
+        Theme: ${dungeonType.stylePrompt.trim()}
+        Story thread: ${session.schematic.storyThread}
+        Stage ${stage.stageNumber} story: ${stage.storyContent.trim()}
+        Player response: ${stage.userResponse ?: "N/A"}
+        Previous summary: ${session.cumulativeSummary.ifBlank { "N/A" }}
+
+        Make the scene feel like part of the same retro handheld adventure world.
+        Return only the English positive prompt.
+    """.trimIndent()
+
+    private fun adventureImageNegativePromptSystem(): String = """
+        Write one short English negative prompt for local image generation.
+        Return only a concise comma-separated exclusion list.
+        No JSON, no labels, no explanation.
+    """.trimIndent()
+
+    private fun adventureImageNegativePromptUser(dungeonType: DungeonType, schematic: StorySchematic): String = """
+        Write a negative prompt for an image of ${dungeonTypeLabel(dungeonType)}.
+        Tone: ${schematic.tone}
+        Keep it short and useful.
+    """.trimIndent()
+
+    private fun adventureStageImageNegativePromptUser(
+        session: AdventureSession,
+        stage: AdventureStage,
+        dungeonType: DungeonType
+    ): String = """
+        Write a negative prompt for stage ${stage.stageNumber} of ${dungeonTypeLabel(dungeonType)}.
+        Story text: ${stage.storyContent.trim()}
+        Previous summary: ${session.cumulativeSummary.ifBlank { "N/A" }}
+        Keep it short and useful.
+    """.trimIndent()
+
+    private fun fallbackWorldImagePrompt(dungeonType: DungeonType, schematic: StorySchematic): String {
+        return buildString {
+            append("retro handheld game background illustration, charming 1990s Tamagotchi-style dungeon scene, ")
+            append("flat colorful 2d art, bold outlines, cute toy-like shapes, simple readable composition, ")
+            append("clear open center space for pet tiles, ")
+            append(dungeonType.displayName.lowercase())
+            append(" adventure setting, ")
+            append(schematic.tone.lowercase())
+            append(" mood, ")
+            append("no text, no UI, no people, no foreground objects")
+        }
+    }
+
+    private fun fallbackStageImagePrompt(
+        session: AdventureSession,
+        stage: AdventureStage,
+        dungeonType: DungeonType
+    ): String {
+        return buildString {
+            append("retro handheld game background illustration, charming 1990s Tamagotchi-style scene, ")
+            append("flat colorful 2d art, bold outlines, cute toy-like shapes, simple readable composition, ")
+            append("clear open center space for pet tiles, ")
+            append(dungeonType.displayName.lowercase())
+            append(" adventure moment, stage ")
+            append(stage.stageNumber)
+            append(", ")
+            append(stage.storyContent.take(180).lowercase())
+            append(", ")
+            append(session.schematic.tone.lowercase())
+            append(" mood, no text, no UI, no foreground clutter")
+        }
+    }
+
+    private suspend fun generateText(
+        userPrompt: String,
+        systemPrompt: String? = null,
+        useSummarizer: Boolean,
+        maxTokens: Int,
+        temperature: Float
+    ): String? {
+        val config = buildBackendConfig(useSummarizer)
+        val client = RemoteSummaryClientFactory.fromConfig(config)
+        val response = runCatching {
+            client.summarize(
+                RemoteSummaryRequest(
+                    systemPrompt = systemPrompt ?: "",
+                    userPrompt = userPrompt,
+                    contextSize = backendContextSize(),
+                    maxTokens = maxTokens,
+                    temperature = temperature,
+                    thinkingEnabled = false
+                )
+            )
+        }.getOrElse { error ->
+            DebugLog.log("[Adventure] Backend generation failed: ${error.message}")
+            return null
+        }
+        return cleanAdventureText(response.output)
+    }
+
+    private fun buildBackendConfig(useSummarizer: Boolean): RemoteSummaryBackendConfig {
+        val backend = settingsRepository.adventureBackend.value
+        val baseUrl = if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+            settingsRepository.adventureLlamaServerUrl.value.trim().trimEnd('/')
+        } else {
+            settingsRepository.adventureOllamaUrl.value.trim().trimEnd('/')
+        }
+        val model = if (backend == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+            settingsRepository.adventureLlamaServerModelLabel.value?.trim()?.ifBlank { null }
+        } else if (useSummarizer) {
+            settingsRepository.adventureSummarizerModel.value.trim().ifBlank { null }
+        } else {
+            settingsRepository.adventureModel.value.trim().ifBlank { null }
+        }
+        return RemoteSummaryBackendConfig(
+            backend = backend,
+            baseUrl = baseUrl,
+            model = model,
+            timeoutMinutes = 10
+        )
+    }
+
+    private fun backendContextSize(): Int {
+        val llamaContext = settingsRepository.adventureLlamaServerContextTokens.value
+        return if (settingsRepository.adventureBackend.value == SettingsRepository.PDF_BACKEND_LLAMA_SERVER) {
+            llamaContext.takeIf { it > 0 } ?: settingsRepository.adventureOllamaNumCtx.value.coerceAtLeast(4096)
+        } else {
+            settingsRepository.adventureOllamaNumCtx.value.coerceAtLeast(4096)
+        }
+    }
+
+    private fun cleanAdventureText(output: String): String {
+        val cleaned = PDFSummaryLogic.cleanLlamaOutput(output)
+            .replace(Regex("^```(?:json|text)?\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s*```$"), "")
+            .trim()
+
+        val extracted = listOf("content", "story", "prompt", "summary", "text").firstNotNullOfOrNull { key ->
+            Regex("\"$key\"\\s*:\\s*\"(.*?)\"", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+                .find(cleaned)
+                ?.groupValues
+                ?.getOrNull(1)
+        }?.replace("\\n", "\n")
+            ?.replace("\\\"", "\"")
+            ?.trim()
+
+        return (extracted ?: cleaned)
+            .removePrefix("\"")
+            .removeSuffix("\"")
+            .trim()
+    }
+
+    private suspend fun updateDungeonProgress(petId: String, dungeonType: DungeonType) {
+        val progress = database.tamaDao().getDungeonProgress(petId)
+        if (progress == null) {
+            database.tamaDao().saveDungeonProgress(
+                DungeonProgressEntity(
+                    petId = petId,
+                    completedDungeonCount = 1,
+                    lastCompletedDungeonType = dungeonType.name
+                )
+            )
+        } else if (dungeonType.unlockOrder > progress.completedDungeonCount) {
+            database.tamaDao().updateDungeonProgress(
+                petId,
+                progress.completedDungeonCount + 1,
+                dungeonType.name
+            )
+        }
+    }
+
     private fun parseSchematic(response: String): StorySchematic {
-        // Parse TOTAL_STAGES with multiple patterns
         val totalStages = listOf(
             Regex("TOTAL_STAGES:\\s*(\\d+)", RegexOption.IGNORE_CASE),
             Regex("total.?stages.?:?\\s*(\\d+)", RegexOption.IGNORE_CASE),
@@ -386,29 +639,30 @@ Provide a 1-2 sentence summary of what happened."""
         ).firstNotNullOfOrNull { regex ->
             regex.find(response)?.groupValues?.get(1)?.toIntOrNull()
         } ?: 10
-        
-        val storyThread = Regex("STORY_THREAD:\\s*(.+?)(?=KEY_EVENTS|POSSIBLE_ENDINGS|TONE|DIFFICULTY|$)", 
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            .find(response)?.groupValues?.get(1)?.trim() ?: response.take(300)
-        
-        val keyEvents = Regex("KEY_EVENTS:\\s*(.+?)(?=POSSIBLE_ENDINGS|TONE|DIFFICULTY|$)",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            .find(response)?.groupValues?.get(1)?.trim()?.split(Regex("[\\n•\\-\\d.]+"))
+
+        val storyThread = Regex(
+            "STORY_THREAD:\\s*(.+?)(?=KEY_EVENTS|POSSIBLE_ENDINGS|TONE|DIFFICULTY|$)",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(response)?.groupValues?.get(1)?.trim() ?: response.take(300)
+
+        val keyEvents = Regex(
+            "KEY_EVENTS:\\s*(.+?)(?=POSSIBLE_ENDINGS|TONE|DIFFICULTY|$)",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(response)?.groupValues?.get(1)?.trim()?.split(Regex("[\\n•\\-\\d.]+"))
             ?.map { it.trim() }?.filter { it.isNotBlank() && it.length > 3 } ?: listOf("Adventure begins")
-        
-        val possibleEndings = Regex("POSSIBLE_ENDINGS:\\s*(.+?)(?=TONE|DIFFICULTY|$)",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-            .find(response)?.groupValues?.get(1)?.trim()?.split(Regex("[\\n•\\-\\d.]+"))
+
+        val possibleEndings = Regex(
+            "POSSIBLE_ENDINGS:\\s*(.+?)(?=TONE|DIFFICULTY|$)",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(response)?.groupValues?.get(1)?.trim()?.split(Regex("[\\n•\\-\\d.]+"))
             ?.map { it.trim() }?.filter { it.isNotBlank() && it.length > 3 } ?: listOf("Victory", "Defeat")
-        
+
         val tone = Regex("TONE:\\s*(.+?)(?=DIFFICULTY|$)", RegexOption.IGNORE_CASE)
             .find(response)?.groupValues?.get(1)?.trim()?.take(50) ?: "Dark Fantasy"
-        
+
         val difficulty = Regex("DIFFICULTY:\\s*(easy|medium|hard)", RegexOption.IGNORE_CASE)
             .find(response)?.groupValues?.get(1)?.lowercase() ?: "medium"
-        
-        DebugLog.log("[Adventure] Parsed schematic: totalStages=$totalStages")
-        
+
         return StorySchematic(
             totalStages = totalStages.coerceIn(5, 30),
             storyThread = storyThread,
@@ -418,9 +672,7 @@ Provide a 1-2 sentence summary of what happened."""
             difficulty = difficulty
         )
     }
-    
-    // ========== Database Helpers ==========
-    
+
     private suspend fun saveSession(session: AdventureSession) {
         val entity = AdventureSessionEntity(
             id = session.id,
@@ -434,8 +686,6 @@ Provide a 1-2 sentence summary of what happened."""
             lastPlayedAt = session.lastPlayedAt
         )
         database.tamaDao().saveAdventureSession(entity)
-        
-        // Save all stages
         session.stages.forEach { stage ->
             database.tamaDao().saveAdventureStage(
                 AdventureStageEntity(
@@ -445,50 +695,52 @@ Provide a 1-2 sentence summary of what happened."""
                     storyContent = stage.storyContent,
                     userResponse = stage.userResponse,
                     stageSummary = stage.summary,
+                    imagePath = stage.imagePath,
+                    imagePrompt = stage.imagePrompt,
+                    imageNegativePrompt = stage.imageNegativePrompt,
                     timestamp = System.currentTimeMillis()
                 )
             )
         }
     }
-    
+
     private fun entityToSession(
         entity: AdventureSessionEntity,
         stageEntities: List<AdventureStageEntity>
     ): AdventureSession {
-        val schematic = try {
+        val schematic = runCatching {
             json.decodeFromString<StorySchematic>(entity.schematicJson)
-        } catch (e: Exception) {
+        }.getOrDefault(
             StorySchematic(
                 totalStages = 10,
                 storyThread = "Adventure continues...",
-                keyEvents = listOf(),
+                keyEvents = emptyList(),
                 possibleEndings = listOf("Victory", "Defeat"),
                 tone = "dark fantasy",
                 difficulty = "medium"
             )
-        }
-        
-        val dungeonType = try {
+        )
+
+        val dungeonType = runCatching {
             DungeonType.valueOf(entity.dungeonType)
-        } catch (e: Exception) {
-            DungeonType.CHAOS_REALM
-        }
-        
-        val stages = stageEntities.map { stageEntity ->
-            AdventureStage(
-                stageNumber = stageEntity.stageNumber,
-                storyContent = stageEntity.storyContent,
-                userResponse = stageEntity.userResponse,
-                summary = stageEntity.stageSummary
-            )
-        }
-        
+        }.getOrDefault(DungeonType.CHAOS_REALM)
+
         return AdventureSession(
             id = entity.id,
             petId = entity.petId,
             dungeonType = dungeonType,
             schematic = schematic,
-            stages = stages,
+            stages = stageEntities.map {
+                AdventureStage(
+                    stageNumber = it.stageNumber,
+                    storyContent = it.storyContent,
+                    userResponse = it.userResponse,
+                    summary = it.stageSummary,
+                    imagePath = it.imagePath,
+                    imagePrompt = it.imagePrompt,
+                    imageNegativePrompt = it.imageNegativePrompt
+                )
+            },
             currentStage = entity.currentStage,
             isCompleted = entity.isCompleted,
             cumulativeSummary = entity.cumulativeSummary,
@@ -496,4 +748,6 @@ Provide a 1-2 sentence summary of what happened."""
             lastPlayedAt = entity.lastPlayedAt
         )
     }
+
+    private fun dungeonTypeLabel(dungeonType: DungeonType): String = dungeonType.localizedName(context)
 }

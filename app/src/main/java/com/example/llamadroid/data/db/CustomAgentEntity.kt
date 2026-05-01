@@ -19,6 +19,7 @@ data class CustomAgentEntity(
     val allowedToolsJson: String = "[]", // JSON array of tool names this agent can use
     val exampleUsage: String = "", // Example of how to call this agent
     val canDelegateToOthers: Boolean = false, // Can this agent call other agents?
+    val visionEnabled: Boolean = false,
     val isEnabled: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()

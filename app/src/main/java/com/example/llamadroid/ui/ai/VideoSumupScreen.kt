@@ -384,7 +384,6 @@ fun VideoSumupScreen(navController: NavController) {
                                     videoPath = videoPath,
                                     videoFileName = selectedVideoName ?: context.getString(R.string.video_sumup_video_placeholder),
                                     whisperModelPath = selectedWhisperPath!!,
-                                    llmModelPath = "",
                                     language = whisperLanguage,
                                     threads = whisperThreads,
                                     saveToNotes = true,

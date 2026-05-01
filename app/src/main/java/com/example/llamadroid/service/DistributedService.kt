@@ -663,14 +663,13 @@ class DistributedService : Service() {
                     // Perform network checks (blocking, takes time)
                     // Map IP:Port -> IsOnline
                     val results = currentWorkersSnapshot.associate { worker ->
-                        var isOnline = false
-                        try {
+                        val isOnline = try {
                             // Primary Check: Heartbeat on Port + 1
                             val socket = Socket()
                             // Explicitly verify accessibility with short timeout
                             socket.connect(InetSocketAddress(worker.ip, worker.port + 1), 1500)
                             socket.close()
-                            isOnline = true
+                            true
                         } catch (e: Exception) {
                             // DebugLog.log("[$TAG] Heartbeat failed for ${worker.ip}: ${e.message}")
                             // Fallback Check: RPC Port
@@ -678,10 +677,10 @@ class DistributedService : Service() {
                                 val socket = Socket()
                                 socket.connect(InetSocketAddress(worker.ip, worker.port), 1500)
                                 socket.close()
-                                isOnline = true
+                                true
                             } catch (e2: Exception) {
                                 // DebugLog.log("[$TAG] RPC fallback failed for ${worker.ip}: ${e2.message}")
-                                isOnline = false
+                                false
                             }
                         }
                         "${worker.ip}:${worker.port}" to isOnline
@@ -938,7 +937,6 @@ class DistributedService : Service() {
                     DebugLog.log("[$TAG] Watchdog: Process died! Restart attempt $restartCount/3")
                     addRpcLog("=== Process died, restart attempt $restartCount/3 ===")
                     _isRunning.value = false
-                    lastRestartTime = now
                     delay(1000)
                     startWorkerMode(port, ramMB, threads, enableCache)
                     break

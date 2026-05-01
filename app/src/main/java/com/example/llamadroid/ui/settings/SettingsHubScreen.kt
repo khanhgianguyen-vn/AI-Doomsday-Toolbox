@@ -13,17 +13,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
+import com.example.llamadroid.ui.components.AppContentColumn
+import com.example.llamadroid.ui.components.AppHubCard
+import com.example.llamadroid.ui.components.AppPageBackground
+import com.example.llamadroid.ui.components.AppPageHeader
 import com.example.llamadroid.ui.navigation.Screen
 
 data class SettingsItem(
@@ -123,112 +123,37 @@ fun SettingsHubScreen(navController: NavController) {
         )
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                )
-            )
-    ) {
-        // Header
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                "⚙️ " + stringResource(R.string.settings_title),
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 32.sp
-                )
-            )
-            Text(
-                stringResource(R.string.settings_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        
-        // 2-column grid
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(settingsItems) { item ->
-                SettingsSquareCard(
-                    emoji = item.emoji,
-                    title = item.title,
-                    description = item.description,
-                    gradientColors = item.gradientColors,
-                    onClick = { navController.navigate(item.route) }
+    AppPageBackground {
+        Column(modifier = Modifier.fillMaxSize()) {
+            AppContentColumn(
+                modifier = Modifier.fillMaxWidth(),
+                bottomPadding = 0.dp,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppPageHeader(
+                    eyebrow = "SETTINGS",
+                    title = "⚙️ " + stringResource(R.string.settings_title),
+                    subtitle = stringResource(R.string.settings_subtitle)
                 )
             }
-        }
-    }
-}
 
-@Composable
-private fun SettingsSquareCard(
-    emoji: String,
-    title: String,
-    description: String,
-    gradientColors: List<Color>,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .aspectRatio(1f) // Square
-            .clickable { onClick() },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(brush = Brush.verticalGradient(gradientColors))
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Emoji
-                Text(
-                    emoji,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontSize = 40.sp
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Title
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                
-                // Description
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                items(settingsItems) { item ->
+                    AppHubCard(
+                        emoji = item.emoji,
+                        title = item.title,
+                        description = item.description,
+                        gradientColors = item.gradientColors,
+                        onClick = { navController.navigate(item.route) },
+                        modifier = Modifier.aspectRatio(1f)
+                    )
+                }
             }
         }
     }

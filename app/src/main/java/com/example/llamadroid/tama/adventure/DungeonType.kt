@@ -1,17 +1,23 @@
 package com.example.llamadroid.tama.adventure
 
+import android.content.Context
+import androidx.annotation.StringRes
+import com.example.llamadroid.R
+
 /**
  * Types of dungeons available for text adventures.
  * Dungeons unlock sequentially (1-6), with Chaos Realm always available.
  */
 enum class DungeonType(
     val displayName: String,
+    @StringRes val displayNameRes: Int,
     val emoji: String,
     val unlockOrder: Int,  // 0 = always unlocked
     val stylePrompt: String
 ) {
     SHADOW_CRYPTS(
         displayName = "Shadow Crypts",
+        displayNameRes = R.string.adventure_dungeon_shadow_crypts,
         emoji = "💀",
         unlockOrder = 1,
         stylePrompt = """
@@ -24,6 +30,7 @@ enum class DungeonType(
     
     ARCANE_DEPTHS(
         displayName = "Arcane Depths",
+        displayNameRes = R.string.adventure_dungeon_arcane_depths,
         emoji = "🔮",
         unlockOrder = 2,
         stylePrompt = """
@@ -36,6 +43,7 @@ enum class DungeonType(
     
     INFERNAL_SPIRE(
         displayName = "Infernal Spire",
+        displayNameRes = R.string.adventure_dungeon_infernal_spire,
         emoji = "🔥",
         unlockOrder = 3,
         stylePrompt = """
@@ -48,6 +56,7 @@ enum class DungeonType(
     
     FROSTBOUND_HALLS(
         displayName = "Frostbound Halls",
+        displayNameRes = R.string.adventure_dungeon_frostbound_halls,
         emoji = "❄️",
         unlockOrder = 4,
         stylePrompt = """
@@ -60,6 +69,7 @@ enum class DungeonType(
     
     VERDANT_MAW(
         displayName = "Verdant Maw",
+        displayNameRes = R.string.adventure_dungeon_verdant_maw,
         emoji = "🌿",
         unlockOrder = 5,
         stylePrompt = """
@@ -72,6 +82,7 @@ enum class DungeonType(
     
     VOID_SANCTUM(
         displayName = "Void Sanctum",
+        displayNameRes = R.string.adventure_dungeon_void_sanctum,
         emoji = "🌑",
         unlockOrder = 6,
         stylePrompt = """
@@ -84,6 +95,7 @@ enum class DungeonType(
     
     CHAOS_REALM(
         displayName = "Chaos Realm",
+        displayNameRes = R.string.adventure_dungeon_chaos_realm,
         emoji = "🎲",
         unlockOrder = 0,  // Always unlocked
         stylePrompt = """
@@ -103,3 +115,5 @@ enum class DungeonType(
         }
     }
 }
+
+fun DungeonType.localizedName(context: Context): String = context.getString(displayNameRes)

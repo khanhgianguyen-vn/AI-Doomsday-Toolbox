@@ -164,7 +164,7 @@ class SDEnvironmentService : Service() {
                 
                 SDStateHolder.updateInstallState(SDInstallState.CloningRepo(0.3f, "Cloning repository..."))
                 val cloneResult = prootManager.executeCommand(
-                    "git clone https://github.com/AUTOMATIC1111/stable-diffusion-webui.git /home/auto/stable-diffusion-webui",
+                    "git clone https://github.com/ManuXD32/stable-diffusion-webui.git /home/auto/stable-diffusion-webui",
                     user = "auto"
                 )
                 

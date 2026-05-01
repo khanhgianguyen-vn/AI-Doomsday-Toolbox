@@ -11,6 +11,7 @@ enum class NoteType {
     PDF_SUMMARY,     // 📄 From PDF AI Summary
     VIDEO_SUMMARY,   // 🎬 From Video Sumup
     WORKFLOW,        // ⚙️ From Workflow
+    TODO_LIST,       // ☑️ Structured checklist note
     MANUAL           // 📝 User-created
 }
 
@@ -28,5 +29,6 @@ data class NoteEntity(
     val language: String? = null,     // Language for transcriptions
     val audioPath: String? = null,    // Path to associated recording for playback
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isLlmWhitelisted: Boolean = false // Explicit user approval for native-chat note tools
 )

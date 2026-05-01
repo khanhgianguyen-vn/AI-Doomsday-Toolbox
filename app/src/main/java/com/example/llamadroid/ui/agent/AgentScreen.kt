@@ -1,7 +1,11 @@
 package com.example.llamadroid.ui.agent
 
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -23,34 +27,61 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
 import androidx.navigation.NavController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import com.example.llamadroid.data.db.AiRuntimeJobEntity
+import com.example.llamadroid.data.db.AgentMessageEntity
+import com.example.llamadroid.data.db.ModelType
 import com.example.llamadroid.service.AgentForegroundService
+import com.example.llamadroid.service.AiRuntimeJobStore
 import com.example.llamadroid.service.AgentService
 import com.example.llamadroid.service.OllamaService
 import com.example.llamadroid.service.StagedFileCache
+import com.example.llamadroid.onnx.isOnnxTxt2ImgBundle
 import com.example.llamadroid.ui.components.ApprovalQueueDialog
 import com.example.llamadroid.ui.navigation.Screen
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 import org.json.JSONObject
 import org.json.JSONArray
-import com.example.llamadroid.data.db.AgentMessageEntity
+import com.example.llamadroid.data.SettingsRepository
 
 // Removed AgentChatMessage data class as it is now in AgentService.ChatMessage
 
@@ -62,52 +93,98 @@ import com.example.llamadroid.data.db.AgentMessageEntity
 fun AgentScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
+
     // Services
     val ollamaService = remember { AgentForegroundService.getOllamaService(context) }
     val agentService = remember { AgentForegroundService.getAgentService(context) }
     val db = remember { com.example.llamadroid.data.db.AppDatabase.getDatabase(context) }
+    val settingsRepository = remember { SettingsRepository(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val density = LocalDensity.current
+    val rootView = LocalView.current
+    var chatContentBottomInWindowPx by remember { mutableIntStateOf(0) }
+    val fullWindowHeightPx = maxOf(
+        rootView.rootView.height,
+        rootView.resources.displayMetrics.heightPixels
+    )
+    val alreadyReservedBottomPx = (
+        fullWindowHeightPx - chatContentBottomInWindowPx
+    ).coerceAtLeast(0)
+    val effectiveImePadding = with(density) {
+        (
+            WindowInsets.ime.getBottom(this) - alreadyReservedBottomPx
+        ).coerceAtLeast(0).toDp()
+    }
 
     // Initialize Ollama URL from saved settings
     remember { ollamaService.initFromSettings() }
-    
-    // Auto-check Ollama connection on startup to populate models list
-    LaunchedEffect(Unit) {
-        ollamaService.checkConnection()
-    }
-    
-    // State - use STATIC companion object for navigation persistence
-    val messages by AgentService.messages.collectAsState()
-    val isLoading by AgentService.isLoading.collectAsState()
-    val selectedModel by AgentService.selectedModel.collectAsState()
-    val currentAgent by AgentService.currentAgent.collectAsState()
-    val currentTask by AgentService.currentTask.collectAsState()
-    val debugLog by AgentService.debugLog.collectAsState()
-    
-    // UI Local state
-    var inputText by remember { mutableStateOf("") }
-    val listState = rememberLazyListState()
 
-    var currentConversationId by remember { mutableStateOf<Long?>(null) }
+    // State - use STATIC companion object for navigation persistence
+    val messages by AgentService.messages.collectAsStateWithLifecycle()
+    val isLoading by AgentService.isLoading.collectAsStateWithLifecycle()
+    val selectedModel by AgentService.selectedModel.collectAsStateWithLifecycle()
+    val currentAgent by AgentService.currentAgent.collectAsStateWithLifecycle()
+    val currentTask by AgentService.currentTask.collectAsStateWithLifecycle()
+    val runtimeActiveConversationId by AgentService.activeConversationId.collectAsStateWithLifecycle()
+    val debugLog by AgentService.debugLog.collectAsStateWithLifecycle()
+
+    // UI Local state
+    var inputText by rememberSaveable { mutableStateOf("") }
+    var attachedImagePath by remember { mutableStateOf<String?>(null) }
+    var imagePreviewPath by remember { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
+    val agentBackend by settingsRepository.agentBackend.collectAsStateWithLifecycle()
+    val isAgentLlamaServer = SettingsRepository.isLlamaServerBackend(agentBackend)
+    val llamaServerUrl by settingsRepository.llamaServerUrl.collectAsStateWithLifecycle()
+    val llamaServerRuntimeState by AgentService.llamaServerRuntimeState.collectAsStateWithLifecycle()
+    val orchestratorVisionEnabled by settingsRepository.agentOrchestratorVisionEnabled.collectAsStateWithLifecycle()
+
+    val initialConversationId = remember {
+        settingsRepository.lastAgentConversationId.value.takeIf { it != -1L }
+    }
+    var runtimeConversationId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedConversationId by rememberSaveable { mutableStateOf<Long?>(initialConversationId) }
+    var isConversationRestoring by remember { mutableStateOf(initialConversationId != null) }
+    var hydratingConversationTitle by remember { mutableStateOf<String?>(null) }
+    var initialConversationRestorePending by remember { mutableStateOf(initialConversationId != null) }
     var showConversations by remember { mutableStateOf(false) }
-    val settingsRepository = remember { com.example.llamadroid.data.SettingsRepository(context) }
+    var restoreToken by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(agentBackend, llamaServerUrl) {
+        delay(350)
+        if (isAgentLlamaServer) {
+            if (llamaServerUrl.isNotBlank()) {
+                agentService.refreshLlamaServerRuntimeState(settingsRepository, force = true)
+            }
+        } else {
+            ollamaService.checkConnection()
+        }
+    }
 
     // --- Core Functions ---
-    fun saveCurrentConversation() {
-        val convId = currentConversationId ?: return
-        val currentAgentRef = AgentService.currentAgent.value
-        val currentTaskRef = AgentService.currentTask.value
+    fun saveConversationSnapshot(
+        conversationId: Long,
+        snapshot: List<AgentService.Companion.ChatMessage>
+    ) {
+        val currentAgentRef = currentAgent
+        val currentTaskRef = currentTask
         scope.launch {
+            if (db.agentChatDao().getConversation(conversationId) == null) {
+                AgentService.addDebugLog("⚠️ Skipping autosave for missing conversation $conversationId")
+                return@launch
+            }
             db.agentChatDao().updateConversationState(
-                convId, 
-                currentAgentRef.name, 
+                conversationId,
+                currentAgentRef.name,
                 currentTaskRef
             )
             // Save messages
-            val entities = AgentService.messages.value.map { msg ->
-                AgentService.chatMessageToEntity(msg, convId)
-            }
-            db.agentChatDao().deleteAllMessagesInConversation(convId)
+            val entities = snapshot
+                .filterNot { AgentService.isTransientCompactionStatusMessageForPersistence(it) }
+                .map { msg ->
+                AgentService.chatMessageToEntity(msg, conversationId)
+                }
+            db.agentChatDao().deleteAllMessagesInConversation(conversationId)
             db.agentChatDao().insertMessages(entities)
         }
     }
@@ -117,9 +194,9 @@ fun AgentScreen(navController: NavController) {
     var showConnectionSettings by remember { mutableStateOf(false) }
     var showDebugPanel by remember { mutableStateOf(false) }
     var showAgentSettings by remember { mutableStateOf(false) }
-    val showAllOutputState by settingsRepository.showExtraOutput.collectAsState()
+    val showAllOutputState by settingsRepository.showExtraOutput.collectAsStateWithLifecycle()
     var showAllOutput by remember { mutableStateOf(showAllOutputState) }
-    
+
     // Update local state when preference changes, and vice versa
     LaunchedEffect(showAllOutputState) {
         showAllOutput = showAllOutputState
@@ -153,13 +230,13 @@ fun AgentScreen(navController: NavController) {
     }
     
     // Remote connection state
-    val isAgentConnected by AgentService.isConnected.collectAsState()
-    val agentConnectionStatus by AgentService.connectionStatus.collectAsState()
-    val retryMessage by AgentService.retryMessage.collectAsState()
-    val isOllamaConnected by OllamaService.isConnected.collectAsState()
-    val ollamaIsRecovering by OllamaService.isRecovering.collectAsState()
-    val availableModelsData by OllamaService.availableModels.collectAsState()
-    val ollamaHasChecked by OllamaService.hasCheckedConnection.collectAsState()
+    val isAgentConnected by AgentService.isConnected.collectAsStateWithLifecycle()
+    val agentConnectionStatus by AgentService.connectionStatus.collectAsStateWithLifecycle()
+    val retryMessage by AgentService.retryMessage.collectAsStateWithLifecycle()
+    val isOllamaConnected by OllamaService.isConnected.collectAsStateWithLifecycle()
+    val ollamaIsRecovering by OllamaService.isRecovering.collectAsStateWithLifecycle()
+    val availableModelsData by OllamaService.availableModels.collectAsStateWithLifecycle()
+    val ollamaHasChecked by OllamaService.hasCheckedConnection.collectAsStateWithLifecycle()
     val availableModels = availableModelsData.map { it.name }
     
     // Connection settings state
@@ -167,35 +244,28 @@ fun AgentScreen(navController: NavController) {
     var sshPort by remember { mutableStateOf("8023") }
     var sshUser by remember { mutableStateOf("root") }
     var sshPassword by remember { mutableStateOf("") }
-    val ollamaUrl by ollamaService.baseUrl.collectAsState()
+    val ollamaUrl by ollamaService.baseUrl.collectAsStateWithLifecycle()
     
     // Database and conversation management
     val conversations by db.agentChatDao().getAllConversations().collectAsState(initial = emptyList())
-    
-    // Restore last conversation on startup
-    LaunchedEffect(Unit) {
-        val lastId = settingsRepository.lastAgentConversationId.value
-        if (lastId != -1L) {
-            currentConversationId = lastId
-            // Load conversation details to restore project folder
-            val conv = db.agentChatDao().getConversation(lastId)
-            conv?.let { c ->
-                AgentService.setCurrentProjectFolder(c.projectFolder)
-                // Restore agent state if persisted
-                c.lastAgentRole?.let { roleStr ->
-                    try {
-                        val role = AgentService.Companion.AgentRole.valueOf(roleStr)
-                        AgentService.setCurrentAgent(role)
-                    } catch (e: Exception) {}
-                }
-                AgentService.setCurrentTask(c.lastTask)
-                AgentService.addDebugLog(context.getString(R.string.agent_restored_project, c.projectFolder))
-            }
-        }
+    val activeRuntimeJobs by db.aiRuntimeJobDao().observeActiveJobs().collectAsState(initial = emptyList())
+    val selectedConversationMessageFlow = remember(selectedConversationId) {
+        selectedConversationId?.let { db.agentChatDao().getMessagesForConversation(it) }
+            ?: flowOf(emptyList<AgentMessageEntity>())
     }
+    val selectedConversationEntities by selectedConversationMessageFlow.collectAsState(initial = emptyList())
+    val selectedConversationMessages = remember(selectedConversationEntities) {
+        selectedConversationEntities.map { AgentService.chatMessageFromEntity(it) }
+    }
+
     val customTools by db.customToolDao().getEnabledTools().collectAsState(initial = emptyList())
     LaunchedEffect(customTools) {
         AgentService.setLoadedCustomTools(customTools)
+    }
+
+    val installedOnnxModels by db.modelDao().getModelsByType(ModelType.ONNX_IMAGE_GEN).collectAsState(initial = emptyList())
+    val availableImageGenerationModels = remember(installedOnnxModels) {
+        installedOnnxModels.filter { it.isOnnxTxt2ImgBundle() }.map { it.filename }
     }
     
     // Load custom agents from database
@@ -203,39 +273,323 @@ fun AgentScreen(navController: NavController) {
     LaunchedEffect(customAgents) {
         AgentService.setLoadedCustomAgents(customAgents)
     }
-    
 
-    // Conversation Management Functions
-    // Load messages when conversation changes
-    LaunchedEffect(currentConversationId) {
-        AgentService.setActiveConversationId(currentConversationId)
-        if (currentConversationId != null) {
-            // Save as last active
-            settingsRepository.setLastAgentConversationId(currentConversationId!!)
-            
-            val entities = db.agentChatDao().getMessagesForConversationSync(currentConversationId!!)
-            val restoredMessages = entities.map { AgentService.chatMessageFromEntity(it) }
-            val maxSeq = restoredMessages.maxOfOrNull { it.sequenceNumber } ?: 0
-            AgentService.resetMessageCounter(maxSeq)
-            AgentService.setMessages(restoredMessages)
-            if (restoredMessages.isNotEmpty()) {
-                AgentService.addDebugLog(context.getString(R.string.agent_restored_messages, restoredMessages.size))
+    fun clearImageAttachment() {
+        attachedImagePath?.let { path ->
+            runCatching { File(path).delete() }
+        }
+        if (imagePreviewPath == attachedImagePath) {
+            imagePreviewPath = null
+        }
+        attachedImagePath = null
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching {
+                    persistAgentChatImage(
+                        context = context,
+                        projectFolder = AgentService.currentProjectFolder.value,
+                        uri = uri
+                    )
+                }.onSuccess { path ->
+                    clearImageAttachment()
+                    attachedImagePath = path
+                }.onFailure {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.agent_attach_image_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         }
     }
     
-    // Auto-save whenever messages change
-    LaunchedEffect(messages) {
-        if (currentConversationId != null && messages.isNotEmpty()) {
-            saveCurrentConversation()
+
+    suspend fun loadStoredConversationMessages(
+        conversationId: Long?
+    ): List<AgentService.Companion.ChatMessage> {
+        if (conversationId == null) return emptyList()
+        return db.agentChatDao()
+            .getMessagesForConversationSync(conversationId)
+            .map { AgentService.chatMessageFromEntity(it) }
+    }
+
+    fun newestConversationIdExcluding(excludedId: Long? = null): Long? {
+        return com.example.llamadroid.ui.agent.newestConversationIdExcluding(
+            conversations.map { it.id },
+            excludedId
+        )
+    }
+
+    fun resolveRelevantAgentJob(): AiRuntimeJobEntity? {
+        return resolveRelevantAgentRuntimeJob(
+            activeRuntimeJobs = activeRuntimeJobs,
+            runtimeActiveConversationId = runtimeActiveConversationId,
+            runtimeConversationId = runtimeConversationId,
+            selectedConversationId = selectedConversationId
+        )
+    }
+
+    fun syncConversationUiFromRuntime(conversationId: Long?) {
+        if (conversationId == null) return
+        runtimeConversationId = conversationId
+        selectedConversationId = conversationId
+        AgentService.setPreferredConversationId(conversationId)
+        hydratingConversationTitle = conversations.firstOrNull { it.id == conversationId }?.title
+        isConversationRestoring = false
+        initialConversationRestorePending = false
+    }
+
+    suspend fun activateConversationRuntime(
+        conversationId: Long,
+        projectFolder: String,
+        conversationTitle: String?,
+        restoredRole: AgentService.Companion.AgentRole,
+        restoredTask: String?,
+        restoredMessages: List<AgentService.Companion.ChatMessage>,
+        dismissPicker: Boolean,
+        token: Int? = null
+    ) {
+        clearImageAttachment()
+        settingsRepository.setLastAgentConversationId(conversationId)
+        AgentService.setPreferredConversationId(conversationId)
+        if (token != null && token != restoreToken) return
+        AgentService.clearTransientConversationState()
+        AgentService.clearAllSessions()
+        StagedFileCache.clear()
+        AgentService.clearMessages()
+        if (token != null && token != restoreToken) return
+        runtimeConversationId = conversationId
+        selectedConversationId = conversationId
+        hydratingConversationTitle = conversationTitle
+        AgentService.setPreferredConversationId(conversationId)
+        AgentService.setActiveConversationId(conversationId)
+        AgentService.setCurrentProjectFolder(projectFolder)
+        AgentService.setCurrentAgent(restoredRole)
+        AgentService.setCurrentTask(restoredTask)
+        val maxSeq = restoredMessages.maxOfOrNull { it.sequenceNumber } ?: 0
+        AgentService.resetMessageCounter(maxSeq)
+        AgentService.setMessages(restoredMessages)
+        AgentService.restoreHardCompactionStateFromBrain()
+        if (dismissPicker && (token == null || token == restoreToken)) {
+            showConversations = false
         }
     }
+
+    suspend fun reconcileRuntimeUiState(triggerResume: Boolean = false) {
+        if (triggerResume) {
+            AgentForegroundService.requestResume(context)
+        }
+
+        val liveConversationId = AgentService.activeConversationId.value
+        val liveMessages = AgentService.messages.value
+        if (shouldAdoptLiveRuntimeConversation(
+                selectedConversationId = selectedConversationId,
+                liveConversationId = liveConversationId,
+                knownConversationIds = conversations.map { it.id }
+            )
+        ) {
+            liveConversationId?.let {
+                syncConversationUiFromRuntime(it)
+                settingsRepository.setLastAgentConversationId(it)
+            }
+            if (liveMessages.isNotEmpty()) {
+                return
+            }
+        }
+
+        val activeJob = resolveRelevantAgentJob() ?: return
+        val jobConversationId = activeJob.conversationId
+        if (jobConversationId != null &&
+            shouldAdoptLiveRuntimeConversation(
+                selectedConversationId = selectedConversationId,
+                liveConversationId = jobConversationId,
+                knownConversationIds = conversations.map { it.id }
+            ) &&
+            (liveConversationId == null || liveMessages.isEmpty() || liveConversationId == jobConversationId)
+        ) {
+            agentService.restorePersistentState(activeJob.payloadJson)
+            val restoredConversationId = AgentService.activeConversationId.value ?: jobConversationId
+            syncConversationUiFromRuntime(restoredConversationId)
+            settingsRepository.setLastAgentConversationId(restoredConversationId)
+        }
+    }
+
+    suspend fun restoreConversation(conversationId: Long, dismissPicker: Boolean, token: Int) {
+        if (isConversationRestoring && runtimeConversationId == conversationId && selectedConversationId == conversationId) return
+
+        isConversationRestoring = true
+        val conv = db.agentChatDao().getConversation(conversationId)
+        if (token != restoreToken) return
+        hydratingConversationTitle = conv?.title
+
+        try {
+            if (conv == null) {
+                val fallbackConversationId = newestConversationIdExcluding(conversationId)
+                if (fallbackConversationId != null) {
+                    selectedConversationId = fallbackConversationId
+                    hydratingConversationTitle = conversations.firstOrNull { it.id == fallbackConversationId }?.title
+                    restoreConversation(fallbackConversationId, dismissPicker, token)
+                    return
+                }
+                runtimeConversationId = null
+                selectedConversationId = null
+                AgentService.setPreferredConversationId(null)
+                hydratingConversationTitle = null
+                AgentService.clearMessages()
+                AgentService.clearAllSessions()
+                AgentService.clearTransientConversationState()
+                AgentService.setActiveConversationId(null)
+                return
+            }
+
+            clearImageAttachment()
+            if (token != restoreToken) return
+            val restoredRole = AgentService.Companion.AgentRole.values().find { it.name == conv.lastAgentRole }
+                ?: AgentService.Companion.AgentRole.ORCHESTRATOR
+            val restoredMessages = loadStoredConversationMessages(conversationId)
+            if (token != restoreToken) return
+            activateConversationRuntime(
+                conversationId = conversationId,
+                projectFolder = conv.projectFolder,
+                conversationTitle = conv.title,
+                restoredRole = restoredRole,
+                restoredTask = conv.lastTask,
+                restoredMessages = restoredMessages,
+                dismissPicker = dismissPicker,
+                token = token
+            )
+            if (token != restoreToken) return
+
+            if (restoredMessages.isNotEmpty()) {
+                AgentService.addDebugLog(context.getString(R.string.agent_restored_messages, restoredMessages.size))
+            }
+        } finally {
+            if (token == restoreToken) {
+                isConversationRestoring = false
+                initialConversationRestorePending = false
+            }
+        }
+    }
+
+    suspend fun beginConversationRestore(conversationId: Long, dismissPicker: Boolean) {
+        if (!dismissPicker &&
+            !initialConversationRestorePending &&
+            !isConversationRestoring &&
+            selectedConversationId == conversationId &&
+            runtimeConversationId == conversationId
+        ) {
+            return
+        }
+        restoreToken += 1
+        val token = restoreToken
+        selectedConversationId = conversationId
+        hydratingConversationTitle = conversations.firstOrNull { it.id == conversationId }?.title
+        isConversationRestoring = true
+        restoreConversation(conversationId, dismissPicker = dismissPicker, token = token)
+    }
+
+    LaunchedEffect(initialConversationRestorePending, conversations) {
+        if (!initialConversationRestorePending) return@LaunchedEffect
+        val startupConversationId = when {
+            initialConversationId != null && conversations.any { it.id == initialConversationId } -> initialConversationId
+            conversations.isNotEmpty() -> conversations.first().id
+            else -> null
+        }
+        if (startupConversationId == null) {
+            initialConversationRestorePending = false
+            isConversationRestoring = false
+            selectedConversationId = null
+            runtimeConversationId = null
+            AgentService.setPreferredConversationId(null)
+            return@LaunchedEffect
+        }
+        beginConversationRestore(startupConversationId, dismissPicker = false)
+    }
+
+    LaunchedEffect(Unit) {
+        reconcileRuntimeUiState(triggerResume = true)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    reconcileRuntimeUiState(triggerResume = true)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(activeRuntimeJobs, runtimeActiveConversationId) {
+        val activeJob = resolveRelevantAgentJob() ?: return@LaunchedEffect
+        val shouldRestoreFromRuntime = activeJob.type == AiRuntimeJobStore.TYPE_AGENT_CHAT &&
+            (runtimeActiveConversationId == null || messages.isEmpty() || activeJob.conversationId == selectedConversationId)
+        if (shouldRestoreFromRuntime) {
+            reconcileRuntimeUiState(triggerResume = false)
+        }
+    }
+    // Auto-save after stable conversation updates rather than every streaming chunk.
+    LaunchedEffect(runtimeConversationId, messages, isConversationRestoring, restoreToken) {
+        val targetConversationId = runtimeConversationId ?: return@LaunchedEffect
+        if (!shouldAutosaveConversationSnapshot(
+                runtimeConversationId = runtimeConversationId,
+                activeConversationId = AgentService.activeConversationId.value,
+                isConversationRestoring = isConversationRestoring,
+                messagesEmpty = messages.isEmpty(),
+                hasStreamingMessages = messages.any { it.isStreaming },
+                targetConversationId = targetConversationId
+            )
+        ) return@LaunchedEffect
+        val observedRestoreToken = restoreToken
+        delay(300)
+        if (observedRestoreToken != restoreToken) return@LaunchedEffect
+        if (!shouldAutosaveConversationSnapshot(
+                runtimeConversationId = runtimeConversationId,
+                activeConversationId = AgentService.activeConversationId.value,
+                isConversationRestoring = isConversationRestoring,
+                messagesEmpty = false,
+                hasStreamingMessages = messages.any { it.isStreaming },
+                targetConversationId = targetConversationId
+            )
+        ) {
+            AgentService.addDebugLog("⚠️ Skipping autosave due to active conversation mismatch")
+            return@LaunchedEffect
+        }
+        val snapshot = AgentService.messages.value
+        if (!shouldAutosaveConversationSnapshot(
+                runtimeConversationId = runtimeConversationId,
+                activeConversationId = AgentService.activeConversationId.value,
+                isConversationRestoring = isConversationRestoring,
+                messagesEmpty = snapshot.isEmpty(),
+                hasStreamingMessages = snapshot.any { it.isStreaming },
+                targetConversationId = targetConversationId
+            )
+        ) return@LaunchedEffect
+        saveConversationSnapshot(targetConversationId, snapshot)
+    }
     
-    val currentStatusText by AgentService.statusText.collectAsState()
-    val promptContextSnapshot by AgentService.promptContextSnapshot.collectAsState()
+    val currentStatusText by AgentService.statusText.collectAsStateWithLifecycle()
+    val promptContextSnapshot by AgentService.promptContextSnapshot.collectAsStateWithLifecycle()
+    val lastOrchestratorPromptSnapshot by AgentService.lastOrchestratorPromptSnapshot.collectAsStateWithLifecycle()
     fun triggerAgent(isRedo: Boolean = false) {
-        val settingsRepo = com.example.llamadroid.data.SettingsRepository(context)
-        AgentService.sendMessage(context, ollamaService, settingsRepo, agentService, isRedo)
+        AgentService.sendMessage(
+            context,
+            ollamaService,
+            settingsRepository,
+            agentService,
+            isRedo = isRedo,
+            userInitiated = true
+        )
     }
 
     fun stopGeneration() {
@@ -252,6 +606,7 @@ fun AgentScreen(navController: NavController) {
                 AgentService.updateMessage(msg.id) { it.copy(isPlanApproved = true) }
                 AgentService.addDebugLog(context.getString(R.string.agent_plan_approved))
                 AgentService.markMemoryDirty("An implementation plan was approved. Record the chosen direction in project memory before finishing.")
+                com.example.llamadroid.service.UnifiedNotificationManager.dismissAgentAttention()
                 
                 // Send official tool result back to LLM
                 AgentService.addMessage(AgentService.Companion.ChatMessage(
@@ -260,23 +615,33 @@ fun AgentScreen(navController: NavController) {
                     toolCallId = msg.toolCallId,
                     content = context.getString(R.string.agent_plan_approved_msg)
                 ))
-                
+                scope.launch {
+                    agentService.persistVisibleRuntimeStateNow("Plan approved by user.")
+                }
                 triggerAgent()
             } else {
                 AgentService.updateMessage(msg.id) { it.copy(isPlanApproved = false) }
                 AgentService.addDebugLog(context.getString(R.string.agent_plan_rejected))
+                com.example.llamadroid.service.UnifiedNotificationManager.dismissAgentAttention()
+                scope.launch {
+                    agentService.persistVisibleRuntimeStateNow("Plan rejected by user.")
+                }
             }
         } else if (approved) {
             AgentService.updateMessage(msg.id) { it.copy(needsApproval = false, isApproved = true) }
+            com.example.llamadroid.service.UnifiedNotificationManager.dismissAgentAttention()
             val toolCall = msg.pendingToolCall ?: com.example.llamadroid.service.OllamaService.ToolCall(
                 name = msg.toolName ?: "",
                 arguments = msg.toolArgs ?: emptyMap(),
                 id = null
             )
-            val settingsRepo = com.example.llamadroid.data.SettingsRepository(context)
-            AgentService.executeToolCall(context, ollamaService, settingsRepo, agentService, toolCall, isForced = true)
+            scope.launch {
+                agentService.persistVisibleRuntimeStateNow("Tool approval granted for ${msg.toolName.orEmpty()}.")
+            }
+            AgentService.executeToolCall(context, ollamaService, settingsRepository, agentService, toolCall, isForced = true)
         } else {
             AgentService.updateMessage(msg.id) { it.copy(needsApproval = false, isApproved = false) }
+            com.example.llamadroid.service.UnifiedNotificationManager.dismissAgentAttention()
             val toolName = msg.toolName ?: context.getString(R.string.agent_generic_tool)
             val denialContent = if (denyReason.isNotBlank()) {
                 "DENIED by user: $toolName. Reason: $denyReason"
@@ -287,6 +652,9 @@ fun AgentScreen(navController: NavController) {
                 role = "user",
                 content = denialContent
             ))
+            scope.launch {
+                agentService.persistVisibleRuntimeStateNow("Tool denied by user for $toolName.")
+            }
             triggerAgent()
         }
     }
@@ -295,21 +663,7 @@ fun AgentScreen(navController: NavController) {
 
     fun loadConversation(convId: Long) {
         scope.launch {
-            val conv = db.agentChatDao().getConversation(convId)
-            if (conv != null) {
-                AgentService.setCurrentProjectFolder(conv.projectFolder)
-                val restoredRole = AgentService.Companion.AgentRole.values().find { it.name == conv.lastAgentRole }
-                    ?: AgentService.Companion.AgentRole.ORCHESTRATOR
-                AgentService.setCurrentAgent(restoredRole)
-                AgentService.setCurrentTask(conv.lastTask)
-            }
-            val loadedEntities = db.agentChatDao().getMessagesForConversationSync(convId)
-            val restoredMessages = loadedEntities.map { AgentService.chatMessageFromEntity(it) }
-            val maxSeq = restoredMessages.maxOfOrNull { it.sequenceNumber } ?: 0
-            AgentService.resetMessageCounter(maxSeq)
-            AgentService.setMessages(restoredMessages)
-            currentConversationId = convId
-            showConversations = false
+            beginConversationRestore(convId, dismissPicker = true)
         }
     }
 
@@ -317,12 +671,13 @@ fun AgentScreen(navController: NavController) {
         scope.launch {
             val safeName = projectName.trim().replace(Regex("[^a-zA-Z0-9_-]"), "_").take(50).ifBlank { context.getString(R.string.agent_project_default_prefix) + System.currentTimeMillis() }
             val newId = db.agentChatDao().insertConversation(com.example.llamadroid.data.db.AgentConversationEntity(title = projectName, projectFolder = safeName))
-            currentConversationId = newId
-            AgentService.setCurrentProjectFolder(safeName)
-            AgentService.clearMessages()
-            AgentService.setCurrentAgent(AgentService.Companion.AgentRole.ORCHESTRATOR)
-            AgentService.setCurrentTask(null)
-            StagedFileCache.clear()
+            restoreToken += 1
+            runtimeConversationId = newId
+            selectedConversationId = newId
+            AgentService.setPreferredConversationId(newId)
+            isConversationRestoring = false
+            initialConversationRestorePending = false
+            hydratingConversationTitle = projectName
             AgentService.setActiveCustomAgent(null)
             
             if (!AgentService.isConnected.value) agentService.connect()
@@ -330,28 +685,59 @@ fun AgentScreen(navController: NavController) {
                 agentService.executeRawCommand("mkdir -p /workspace/$safeName/brain")
             }
             
-            AgentService.addMessage(AgentService.Companion.ChatMessage(
-                role = "system",
-                content = context.getString(R.string.agent_ready_msg, projectName, safeName)
-            ))
+            val initialMessages = listOf(
+                AgentService.Companion.ChatMessage(
+                    role = "system",
+                    content = context.getString(R.string.agent_ready_msg, projectName, safeName)
+                )
+            )
+            activateConversationRuntime(
+                conversationId = newId,
+                projectFolder = safeName,
+                conversationTitle = projectName,
+                restoredRole = AgentService.Companion.AgentRole.ORCHESTRATOR,
+                restoredTask = null,
+                restoredMessages = initialMessages,
+                dismissPicker = true
+            )
+            agentService.persistVisibleRuntimeStateNow("Created new project conversation $safeName.")
             showConversations = false
         }
     }
 
     fun deleteConversation(convId: Long, projectFolder: String? = null) {
         scope.launch {
-            if (currentConversationId == convId) AgentService.stopAllJobs()
+            val fallbackConversationId = newestConversationIdExcluding(convId)
+            if (runtimeConversationId == convId) AgentService.stopAllJobs()
             db.agentChatDao().deleteConversationById(convId)
-            if (currentConversationId == convId) {
-                currentConversationId = null
-                AgentService.clearMessages()
-                AgentService.clearAllSessions()
+            if (runtimeConversationId == convId || selectedConversationId == convId) {
+                if (fallbackConversationId != null) {
+                    beginConversationRestore(fallbackConversationId, dismissPicker = false)
+                } else {
+                    restoreToken += 1
+                    runtimeConversationId = null
+                    selectedConversationId = null
+                    AgentService.setPreferredConversationId(null)
+                    hydratingConversationTitle = null
+                    isConversationRestoring = false
+                    settingsRepository.setLastAgentConversationId(-1L)
+                    AgentService.clearMessages()
+                    AgentService.clearAllSessions()
+                    AgentService.clearTransientConversationState()
+                    AgentService.setActiveConversationId(null)
+                }
             }
             if (projectFolder != null && projectFolder.isNotBlank()) {
                 val safeName = projectFolder.replace(Regex("[^a-zA-Z0-9_-]"), "_")
                 agentService.runCommand("rm -rf /workspace/$safeName")
             }
         }
+    }
+
+    LaunchedEffect(selectedConversationId, runtimeConversationId, runtimeActiveConversationId) {
+        AgentService.setPreferredConversationId(
+            selectedConversationId ?: runtimeConversationId ?: runtimeActiveConversationId
+        )
     }
 
     fun deleteMessage(id: String) = AgentService.deleteMessage(id)
@@ -368,7 +754,29 @@ fun AgentScreen(navController: NavController) {
 
     fun saveEdit() {
         val id = editingMessageId ?: return
-        val message = messages.find { it.id == id }
+        val activeUiConversationId = runtimeActiveConversationId ?: runtimeConversationId
+        val activeMessages = if (
+            shouldPreferLiveRuntimeMessages(
+                selectedConversationId = selectedConversationId,
+                runtimeConversationId = runtimeConversationId,
+                activeConversationId = runtimeActiveConversationId,
+                showConversationLoading = isConversationRestoring || initialConversationRestorePending,
+                liveMessagesEmpty = messages.isEmpty()
+            )
+        ) {
+            messages
+        } else if (shouldUseSelectedConversationPreview(
+                selectedConversationId = selectedConversationId,
+                runtimeConversationId = runtimeConversationId,
+                activeConversationId = activeUiConversationId,
+                showConversationLoading = isConversationRestoring || initialConversationRestorePending
+            )
+        ) {
+            selectedConversationMessages
+        } else {
+            messages
+        }
+        val message = activeMessages.find { it.id == id }
         
         if (message?.isPlan == true) {
             AgentService.handlePlanModified(context, ollamaService, settingsRepository, agentService, id, editingText)
@@ -382,12 +790,54 @@ fun AgentScreen(navController: NavController) {
     }
 
     fun sendMessage() {
-        if (inputText.isBlank() || isLoading) return
-        val userMsg = AgentService.Companion.ChatMessage(role = "user", content = inputText.trim())
+        val currentConversation = runtimeActiveConversationId ?: runtimeConversationId
+        if ((inputText.isBlank() && attachedImagePath == null) || isLoading || currentConversation == null || isConversationRestoring) return
+        val userMsg = AgentService.Companion.ChatMessage(
+            role = "user",
+            content = inputText.trim(),
+            imagePath = attachedImagePath
+        )
         AgentService.addMessage(userMsg)
         inputText = ""
+        attachedImagePath = null
+        imagePreviewPath = null
         triggerAgent()
     }
+
+    val showConversationLoading = isConversationRestoring || initialConversationRestorePending
+    val activeUiConversationId = runtimeActiveConversationId ?: runtimeConversationId
+    val renderedMessages = remember(
+        messages,
+        selectedConversationMessages,
+        selectedConversationId,
+        runtimeConversationId,
+        runtimeActiveConversationId,
+        showConversationLoading
+    ) {
+        if (shouldPreferLiveRuntimeMessages(
+                selectedConversationId = selectedConversationId,
+                runtimeConversationId = runtimeConversationId,
+                activeConversationId = runtimeActiveConversationId,
+                showConversationLoading = showConversationLoading,
+                liveMessagesEmpty = messages.isEmpty()
+            )
+        ) {
+            messages
+        } else if (shouldUseSelectedConversationPreview(
+                selectedConversationId = selectedConversationId,
+                runtimeConversationId = runtimeConversationId,
+                activeConversationId = activeUiConversationId,
+                showConversationLoading = showConversationLoading
+            )
+        ) {
+            selectedConversationMessages
+        } else {
+            messages
+        }
+    }
+    val showSshWarning = !isAgentConnected &&
+        agentConnectionStatus != AgentService.Companion.ConnectionStatus.CONNECTING &&
+        agentConnectionStatus != AgentService.Companion.ConnectionStatus.RECONNECTING
 
     
     // Smart auto-scroll: only scroll if user is near the bottom
@@ -399,21 +849,22 @@ fun AgentScreen(navController: NavController) {
         }
     }
     
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty() && isNearBottom) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(renderedMessages.size, selectedConversationId, runtimeConversationId) {
+        if (renderedMessages.isNotEmpty() && isNearBottom) {
+            listState.animateScrollToItem(renderedMessages.size - 1)
         }
     }
 
-    LaunchedEffect(editingMessageId, messages) {
+    LaunchedEffect(editingMessageId, renderedMessages) {
         val targetId = editingMessageId ?: return@LaunchedEffect
-        val editIndex = messages.indexOfFirst { it.id == targetId }
+        val editIndex = renderedMessages.indexOfFirst { it.id == targetId }
         if (editIndex >= 0) {
             listState.animateScrollToItem(editIndex)
         }
     }
     
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
         topBar = {
             AgentTopBar(
                 onShowConversations = { showConversations = true },
@@ -433,22 +884,48 @@ fun AgentScreen(navController: NavController) {
         },
         bottomBar = {
             if (editingMessageId == null) {
-                AgentInputBar(
-                    inputText = inputText,
-                    onInputTextChange = { inputText = it },
-                    isLoading = isLoading,
-                    onSend = { sendMessage() },
-                    onStop = { stopGeneration() },
-                    canSend = currentAgent == AgentService.Companion.AgentRole.ORCHESTRATOR
-                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        attachedImagePath?.let { imagePath ->
+                            AgentImageAttachmentChip(
+                                imagePath = imagePath,
+                                onPreview = { imagePreviewPath = imagePath },
+                                onRemove = { clearImageAttachment() },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                        AgentInputBar(
+                            inputText = inputText,
+                            onInputTextChange = { inputText = it },
+                            isLoading = isLoading,
+                            onSend = { sendMessage() },
+                            onStop = { stopGeneration() },
+                            canSend = activeUiConversationId != null && !showConversationLoading && currentAgent == AgentService.Companion.AgentRole.ORCHESTRATOR,
+                            canAttachImage = activeUiConversationId != null && !showConversationLoading && currentAgent == AgentService.Companion.AgentRole.ORCHESTRATOR && orchestratorVisionEnabled,
+                            hasImageAttachment = attachedImagePath != null,
+                            keyboardPadding = effectiveImePadding,
+                            onAttachImage = {
+                                if (activeUiConversationId != null && !showConversationLoading && currentAgent == AgentService.Companion.AgentRole.ORCHESTRATOR && orchestratorVisionEnabled) {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
+                            }
+                        )
+                    }
+                }
             }
         },
         floatingActionButton = {
-            if (!isNearBottom && messages.isNotEmpty()) {
+            if (!isNearBottom && renderedMessages.isNotEmpty()) {
                 androidx.compose.material3.SmallFloatingActionButton(
                     onClick = {
                         scope.launch {
-                            listState.animateScrollToItem(messages.size - 1)
+                            listState.animateScrollToItem(renderedMessages.size - 1)
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -462,16 +939,51 @@ fun AgentScreen(navController: NavController) {
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .onGloballyPositioned { coordinates ->
+                    chatContentBottomInWindowPx = (
+                        coordinates.positionInWindow().y + coordinates.size.height
+                    ).roundToInt()
+                }
+        ) {
             ConnectionStatusBar(
-                isOllamaConnected = isOllamaConnected,
-                ollamaIsRecovering = ollamaIsRecovering,
-                ollamaHasChecked = ollamaHasChecked,
+                isBackendConnected = if (isAgentLlamaServer) {
+                    llamaServerRuntimeState.isConnected
+                } else {
+                    isOllamaConnected
+                },
+                backendIsRecovering = if (isAgentLlamaServer) {
+                    llamaServerRuntimeState.isRefreshing
+                } else {
+                    ollamaIsRecovering
+                },
+                backendHasChecked = if (isAgentLlamaServer) {
+                    llamaServerRuntimeState.hasChecked
+                } else {
+                    ollamaHasChecked
+                },
+                backendOfflineMessage = if (isAgentLlamaServer) {
+                    stringResource(R.string.agent_llama_server_offline)
+                } else {
+                    stringResource(R.string.agent_ollama_offline)
+                },
+                backendReconnectingMessage = if (isAgentLlamaServer) {
+                    stringResource(R.string.agent_llama_server_reconnecting)
+                } else {
+                    stringResource(R.string.agent_ollama_reconnecting)
+                },
                 agentConnectionStatus = agentConnectionStatus,
                 retryMessage = retryMessage,
                 onRetry = {
                     scope.launch {
-                        if (!isOllamaConnected) ollamaService.checkConnection()
+                        if (isAgentLlamaServer) {
+                            agentService.refreshLlamaServerRuntimeState(settingsRepository, force = true)
+                        } else if (!isOllamaConnected) {
+                            ollamaService.checkConnection()
+                        }
                         if (agentConnectionStatus == AgentService.Companion.ConnectionStatus.DISCONNECTED) {
                             agentService.connect(sshHost)
                         }
@@ -479,13 +991,35 @@ fun AgentScreen(navController: NavController) {
                 }
             )
 
+            if (showSshWarning) {
+                SshConnectionWarningCard(
+                    title = stringResource(R.string.agent_ssh_required_title),
+                    message = stringResource(R.string.agent_ssh_required_desc),
+                    onRetry = {
+                        scope.launch {
+                            val portInt = sshPort.toIntOrNull() ?: 8023
+                            agentService.connect(
+                                host = sshHost,
+                                port = portInt,
+                                username = sshUser,
+                                password = sshPassword.ifEmpty { "agent" }
+                            )
+                        }
+                    },
+                    onOpenSettings = { showConnectionSettings = true }
+                )
+            }
+
             AgentActivityBanner(
                 statusText = currentStatusText,
                 isVisible = isLoading && currentStatusText.isNotBlank()
             )
 
             AgentContextWindowBanner(
-                snapshot = promptContextSnapshot
+                snapshot = when {
+                    promptContextSnapshot?.agentRole == AgentService.Companion.AgentRole.ORCHESTRATOR.name -> promptContextSnapshot
+                    else -> lastOrchestratorPromptSnapshot
+                }
             )
             
             if (showDebugPanel) {
@@ -495,28 +1029,48 @@ fun AgentScreen(navController: NavController) {
                 )
             }
             
-            AgentChatList(
-                messages = messages,
-                listState = listState,
-                showAllOutput = showAllOutput,
-                onApprove = { msg -> handleApproval(true, msg) },
-                onDeny = { msg ->
-                    pendingDenyMessage = msg
-                    denyExplanation = ""
-                },
-                onDelete = { id -> deleteMessage(id) },
-                onRegenerate = { id -> regenerateMessage(id) },
-                onEdit = { id, content -> editMessage(id, content) },
-                editingMessageId = editingMessageId,
-                editingText = editingText,
-                onEditingTextChange = { editingText = it },
-                onSaveEdit = { saveEdit() },
-                onCancelEdit = { editingMessageId = null },
-                onToggleOutput = { id -> AgentService.toggleMessageOutput(id) },
-                modifier = Modifier
-                    .weight(1f)
-                    .then(if (editingMessageId != null) Modifier.imePadding() else Modifier)
-            )
+            when {
+                showConversationLoading && renderedMessages.isEmpty() -> {
+                    AgentConversationStatePanel(
+                        title = hydratingConversationTitle ?: stringResource(R.string.agent_loading_project_title),
+                        message = stringResource(R.string.agent_loading_project_desc),
+                        showProgress = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                selectedConversationId == null && activeUiConversationId == null -> {
+                    AgentConversationStatePanel(
+                        title = stringResource(R.string.agent_no_project_loaded_title),
+                        message = stringResource(R.string.agent_no_project_loaded_desc),
+                        showProgress = false,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                else -> {
+                    AgentChatList(
+                        messages = renderedMessages,
+                        listState = listState,
+                        showAllOutput = showAllOutput,
+                        onApprove = { msg -> handleApproval(true, msg) },
+                        onDeny = { msg ->
+                            pendingDenyMessage = msg
+                            denyExplanation = ""
+                        },
+                        onDelete = { id -> deleteMessage(id) },
+                        onRegenerate = { id -> regenerateMessage(id) },
+                        onEdit = { id, content -> editMessage(id, content) },
+                        editingMessageId = editingMessageId,
+                        editingText = editingText,
+                        onEditingTextChange = { editingText = it },
+                        onSaveEdit = { saveEdit() },
+                        onCancelEdit = { editingMessageId = null },
+                        onToggleOutput = { id -> AgentService.toggleMessageOutput(id) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(if (editingMessageId != null) Modifier.imePadding() else Modifier)
+                    )
+                }
+            }
         }
     }
 
@@ -558,13 +1112,17 @@ fun AgentScreen(navController: NavController) {
             onPasswordChange = { sshPassword = it },
             onOllamaUrlChange = { 
                 ollamaService.setBaseUrl(it)
-                com.example.llamadroid.data.SettingsRepository(context).setOllamaUrl(it)
+                SettingsRepository(context).setOllamaUrl(it)
             },
             onConnect = {
                 scope.launch {
                     val portInt = sshPort.toIntOrNull() ?: 8023
-                    ollamaService.initFromSettings()
-                    ollamaService.checkConnection()
+                    if (isAgentLlamaServer) {
+                        agentService.refreshLlamaServerRuntimeState(settingsRepository, force = true)
+                    } else {
+                        ollamaService.initFromSettings()
+                        ollamaService.checkConnection()
+                    }
                     agentService.connect(host = sshHost, port = portInt, username = sshUser, password = sshPassword.ifEmpty { "agent" })
                     showConnectionSettings = false
                 }
@@ -576,12 +1134,16 @@ fun AgentScreen(navController: NavController) {
     if (showAgentSettings) {
         // Refresh models list every time the dialog opens
         LaunchedEffect(Unit) {
-            ollamaService.checkConnection()
+            if (isAgentLlamaServer) {
+                agentService.refreshLlamaServerRuntimeState(settingsRepository, force = true)
+            } else {
+                ollamaService.checkConnection()
+            }
         }
-        val settingsRepository = remember { com.example.llamadroid.data.SettingsRepository(context) }
         AgentSettingsDialog(
             settingsRepository = settingsRepository,
             availableModels = availableModels,
+            availableImageGenerationModels = availableImageGenerationModels,
             onDismiss = { showAgentSettings = false }
         )
     }
@@ -607,7 +1169,7 @@ fun AgentScreen(navController: NavController) {
     }
     
     // Project Management Screen (Export/Import/Snapshots)
-    if (showProjectManagement && currentConversationId != null) {
+    if (showProjectManagement && activeUiConversationId != null) {
         val currentProjectFolder = AgentService.currentProjectFolder.collectAsState().value ?: "default"
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showProjectManagement = false },
@@ -615,7 +1177,7 @@ fun AgentScreen(navController: NavController) {
         ) {
             ProjectManagementScreen(
                 projectFolder = currentProjectFolder,
-                conversationId = currentConversationId!!,
+                conversationId = activeUiConversationId!!,
                 agentService = agentService,
                 onBack = { showProjectManagement = false }
             )
@@ -761,7 +1323,7 @@ fun AgentScreen(navController: NavController) {
                                     .padding(vertical = 4.dp)
                                     .clickable { loadConversation(conv.id) },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (currentConversationId == conv.id) 
+                                    containerColor = if (selectedConversationId == conv.id)
                                         MaterialTheme.colorScheme.primaryContainer 
                                     else 
                                         MaterialTheme.colorScheme.surfaceVariant
@@ -813,6 +1375,34 @@ fun AgentScreen(navController: NavController) {
                 }
             }
         )
+    }
+
+    imagePreviewPath?.let { previewPath ->
+        Dialog(onDismissRequest = { imagePreviewPath = null }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    AsyncImage(
+                        model = File(previewPath),
+                        contentDescription = stringResource(R.string.agent_image_attachment_title),
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 220.dp, max = 520.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(
+                        onClick = { imagePreviewPath = null },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(stringResource(R.string.action_close))
+                    }
+                }
+            }
+        }
     }
     
     // Delete confirmation dialog
@@ -878,4 +1468,94 @@ fun AgentScreen(navController: NavController) {
         )
     }
     
+}
+
+@Composable
+private fun AgentConversationStatePanel(
+    title: String,
+    message: String,
+    showProgress: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        ElevatedCard(
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (showProgress) {
+                    CircularProgressIndicator()
+                } else {
+                    Icon(
+                        Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+private suspend fun persistAgentChatImage(
+    context: Context,
+    projectFolder: String?,
+    uri: Uri
+): String = withContext(Dispatchers.IO) {
+    val safeProject = projectFolder?.replace(Regex("[^a-zA-Z0-9_-]"), "_").orEmpty().ifBlank { "default" }
+    val timestamp = SimpleDateFormat("yyyy-MM-dd_HHmmss", Locale.getDefault()).format(Date())
+    val imagesDir = File(context.filesDir, "agent_chat_images/$safeProject").apply { mkdirs() }
+    val savedFile = File(imagesDir, "image_$timestamp.${guessAgentImageExtension(context, uri)}")
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        savedFile.outputStream().use { output ->
+            input.copyTo(output)
+        }
+    } ?: throw IllegalStateException("Unable to open selected image.")
+    savedFile.absolutePath
+}
+
+private fun guessAgentImageExtension(context: Context, uri: Uri): String {
+    val mimeType = context.contentResolver.getType(uri)?.lowercase(Locale.getDefault()).orEmpty()
+    return when {
+        mimeType.endsWith("/png") -> "png"
+        mimeType.endsWith("/webp") -> "webp"
+        mimeType.endsWith("/gif") -> "gif"
+        mimeType.endsWith("/bmp") -> "bmp"
+        mimeType.endsWith("/jpeg") || mimeType.endsWith("/jpg") -> "jpg"
+        else -> {
+            val path = uri.lastPathSegment?.lowercase(Locale.getDefault()).orEmpty()
+            when {
+                path.endsWith(".png") -> "png"
+                path.endsWith(".webp") -> "webp"
+                path.endsWith(".gif") -> "gif"
+                path.endsWith(".bmp") -> "bmp"
+                path.endsWith(".jpg") || path.endsWith(".jpeg") -> "jpg"
+                else -> "jpg"
+            }
+        }
+    }
 }

@@ -23,6 +23,16 @@ data class FarmUpgradeEntity(
     val extraDataJson: String? = null // For composter slots
 )
 
+@Entity(
+    tableName = "tama_farm_livestock",
+    primaryKeys = ["petId", "type"]
+)
+data class FarmLivestockEntity(
+    val petId: String,
+    val type: String, // "barn", "coop"
+    val slotsJson: String
+)
+
 @Dao
 interface FarmDao {
     @Query("SELECT * FROM tama_farm_tiles WHERE petId = :petId ORDER BY id ASC")
@@ -48,4 +58,31 @@ interface FarmDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveUpgrade(upgrade: FarmUpgradeEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveUpgrades(upgrades: List<FarmUpgradeEntity>)
+
+    @Query("SELECT * FROM tama_farm_livestock WHERE petId = :petId ORDER BY type ASC")
+    fun observeLivestock(petId: String): Flow<List<FarmLivestockEntity>>
+
+    @Query("SELECT * FROM tama_farm_livestock WHERE petId = :petId ORDER BY type ASC")
+    suspend fun getLivestock(petId: String): List<FarmLivestockEntity>
+
+    @Query("SELECT * FROM tama_farm_livestock WHERE petId = :petId AND type = :type LIMIT 1")
+    suspend fun getLivestockByType(petId: String, type: String): FarmLivestockEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveLivestock(entity: FarmLivestockEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveLivestock(entities: List<FarmLivestockEntity>)
+
+    @Query("DELETE FROM tama_farm_tiles WHERE petId = :petId")
+    suspend fun clearTilesForPet(petId: String)
+
+    @Query("DELETE FROM tama_farm_upgrades WHERE petId = :petId")
+    suspend fun clearUpgradesForPet(petId: String)
+
+    @Query("DELETE FROM tama_farm_livestock WHERE petId = :petId")
+    suspend fun clearLivestockForPet(petId: String)
 }

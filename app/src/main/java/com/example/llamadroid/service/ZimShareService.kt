@@ -69,6 +69,9 @@ class ZimShareService : Service() {
     
     override fun onDestroy() {
         stopServer()
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -127,10 +130,8 @@ class ZimShareService : Service() {
         server = null
         _isRunning.value = false
         _serverUrls.value = emptyList()
-        
-        notificationTaskId?.let {
-            UnifiedNotificationManager.completeTask(it)
-        }
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
         
         Log.i(TAG, "Server stopped")
     }

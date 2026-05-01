@@ -40,6 +40,9 @@ enum class EventType(val emoji: String, val description: String) {
     HEALED("💊", "Pet was healed"),
     STUDIED("📚", "Pet studied"),
     RELAXED("🌳", "Pet relaxed at park"),
+    POOPED("💩", "Pet pooped"),
+    POOP_CLEANED("🧹", "Poop was cleaned"),
+    POOP_NEGLECTED("💩", "Poop was left too long"),
     
     // Growth events
     HATCHED("🥚", "Egg hatched"),

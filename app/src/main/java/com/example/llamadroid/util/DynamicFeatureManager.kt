@@ -2,6 +2,7 @@ package com.example.llamadroid.util
 
 import android.content.Context
 import android.util.Log
+import com.example.llamadroid.BuildConfig
 import com.google.android.play.core.splitinstall.SplitInstallManager
 import com.google.android.play.core.splitinstall.SplitInstallManagerFactory
 import com.google.android.play.core.splitinstall.SplitInstallRequest
@@ -10,6 +11,7 @@ import com.google.android.play.core.splitinstall.model.SplitInstallSessionStatus
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import java.io.File
 
 /**
  * Manages Dynamic Feature Modules.
@@ -17,6 +19,11 @@ import kotlinx.coroutines.flow.callbackFlow
  */
 object DynamicFeatureManager {
     private const val TAG = "DynamicFeatureManager"
+    private val BUNDLED_MODULE_SENTINELS = listOf(
+        "llama_server",
+        "ffmpeg",
+        "kiwix-serve"
+    )
     
     // Feature Upscaler (Shared)
     const val MODULE_UPSCALER = "feature_upscaler"
@@ -51,10 +58,66 @@ object DynamicFeatureManager {
         )
     }
 
+    private fun getTierFallbacks(): List<String> {
+        val tier = try {
+            CpuFeatures.getBestTier()
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Native lib not loaded yet, defaulting to baseline", e)
+            "baseline"
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting tier, defaulting to baseline", e)
+            "baseline"
+        }
+
+        return when (tier) {
+            "armv9" -> listOf("armv9", "dotprod", "baseline")
+            "dotprod" -> listOf("dotprod", "baseline")
+            else -> listOf("baseline")
+        }
+    }
+
+    private fun hasBundledNativeLibraries(context: Context): Boolean {
+        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
+        if (!nativeLibDir.exists()) {
+            Log.e(TAG, "Fat APK native library dir does not exist: ${nativeLibDir.absolutePath}")
+            return false
+        }
+
+        val tiersToTry = getTierFallbacks()
+        val missing = mutableListOf<String>()
+
+        BUNDLED_MODULE_SENTINELS.forEach { binaryName ->
+            val hasBinary = tiersToTry.any { tier ->
+                File(nativeLibDir, "lib${binaryName}_${tier}.so").exists()
+            }
+            if (!hasBinary) {
+                missing += binaryName
+            }
+        }
+
+        val hasUpscalerLib = File(nativeLibDir, "libncnn.so").exists()
+        if (!hasUpscalerLib) {
+            missing += "ncnn"
+        }
+
+        if (missing.isNotEmpty()) {
+            Log.e(
+                TAG,
+                "Fat APK is missing bundled native components: $missing in ${nativeLibDir.absolutePath}"
+            )
+            return false
+        }
+
+        return true
+    }
+
     /**
      * Check if a dynamic feature module is installed.
      */
     fun isModuleInstalled(context: Context, moduleName: String): Boolean {
+        if (BuildConfig.IS_FAT_APK_BUILD) {
+            return hasBundledNativeLibraries(context)
+        }
         val manager = SplitInstallManagerFactory.create(context)
         return manager.installedModules.contains(moduleName)
     }
@@ -64,6 +127,10 @@ object DynamicFeatureManager {
      * Checks if ALL critical features for THIS DEVICE are installed.
      */
     fun isNativeLibsReady(context: Context): Boolean {
+        if (BuildConfig.IS_FAT_APK_BUILD) {
+            return hasBundledNativeLibraries(context)
+        }
+
         val expected = getExpectedModules()
         val allInstalled = expected.all { isModuleInstalled(context, it) }
         
@@ -83,6 +150,16 @@ object DynamicFeatureManager {
      * For fast-follow, this might just confirm it's installed or waiting.
      */
     fun monitorModuleInstallation(context: Context, moduleName: String): Flow<Int> = callbackFlow {
+        if (BuildConfig.IS_FAT_APK_BUILD) {
+            if (hasBundledNativeLibraries(context)) {
+                trySend(SplitInstallSessionStatus.INSTALLED)
+            } else {
+                trySend(SplitInstallSessionStatus.FAILED)
+            }
+            close()
+            return@callbackFlow
+        }
+
         val manager = SplitInstallManagerFactory.create(context)
 
         // If already installed, emit success immediately
@@ -123,6 +200,15 @@ object DynamicFeatureManager {
     }
 
     fun installAllFeatures(context: Context) {
+        if (BuildConfig.IS_FAT_APK_BUILD) {
+            if (hasBundledNativeLibraries(context)) {
+                Log.i(TAG, "Fat APK build detected; skipping Play Feature Delivery requests.")
+            } else {
+                Log.e(TAG, "Fat APK build detected but bundled native libraries are missing.")
+            }
+            return
+        }
+
         val manager = SplitInstallManagerFactory.create(context)
         val modulesToInstall = mutableListOf<String>()
         val expectedModules = getExpectedModules()
@@ -146,5 +232,31 @@ object DynamicFeatureManager {
         manager.startInstall(requestBuilder.build())
             .addOnSuccessListener { session -> Log.i(TAG, "Installation session started: $session") }
             .addOnFailureListener { e -> Log.e(TAG, "Failed to request modules", e) }
+    }
+
+    fun installModule(context: Context, moduleName: String) {
+        if (BuildConfig.IS_FAT_APK_BUILD) {
+            if (hasBundledNativeLibraries(context)) {
+                Log.i(TAG, "Fat APK build detected; module $moduleName is treated as bundled.")
+            } else {
+                Log.e(TAG, "Fat APK build detected but bundled native libraries are missing for $moduleName.")
+            }
+            return
+        }
+
+        val manager = SplitInstallManagerFactory.create(context)
+        if (manager.installedModules.contains(moduleName)) {
+            Log.i(TAG, "Module already installed: $moduleName")
+            return
+        }
+
+        val request = SplitInstallRequest.newBuilder()
+            .addModule(moduleName)
+            .build()
+
+        Log.i(TAG, "Requesting installation for module: $moduleName")
+        manager.startInstall(request)
+            .addOnSuccessListener { session -> Log.i(TAG, "Module install session started for $moduleName: $session") }
+            .addOnFailureListener { e -> Log.e(TAG, "Failed to request module $moduleName", e) }
     }
 }

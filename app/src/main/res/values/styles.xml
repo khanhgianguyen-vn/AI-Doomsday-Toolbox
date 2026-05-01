@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="WidgetLineText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">7dp</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:minHeight">32dp</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingTop">7dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingBottom">7dp</item>
+        <item name="android:textColor">#F5F7FF</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="WidgetBubbleText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textColor">#F5F7FF</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <style name="WidgetDayCellText">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">32dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_margin">1dp</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:gravity">top|center_horizontal</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:paddingLeft">2dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingRight">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:textColor">#D5DAEA</item>
+        <item name="android:textSize">9sp</item>
+    </style>
+
+    <style name="WidgetNoteText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingRight">10dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textColor">#F5F7FF</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+</resources>

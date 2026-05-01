@@ -70,6 +70,7 @@ class Converters {
     
     @TypeConverter
     fun toPromptType(value: String?): PromptType = safeEnumValueOf(value, PromptType.CLEAN)
+
 }
 
 @Database(
@@ -98,11 +99,18 @@ class Converters {
         AiRuntimeJobEntity::class,
         // Llama Native Client entities
         com.example.llamadroid.data.model.LlamaServerEntity::class,
+        com.example.llamadroid.data.model.LlamaChatFolderEntity::class,
+        com.example.llamadroid.data.model.LlamaChatPromptProfileEntity::class,
         com.example.llamadroid.data.model.LlamaChatEntity::class,
         com.example.llamadroid.data.model.LlamaMessageEntity::class,
+        com.example.llamadroid.data.model.LlamaScheduledTaskEntity::class,
+        com.example.llamadroid.data.model.LlamaScheduledTaskLogEntity::class,
+        OrganizerEventEntity::class,
+        OrganizerAlarmEntity::class,
+        OrganizerLlmSettingsEntity::class,
         SavedCommand::class
     ], 
-    version = 40,
+    version = 56,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -125,8 +133,12 @@ abstract class AppDatabase : RoomDatabase() {
     
     // Llama Native Client DAOs
     abstract fun llamaServerDao(): com.example.llamadroid.data.dao.LlamaServerDao
+    abstract fun llamaChatFolderDao(): com.example.llamadroid.data.dao.LlamaChatFolderDao
+    abstract fun llamaChatPromptProfileDao(): com.example.llamadroid.data.dao.LlamaChatPromptProfileDao
     abstract fun llamaChatDao(): com.example.llamadroid.data.dao.LlamaChatDao
     abstract fun llamaMessageDao(): com.example.llamadroid.data.dao.LlamaMessageDao
+    abstract fun llamaScheduledTaskDao(): com.example.llamadroid.data.dao.LlamaScheduledTaskDao
+    abstract fun organizerDao(): OrganizerDao
 
     companion object {
         @Volatile

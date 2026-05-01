@@ -3,10 +3,47 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.jetbrains.kotlin.serialization)
+    id("kotlin-parcelize")
+}
+
+val isFatApkBuild = providers.gradleProperty("fatApkBuild")
+    .map(String::toBoolean)
+    .orElse(false)
+
+val parquetVersion = "1.15.2"
+val parquetHadoopAndroid by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+val strippedParquetHadoopJar by tasks.registering(Jar::class) {
+    archiveBaseName.set("parquet-hadoop-android")
+    archiveVersion.set(parquetVersion)
+    destinationDirectory.set(layout.buildDirectory.dir("generated/parquet"))
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from({
+        val sourceJar = parquetHadoopAndroid.incoming.files.files.single { file ->
+            file.name == "parquet-hadoop-$parquetVersion.jar"
+        }
+        zipTree(sourceJar)
+    }) {
+        // parquet-column carries the complete shaded fastutil package. Removing the partial
+        // copy from parquet-hadoop avoids Android release duplicate-class failures.
+        exclude("shaded/parquet/it/unimi/dsi/fastutil/**")
+    }
 }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+configurations.configureEach {
+    resolutionStrategy.force(
+        "org.jetbrains.kotlinx:kotlinx-serialization-core:${libs.versions.serialization.get()}",
+        "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:${libs.versions.serialization.get()}",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json:${libs.versions.serialization.get()}",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:${libs.versions.serialization.get()}"
+    )
 }
 
 android {
@@ -17,13 +54,14 @@ android {
         applicationId = "com.manuxd32.aidoomsdaytoolbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 932
-        versionName = "0.932"
+        versionCode = 938
+        versionName = "0.938"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+        buildConfigField("boolean", "IS_FAT_APK_BUILD", isFatApkBuild.get().toString())
         
         // Limit to arm64 only (CPU features detection uses ARM-specific headers)
         ndk {
@@ -41,8 +79,8 @@ android {
             storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias = System.getenv("KEY_ALIAS") ?: "release"
             keyPassword = System.getenv("KEY_PASSWORD") ?: ""
-            isV1SigningEnabled = true
-            isV2SigningEnabled = true
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
@@ -56,18 +94,18 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
         buildConfig = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
     packaging {
         resources {
@@ -118,6 +156,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.fragment)
+    implementation(libs.androidx.work.runtime.ktx)
     
     // Document file support for SAF
     implementation("androidx.documentfile:documentfile:1.0.1")
@@ -136,12 +175,30 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
 
     // Image Loading
     implementation(libs.coil.compose)
     
     // Serialization
     implementation(libs.kotlinx.serialization.json)
+
+    // Parquet dataset import for Hugging Face-style training shards
+    add("parquetHadoopAndroid", "org.apache.parquet:parquet-hadoop:$parquetVersion")
+    implementation(files(strippedParquetHadoopJar))
+    implementation("org.apache.parquet:parquet-column:$parquetVersion")
+    implementation("org.apache.parquet:parquet-format-structures:$parquetVersion")
+    implementation("org.apache.parquet:parquet-common:$parquetVersion")
+    implementation("org.apache.parquet:parquet-jackson:$parquetVersion")
+    implementation("org.xerial.snappy:snappy-java:1.1.10.7")
+    implementation("io.airlift:aircompressor:2.0.2")
+    implementation("commons-pool:commons-pool:1.6")
+    implementation("com.github.luben:zstd-jni:1.5.6-6")
+    implementation("org.apache.hadoop:hadoop-client-api:3.4.1")
+    implementation("org.apache.hadoop:hadoop-client-runtime:3.4.1")
+
+    // Official ONNX Runtime Android backend for local ONNX execution
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.21.0")
     
     // Apache Commons Compress for tar extraction (handles hardlinks)
     implementation(libs.commons.compress)
@@ -167,6 +224,9 @@ dependencies {
     implementation("com.google.android.play:feature-delivery-ktx:2.1.0")
 
     testImplementation(libs.junit)
+    testImplementation("io.mockk:mockk:1.13.11")
+    testImplementation("org.json:json:20240303")
+    testImplementation(libs.androidx.work.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -17,19 +17,24 @@ object SharedFileHolder {
     )
     
     private val _pendingFile = MutableStateFlow<PendingFile?>(null)
+    private val pendingFileLock = Any()
     val pendingFile = _pendingFile.asStateFlow()
     
     fun setPendingFile(uri: Uri, mimeType: String, targetScreen: String? = null) {
-        _pendingFile.value = PendingFile(uri, mimeType, targetScreen)
+        synchronized(pendingFileLock) {
+            _pendingFile.value = PendingFile(uri, mimeType, targetScreen)
+        }
     }
     
-    fun consumePendingFile(): PendingFile? {
-        val file = _pendingFile.value
-        _pendingFile.value = null
-        return file
+    fun consumePendingFile(): PendingFile? = synchronized(pendingFileLock) {
+        _pendingFile.value.also {
+            _pendingFile.value = null
+        }
     }
     
     fun clear() {
-        _pendingFile.value = null
+        synchronized(pendingFileLock) {
+            _pendingFile.value = null
+        }
     }
 }

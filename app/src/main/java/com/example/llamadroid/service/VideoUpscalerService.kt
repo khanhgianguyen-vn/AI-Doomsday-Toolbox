@@ -6,6 +6,7 @@ import android.os.Binder
 import android.os.IBinder
 import com.example.llamadroid.data.binary.BinaryRepository
 import com.example.llamadroid.util.DebugLog
+import com.example.llamadroid.util.UpscalerAssetPackSupport
 import com.example.llamadroid.util.WakeLockManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,87 +97,18 @@ class VideoUpscalerService : Service() {
         scope.cancel()
         currentProcess?.destroy()
         WakeLockManager.release("VideoUpscalerService")
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
     
-    /**
-     * Extract upscaler models from assets to internal storage
-     */
-    /**
-     * Extract upscaler models from assets/asset packs to internal storage
-     */
     private suspend fun extractModelsFromAssets() = withContext(Dispatchers.IO) {
-        if (modelsDir.exists() && (modelsDir.listFiles()?.isNotEmpty() == true)) {
-            DebugLog.log("[UPSCALER] Models already extracted")
-            return@withContext
-        }
-        
-        modelsDir.mkdirs()
-        
-        try {
-            // First check asset pack
-            val pack = com.example.llamadroid.util.AssetPackManagerUtil.AssetPack.UPSCALER
-            val packDir = com.example.llamadroid.util.AssetPackManagerUtil.getExtractedPath(applicationContext, pack)
-            
-            DebugLog.log("[UPSCALER] Checking for models in asset pack: $packDir")
-
-            if (packDir != null) {
-                // Determine location of upscaler_models in pack
-                // AssetPackManagerUtil returns path containing assets
-                val sourceDir = File(packDir, "upscaler_models")
-                if (sourceDir.exists()) {
-                    DebugLog.log("[UPSCALER] Found models in asset pack at ${sourceDir.absolutePath}")
-                    // Copy recursively
-                    sourceDir.copyRecursively(modelsDir, overwrite = true)
-                    DebugLog.log("[UPSCALER] Models extracted from asset pack successfully")
-                    return@withContext
-                } else {
-                     DebugLog.log("[UPSCALER] upscaler_models not found in pack at ${sourceDir.absolutePath}")
-                }
-            } else {
-                DebugLog.log("[UPSCALER] Asset pack path is null")
-            }
-            
-            // Check if AssetPackManagerUtil has already extracted them to binaries dir
-            val binDir = com.example.llamadroid.util.AssetPackManagerUtil.getBinariesDir(applicationContext)
-            val binModelsDir = File(binDir, "upscaler_models")
-            if (binModelsDir.exists()) {
-                DebugLog.log("[UPSCALER] Found models in asset_binaries at ${binModelsDir.absolutePath}")
-                 binModelsDir.copyRecursively(modelsDir, overwrite = true)
-                 DebugLog.log("[UPSCALER] Models copied from asset_binaries successfully")
-                 return@withContext
-            } else {
-                DebugLog.log("[UPSCALER] Models not found in asset_binaries: ${binModelsDir.absolutePath}")
-            }
-
-            // Fallback to bundled assets (if any)
-            val assetManager = assets
-            val modelDirs = assetManager.list("upscaler_models")
-            
-            if (!modelDirs.isNullOrEmpty()) {
-                for (modelDir in modelDirs) {
-                    val targetDir = File(modelsDir, modelDir)
-                    targetDir.mkdirs()
-                    
-                    val files = assetManager.list("upscaler_models/$modelDir") ?: continue
-                    for (file in files) {
-                        try {
-                            val inputStream = assetManager.open("upscaler_models/$modelDir/$file")
-                            val outputFile = File(targetDir, file)
-                            outputFile.outputStream().use { output ->
-                                inputStream.copyTo(output)
-                            }
-                            inputStream.close()
-                        } catch (e: Exception) {
-                            // Skip directories or errors
-                        }
-                    }
-                }
-                DebugLog.log("[UPSCALER] Models extracted from bundled assets")
-            } else {
-                 DebugLog.log("[UPSCALER] No models found in bundled assets")
-            }
-        } catch (e: Exception) {
-            DebugLog.log("[UPSCALER] Failed to extract models: ${e.message}")
+        val result = UpscalerAssetPackSupport.ensureLocalModelsAvailable(applicationContext)
+        result.onSuccess {
+            modelsDir = it
+            DebugLog.log("[UPSCALER] Models ready in ${it.absolutePath}")
+        }.onFailure { error ->
+            DebugLog.log("[UPSCALER] Failed to prepare models: ${error.message}")
         }
     }
     
@@ -321,7 +253,7 @@ class VideoUpscalerService : Service() {
             _state.value = VideoUpscalerState.ExtractingFrames
             updateNotification("Extracting frames...", 5)
             
-            val extractResult = extractFrames(config.inputPath, tmpDir, videoInfo.fps)
+            val extractResult = extractFrames(config.inputPath, tmpDir)
             if (extractResult.isFailure) {
                 throw extractResult.exceptionOrNull()!!
             }
@@ -380,7 +312,7 @@ class VideoUpscalerService : Service() {
         }
     }
     
-    private suspend fun extractFrames(inputPath: String, outputDir: File, fps: Double): Result<Unit> = 
+    private suspend fun extractFrames(inputPath: String, outputDir: File): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
                 val binaryRepo = BinaryRepository(applicationContext)
@@ -408,7 +340,7 @@ class VideoUpscalerService : Service() {
                 val process = processBuilder.start()
                 
                 // Capture output
-                val stdout = process.inputStream.bufferedReader().readText()
+                process.inputStream.bufferedReader().readText()
                 val stderr = process.errorStream.bufferedReader().readText()
                 
                 val exitCode = process.waitFor()
@@ -614,6 +546,8 @@ class VideoUpscalerService : Service() {
         currentProcess = null
         _state.value = VideoUpscalerState.Idle
         updateNotification("Upscaling cancelled", 0)
+        notificationTaskId?.let { UnifiedNotificationManager.dismissTask(it) }
+        notificationTaskId = null
     }
     
     companion object {

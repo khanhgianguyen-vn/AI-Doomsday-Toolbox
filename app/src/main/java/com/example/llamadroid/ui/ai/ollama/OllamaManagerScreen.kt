@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -108,6 +109,12 @@ fun OllamaManagerScreen(
                             Icon(Icons.Default.Add, contentDescription = stringResource(R.string.ollama_add_server))
                         }
                     } else {
+                        IconButton(
+                            onClick = { viewModel.refreshSelectedServerModels() },
+                            enabled = uiState.selectedServer != null
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.ollama_refresh_models))
+                        }
                         IconButton(onClick = { showModelPullDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = stringResource(R.string.ollama_pull_model_title))
                         }
@@ -578,7 +585,7 @@ fun ModelList(
                                 containerColor = if (isFailed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
                             ),
                             elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp),
-                            modifier = Modifier.fillMaxWidth().animateItemPlacement()
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Row(

@@ -1,16 +1,12 @@
 package com.example.llamadroid.ui.ai
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.graphics.BitmapFactory
 import android.media.MediaRecorder
 import android.net.Uri
-import android.os.IBinder
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.documentfile.provider.DocumentFile
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
@@ -40,10 +36,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.llamadroid.data.db.AppDatabase
+import com.example.llamadroid.data.db.ModelEntity
 import com.example.llamadroid.data.db.ModelType
+import com.example.llamadroid.sd.SdComponentRole
+import com.example.llamadroid.sd.isSdImageMainModel
+import com.example.llamadroid.sd.matchesSdFamily
+import com.example.llamadroid.sd.resolveSdFamilySpec
+import com.example.llamadroid.sd.resolvedSdFamily
 import com.example.llamadroid.data.RemoteSummarySettingsSnapshot
 import com.example.llamadroid.data.SettingsRepository
 import com.example.llamadroid.service.*
+import com.example.llamadroid.ui.components.DraftIntTextField
+import com.example.llamadroid.ui.components.DraftLongTextField
 import com.example.llamadroid.ui.components.IntInputField
 import com.example.llamadroid.ui.components.RemoteSummaryBackendEditor
 import com.example.llamadroid.ui.components.SliderWithInput
@@ -51,8 +55,7 @@ import com.example.llamadroid.ui.components.IntSliderWithInput
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
-import com.example.llamadroid.util.AssetPackManagerUtil
-import com.example.llamadroid.util.AssetPackManagerUtil.AssetPack
+import com.example.llamadroid.util.UpscalerAssetPackSupport
 import java.util.*
 import kotlin.math.pow
 
@@ -66,6 +69,8 @@ fun WorkflowsScreen(navController: NavController) {
     val context = LocalContext.current
     val db = remember { AppDatabase.getDatabase(context) }
     val settingsRepo = remember { SettingsRepository(context) }
+    val batteryGateState = rememberBatteryOptimizationGateState()
+    val keepScreenAwakeDuringGeneration by settingsRepo.keepScreenAwakeDuringGeneration.collectAsState()
     
     // Selected workflow: 0 = none, 1 = transcribe+summary, 2 = txt2img+upscale
     val scope = rememberCoroutineScope()
@@ -77,7 +82,10 @@ fun WorkflowsScreen(navController: NavController) {
     if (showDownloadDialog) {
         com.example.llamadroid.ui.components.AssetDownloadDialog(
             onDismiss = { showDownloadDialog = false },
-            onDownloadAll = { showDownloadDialog = false },
+            onDownloadAll = {
+                showDownloadDialog = false
+                selectedWorkflow = 2
+            },
             onSkip = { showDownloadDialog = false }
         )
     }
@@ -98,6 +106,14 @@ fun WorkflowsScreen(navController: NavController) {
     var txt2imgSeed by remember { mutableLongStateOf(-1L) }
     var txt2imgSampler by remember { mutableStateOf(SamplingMethod.EULER_A) }
     var txt2imgThreads by remember { mutableIntStateOf(4) }
+    var txt2imgVaePath by remember { mutableStateOf<String?>(null) }
+    var txt2imgTaePath by remember { mutableStateOf<String?>(null) }
+    var txt2imgClipLPath by remember { mutableStateOf<String?>(null) }
+    var txt2imgClipGPath by remember { mutableStateOf<String?>(null) }
+    var txt2imgT5xxlPath by remember { mutableStateOf<String?>(null) }
+    var txt2imgLlmPath by remember { mutableStateOf<String?>(null) }
+    var txt2imgLlmVisionPath by remember { mutableStateOf<String?>(null) }
+    var txt2imgPhotoMakerPath by remember { mutableStateOf<String?>(null) }
     var upscalerPath by remember { mutableStateOf<String?>(null) }
     var upscaleFactor by remember { mutableIntStateOf(2) }
     var upscaleRepeats by remember { mutableIntStateOf(1) }
@@ -113,18 +129,40 @@ fun WorkflowsScreen(navController: NavController) {
     val workflowTxt2imgProgress by SDModeStateHolder.workflowTxt2img.progress.collectAsState()
     val workflowUpscaleState by SDModeStateHolder.workflowUpscale.state.collectAsState()
     val workflowUpscaleProgress by SDModeStateHolder.workflowUpscale.progress.collectAsState()
+    val sdWorkflowGenerating =
+        txt2imgIsRunning ||
+            workflowTxt2imgState is SDGenerationState.Generating ||
+            workflowUpscaleState is SDGenerationState.Generating
+    GenerationKeepScreenAwakeEffect(
+        enabled = keepScreenAwakeDuringGeneration && sdWorkflowGenerating
+    )
     
     // Update txt2img workflow progress based on state holders (runs at top level, survives tab changes)
     LaunchedEffect(workflowTxt2imgState, workflowTxt2imgProgress, workflowUpscaleState, workflowUpscaleProgress) {
         if (txt2imgIsRunning) {
             when {
                 workflowTxt2imgState is SDGenerationState.Generating -> {
-                    txt2imgStep = "Step 1/2: Generating... ${(workflowTxt2imgProgress * 100).toInt()}%"
+                    txt2imgStep = context.getString(R.string.workflow_step_generating)
                     txt2imgProgress = workflowTxt2imgProgress * 0.5f  // 0-50% for txt2img
                 }
                 workflowUpscaleState is SDGenerationState.Generating -> {
-                    txt2imgStep = "Step 2/2: Upscaling... ${(workflowUpscaleProgress * 100).toInt()}%"
+                    txt2imgStep = context.getString(R.string.workflow_step_upscaling)
                     txt2imgProgress = 0.5f + workflowUpscaleProgress * 0.5f  // 50-100% for upscale
+                }
+                workflowUpscaleState is SDGenerationState.Complete -> {
+                    txt2imgIsRunning = false
+                    txt2imgStep = context.getString(R.string.workflow_complete)
+                    txt2imgProgress = 1f
+                    txt2imgResultPath = (workflowUpscaleState as SDGenerationState.Complete).outputPath
+                    txt2imgError = null
+                }
+                workflowTxt2imgState is SDGenerationState.Error -> {
+                    txt2imgIsRunning = false
+                    txt2imgError = (workflowTxt2imgState as SDGenerationState.Error).message
+                }
+                workflowUpscaleState is SDGenerationState.Error -> {
+                    txt2imgIsRunning = false
+                    txt2imgError = (workflowUpscaleState as SDGenerationState.Error).message
                 }
             }
         }
@@ -444,7 +482,7 @@ fun WorkflowsScreen(navController: NavController) {
                             Color(0xFF9C27B0).copy(alpha = 0.3f)
                         ),
                         onClick = { 
-                            if (AssetPackManagerUtil.isReady(context, AssetPack.UPSCALER)) {
+                            if (UpscalerAssetPackSupport.areModelsReady(context)) {
                                 selectedWorkflow = 2 
                             } else {
                                 showDownloadDialog = true
@@ -523,12 +561,8 @@ fun WorkflowsScreen(navController: NavController) {
                                     videoPath = audioPath!!,
                                     videoFileName = audioUri?.lastPathSegment ?: context.getString(R.string.workflow_audio_video_placeholder),
                                     whisperModelPath = whisperModelPath!!,
-                                    llmModelPath = "",
                                     language = whisperLanguage,
                                     threads = whisperThreads,
-                                    contextSize = summaryContext,
-                                    maxTokens = summaryMaxTokens,
-                                    temperature = summaryTemperature,
                                     saveToNotes = true,  // Service handles note saving now
                                     noteType = com.example.llamadroid.data.db.NoteType.WORKFLOW,
                                     audioSourcePath = savedRecordingPath ?: audioPath  // Use saved recording if available
@@ -561,7 +595,7 @@ fun WorkflowsScreen(navController: NavController) {
                 2 -> {
                     Txt2ImgUpscaleWorkflowContent(
                         db = db,
-                        settingsRepo = settingsRepo,
+                        batteryGateState = batteryGateState,
                         outputDir = workflowOutputDir,
                         modelPath = txt2imgModelPath,
                         onModelChange = { txt2imgModelPath = it },
@@ -583,6 +617,22 @@ fun WorkflowsScreen(navController: NavController) {
                         onSamplerChange = { txt2imgSampler = it },
                         threads = txt2imgThreads,
                         onThreadsChange = { txt2imgThreads = it },
+                        vaePath = txt2imgVaePath,
+                        onVaeChange = { txt2imgVaePath = it },
+                        taePath = txt2imgTaePath,
+                        onTaeChange = { txt2imgTaePath = it },
+                        clipLPath = txt2imgClipLPath,
+                        onClipLChange = { txt2imgClipLPath = it },
+                        clipGPath = txt2imgClipGPath,
+                        onClipGChange = { txt2imgClipGPath = it },
+                        t5xxlPath = txt2imgT5xxlPath,
+                        onT5xxlChange = { txt2imgT5xxlPath = it },
+                        llmPath = txt2imgLlmPath,
+                        onLlmChange = { txt2imgLlmPath = it },
+                        llmVisionPath = txt2imgLlmVisionPath,
+                        onLlmVisionChange = { txt2imgLlmVisionPath = it },
+                        photoMakerPath = txt2imgPhotoMakerPath,
+                        onPhotoMakerChange = { txt2imgPhotoMakerPath = it },
                         upscalerPath = upscalerPath,
                         onUpscalerChange = { upscalerPath = it },
                         upscaleFactor = upscaleFactor,
@@ -602,6 +652,7 @@ fun WorkflowsScreen(navController: NavController) {
                         onResultChange = { txt2imgResultPath = it },
                         onErrorChange = { txt2imgError = it },
                         onCancel = {
+                            context.startService(StableDiffusionService.createCancelWorkflowIntent(context))
                             SDModeStateHolder.workflowTxt2img.reset()
                             SDModeStateHolder.workflowUpscale.reset()
                             txt2imgIsRunning = false
@@ -615,6 +666,8 @@ fun WorkflowsScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+
+    BatteryOptimizationWarningDialog(state = batteryGateState)
     
     // Recording Dialog
     if (showRecordingDialog) {
@@ -761,7 +814,7 @@ private fun WorkflowCard(
 @Composable
 private fun Txt2ImgUpscaleWorkflowContent(
     db: AppDatabase,
-    settingsRepo: SettingsRepository,
+    batteryGateState: BatteryOptimizationGateState,
     outputDir: File,
     modelPath: String?,
     onModelChange: (String?) -> Unit,
@@ -783,6 +836,22 @@ private fun Txt2ImgUpscaleWorkflowContent(
     onSamplerChange: (SamplingMethod) -> Unit,
     threads: Int,
     onThreadsChange: (Int) -> Unit,
+    vaePath: String?,
+    onVaeChange: (String?) -> Unit,
+    taePath: String?,
+    onTaeChange: (String?) -> Unit,
+    clipLPath: String?,
+    onClipLChange: (String?) -> Unit,
+    clipGPath: String?,
+    onClipGChange: (String?) -> Unit,
+    t5xxlPath: String?,
+    onT5xxlChange: (String?) -> Unit,
+    llmPath: String?,
+    onLlmChange: (String?) -> Unit,
+    llmVisionPath: String?,
+    onLlmVisionChange: (String?) -> Unit,
+    photoMakerPath: String?,
+    onPhotoMakerChange: (String?) -> Unit,
     upscalerPath: String?,
     onUpscalerChange: (String?) -> Unit,
     upscaleFactor: Int,
@@ -808,24 +877,96 @@ private fun Txt2ImgUpscaleWorkflowContent(
     // Models
     val sdCheckpoints by db.modelDao().getModelsByType(ModelType.SD_CHECKPOINT).collectAsState(initial = emptyList())
     val fluxDiffusionModels by db.modelDao().getModelsByType(ModelType.SD_DIFFUSION).collectAsState(initial = emptyList())
+    val sdClipLModels by db.modelDao().getModelsByType(ModelType.SD_CLIP_L).collectAsState(initial = emptyList())
+    val sdClipGModels by db.modelDao().getModelsByType(ModelType.SD_CLIP_G).collectAsState(initial = emptyList())
+    val sdT5xxlModels by db.modelDao().getModelsByType(ModelType.SD_T5XXL).collectAsState(initial = emptyList())
+    val sdTaeModels by db.modelDao().getModelsByType(ModelType.SD_TAE).collectAsState(initial = emptyList())
+    val sdVaeModels by db.modelDao().getModelsByType(ModelType.SD_VAE).collectAsState(initial = emptyList())
+    val sdPhotoMakerModels by db.modelDao().getModelsByType(ModelType.SD_PHOTOMAKER).collectAsState(initial = emptyList())
+    val sdImageSupportModels by db.modelDao()
+        .getModelsByTypes(listOf(ModelType.LLM, ModelType.VISION_PROJECTOR))
+        .collectAsState(initial = emptyList())
     val upscalerModels by db.modelDao().getModelsByType(ModelType.SD_UPSCALER).collectAsState(initial = emptyList())
-    val allGenerationModels = sdCheckpoints + fluxDiffusionModels
-    
-    // Service connection
-    var sdService by remember { mutableStateOf<StableDiffusionService?>(null) }
-    val serviceConnection = remember {
-        object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                sdService = (service as? StableDiffusionService.LocalBinder)?.getService()
-            }
-            override fun onServiceDisconnected(name: ComponentName?) { sdService = null }
-        }
+    val allGenerationModels = (sdCheckpoints + fluxDiffusionModels).filter { model ->
+        model.isSdImageMainModel()
     }
-    
-    DisposableEffect(Unit) {
-        val intent = Intent(context, StableDiffusionService::class.java)
-        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        onDispose { context.unbindService(serviceConnection) }
+    val selectedGenerationModel = allGenerationModels.firstOrNull { it.path == modelPath }
+    val selectedGenerationFamily = selectedGenerationModel?.resolvedSdFamily()
+    val selectedGenerationFamilyEnum = selectedGenerationFamily?.first
+    val selectedGenerationVariant = selectedGenerationFamily?.second
+    val selectedGenerationSpec = remember(selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        selectedGenerationFamilyEnum?.let { resolveSdFamilySpec(it, selectedGenerationVariant) }
+    }
+    val componentRoles = remember(selectedGenerationSpec) {
+        selectedGenerationSpec?.let { spec ->
+            listOf(
+                SdComponentRole.VAE,
+                SdComponentRole.TAE,
+                SdComponentRole.CLIP_L,
+                SdComponentRole.CLIP_G,
+                SdComponentRole.T5XXL,
+                SdComponentRole.LLM,
+                SdComponentRole.LLM_VISION,
+                SdComponentRole.PHOTOMAKER
+            ).filter { it in spec.requiredRoles || it in spec.optionalRoles }
+        } ?: emptyList()
+    }
+    val compatibleVaeModels = remember(sdVaeModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(sdVaeModels, selectedGenerationFamilyEnum, selectedGenerationVariant)
+    }
+    val compatibleTaeModels = remember(sdTaeModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(sdTaeModels, selectedGenerationFamilyEnum, selectedGenerationVariant)
+    }
+    val compatibleClipLModels = remember(sdClipLModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(sdClipLModels, selectedGenerationFamilyEnum, selectedGenerationVariant)
+    }
+    val compatibleClipGModels = remember(sdClipGModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(sdClipGModels, selectedGenerationFamilyEnum, selectedGenerationVariant)
+    }
+    val compatibleT5xxlModels = remember(sdT5xxlModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(sdT5xxlModels, selectedGenerationFamilyEnum, selectedGenerationVariant)
+    }
+    val compatibleLlmModels = remember(sdImageSupportModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(
+            sdImageSupportModels.filter { it.type == ModelType.LLM },
+            selectedGenerationFamilyEnum,
+            selectedGenerationVariant
+        )
+    }
+    val compatibleLlmVisionModels = remember(sdImageSupportModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(
+            sdImageSupportModels.filter { it.type == ModelType.VISION_PROJECTOR },
+            selectedGenerationFamilyEnum,
+            selectedGenerationVariant
+        )
+    }
+    val compatiblePhotoMakerModels = remember(sdPhotoMakerModels, selectedGenerationFamilyEnum, selectedGenerationVariant) {
+        filterWorkflowSdComponents(sdPhotoMakerModels, selectedGenerationFamilyEnum, selectedGenerationVariant)
+    }
+    val missingRequiredComponents = remember(
+        selectedGenerationSpec,
+        vaePath,
+        taePath,
+        clipLPath,
+        clipGPath,
+        t5xxlPath,
+        llmPath,
+        llmVisionPath,
+        photoMakerPath
+    ) {
+        selectedGenerationSpec?.requiredRoles?.filter { role ->
+            when (role) {
+                SdComponentRole.VAE -> vaePath.isNullOrBlank()
+                SdComponentRole.TAE -> taePath.isNullOrBlank()
+                SdComponentRole.CLIP_L -> clipLPath.isNullOrBlank()
+                SdComponentRole.CLIP_G -> clipGPath.isNullOrBlank()
+                SdComponentRole.T5XXL -> t5xxlPath.isNullOrBlank()
+                SdComponentRole.LLM -> llmPath.isNullOrBlank()
+                SdComponentRole.LLM_VISION -> llmVisionPath.isNullOrBlank()
+                SdComponentRole.PHOTOMAKER -> photoMakerPath.isNullOrBlank()
+                else -> false
+            }
+        } ?: emptyList()
     }
     
     // Calculate final resolution
@@ -833,7 +974,16 @@ private fun Txt2ImgUpscaleWorkflowContent(
     val finalWidth = width * finalFactor
     val finalHeight = height * finalFactor
     
-    val runWorkflow: () -> Unit = {
+    val runWorkflow: () -> Unit = workflow@{
+        if (missingRequiredComponents.isNotEmpty()) {
+            onErrorChange(
+                context.getString(
+                    R.string.imagegen_error_missing_required_components,
+                    missingRequiredComponents.joinToString(", ") { workflowComponentRoleLabel(context, it) }
+                )
+            )
+            return@workflow
+        }
         if (modelPath != null && upscalerPath != null && prompt.isNotBlank()) {
             onRunningChange(true)
             onErrorChange(null)
@@ -856,67 +1006,39 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 seed = seed,
                 samplingMethod = sampler,
                 outputPath = txt2imgFile.absolutePath,
-                threads = threads
+                threads = threads,
+                isFluxModel = selectedGenerationModel?.type == ModelType.SD_DIFFUSION,
+                modelFamily = selectedGenerationFamilyEnum?.storedValue,
+                modelVariant = selectedGenerationVariant,
+                vaePath = vaePath,
+                taePath = taePath,
+                clipLPath = clipLPath,
+                clipGPath = clipGPath,
+                t5xxlPath = t5xxlPath,
+                llmPath = llmPath,
+                llmVisionPath = llmVisionPath,
+                photoMakerPath = photoMakerPath
             )
-            
-            context.startForegroundService(Intent(context, StableDiffusionService::class.java))
-            
-            sdService?.generate(txt2imgConfig, useWorkflowStateHolder = true) { result ->
-                result.fold(
-                    onSuccess = {
-                        onStepChange(context.getString(R.string.workflow_step_upscaling))
-                        onProgressChange(0.5f)
-                        
-                        val upscaleConfig = SDConfig(
-                            mode = SDMode.UPSCALE,
-                            modelPath = upscalerPath,
-                            prompt = "",
-                            outputPath = upscaledFile.absolutePath,
-                            initImage = txt2imgFile.absolutePath,
-                            upscaleModel = upscalerPath,
-                            upscaleRepeats = upscaleRepeats,
-                            threads = upscaleThreads
-                        )
-                        
-                        sdService?.generate(upscaleConfig, useWorkflowStateHolder = true) { upscaleResult ->
-                            upscaleResult.fold(
-                                onSuccess = {
-                                    // Copy to custom output folder if set
-                                    val customFolderUri = settingsRepo.outputFolderUri.value
-                                    if (customFolderUri != null && upscaledFile.exists()) {
-                                        try {
-                                            val treeUri = Uri.parse(customFolderUri)
-                                            val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
-                                            var imagesDoc = rootDoc?.findFile("images")
-                                            if (imagesDoc == null) imagesDoc = rootDoc?.createDirectory("images")
-                                            var workflowDoc = imagesDoc?.findFile("workflow")
-                                            if (workflowDoc == null) workflowDoc = imagesDoc?.createDirectory("workflow")
-                                            val newFile = workflowDoc?.createFile("image/png", upscaledFile.name)
-                                            if (newFile != null) {
-                                                context.contentResolver.openOutputStream(newFile.uri)?.use { outStream ->
-                                                    upscaledFile.inputStream().use { inStream -> inStream.copyTo(outStream) }
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("WorkflowsScreen", "Failed to copy to output folder: ${e.message}")
-                                        }
-                                    }
-                                    onRunningChange(false)
-                                    onProgressChange(1f)
-                                    onStepChange(context.getString(R.string.video_sumup_complete))
-                                    onResultChange(upscaledFile.absolutePath)
-                                },
-                                onFailure = { e ->
-                                    onRunningChange(false)
-                                    onErrorChange(context.getString(R.string.workflow_error_upscale_failed, e.message ?: ""))
-                                }
-                            )
-                        }
-                    },
-                    onFailure = { e ->
-                        onRunningChange(false)
-                        onErrorChange(context.getString(R.string.sd_models_export_failed, e.message ?: ""))
-                    }
+
+            val upscaleConfig = SDConfig(
+                mode = SDMode.UPSCALE,
+                modelPath = upscalerPath,
+                prompt = "",
+                outputPath = upscaledFile.absolutePath,
+                initImage = txt2imgFile.absolutePath,
+                upscaleModel = upscalerPath,
+                upscaleRepeats = upscaleRepeats,
+                threads = upscaleThreads
+            )
+
+            val workflowConfig = SDWorkflowConfig(
+                txt2imgConfig = txt2imgConfig,
+                upscaleConfig = upscaleConfig
+            )
+
+            batteryGateState.runAfterCheck {
+                context.startForegroundService(
+                    StableDiffusionService.createStartWorkflowIntent(context, workflowConfig)
                 )
             }
         }
@@ -970,6 +1092,14 @@ private fun Txt2ImgUpscaleWorkflowContent(
                                         onCfgScaleChange(config.optDouble("cfgScale", 7.0).toFloat())
                                         onSamplerChange(SamplingMethod.entries.find { it.name == config.optString("sampler") } ?: SamplingMethod.EULER_A)
                                         onThreadsChange(config.optInt("threads", 4))
+                                        onVaeChange(config.optString("vae").takeIf { it.isNotEmpty() })
+                                        onTaeChange(config.optString("tae").takeIf { it.isNotEmpty() })
+                                        onClipLChange(config.optString("clipL").takeIf { it.isNotEmpty() })
+                                        onClipGChange(config.optString("clipG").takeIf { it.isNotEmpty() })
+                                        onT5xxlChange(config.optString("t5xxl").takeIf { it.isNotEmpty() })
+                                        onLlmChange(config.optString("llm").takeIf { it.isNotEmpty() })
+                                        onLlmVisionChange(config.optString("llmVision").takeIf { it.isNotEmpty() })
+                                        onPhotoMakerChange(config.optString("photoMaker").takeIf { it.isNotEmpty() })
                                         onUpscalerChange(config.optString("upscaler").takeIf { it.isNotEmpty() })
                                         onUpscaleFactorChange(config.optInt("upscaleFactor", 2))
                                         onUpscaleRepeatsChange(config.optInt("upscaleRepeats", 1))
@@ -1074,6 +1204,14 @@ private fun Txt2ImgUpscaleWorkflowContent(
                                     put("cfgScale", cfgScale.toDouble())
                                     put("sampler", sampler.name)
                                     put("threads", threads)
+                                    put("vae", vaePath ?: "")
+                                    put("tae", taePath ?: "")
+                                    put("clipL", clipLPath ?: "")
+                                    put("clipG", clipGPath ?: "")
+                                    put("t5xxl", t5xxlPath ?: "")
+                                    put("llm", llmPath ?: "")
+                                    put("llmVision", llmVisionPath ?: "")
+                                    put("photoMaker", photoMakerPath ?: "")
                                     put("upscaler", upscalerPath ?: "")
                                     put("upscaleFactor", upscaleFactor)
                                     put("upscaleRepeats", upscaleRepeats)
@@ -1117,12 +1255,106 @@ private fun Txt2ImgUpscaleWorkflowContent(
                         allGenerationModels.forEach { model ->
                             DropdownMenuItem(
                                 text = { Text(model.filename) },
-                                onClick = { onModelChange(model.path); modelExpanded = false }
+                                onClick = {
+                                    onModelChange(model.path)
+                                    onVaeChange(null)
+                                    onTaeChange(null)
+                                    onClipLChange(null)
+                                    onClipGChange(null)
+                                    onT5xxlChange(null)
+                                    onLlmChange(null)
+                                    onLlmVisionChange(null)
+                                    onPhotoMakerChange(null)
+                                    modelExpanded = false
+                                }
                             )
                         }
                     }
                 }
                 
+                if (componentRoles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                stringResource(R.string.imagegen_components_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                stringResource(
+                                    R.string.imagegen_components_desc,
+                                    selectedGenerationFamilyEnum?.storedValue ?: ""
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (missingRequiredComponents.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = stringResource(
+                                        R.string.imagegen_error_missing_required_components,
+                                        missingRequiredComponents.joinToString(", ") {
+                                            workflowComponentRoleLabel(context, it)
+                                        }
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            componentRoles.forEach { role ->
+                                Spacer(modifier = Modifier.height(10.dp))
+                                WorkflowSdComponentPickerField(
+                                    label = workflowComponentRoleLabel(role),
+                                    models = when (role) {
+                                        SdComponentRole.VAE -> compatibleVaeModels
+                                        SdComponentRole.TAE -> compatibleTaeModels
+                                        SdComponentRole.CLIP_L -> compatibleClipLModels
+                                        SdComponentRole.CLIP_G -> compatibleClipGModels
+                                        SdComponentRole.T5XXL -> compatibleT5xxlModels
+                                        SdComponentRole.LLM -> compatibleLlmModels
+                                        SdComponentRole.LLM_VISION -> compatibleLlmVisionModels
+                                        SdComponentRole.PHOTOMAKER -> compatiblePhotoMakerModels
+                                        else -> emptyList()
+                                    },
+                                    selectedPath = when (role) {
+                                        SdComponentRole.VAE -> vaePath
+                                        SdComponentRole.TAE -> taePath
+                                        SdComponentRole.CLIP_L -> clipLPath
+                                        SdComponentRole.CLIP_G -> clipGPath
+                                        SdComponentRole.T5XXL -> t5xxlPath
+                                        SdComponentRole.LLM -> llmPath
+                                        SdComponentRole.LLM_VISION -> llmVisionPath
+                                        SdComponentRole.PHOTOMAKER -> photoMakerPath
+                                        else -> null
+                                    },
+                                    onSelectionChange = { path ->
+                                        when (role) {
+                                            SdComponentRole.VAE -> onVaeChange(path)
+                                            SdComponentRole.TAE -> onTaeChange(path)
+                                            SdComponentRole.CLIP_L -> onClipLChange(path)
+                                            SdComponentRole.CLIP_G -> onClipGChange(path)
+                                            SdComponentRole.T5XXL -> onT5xxlChange(path)
+                                            SdComponentRole.LLM -> onLlmChange(path)
+                                            SdComponentRole.LLM_VISION -> onLlmVisionChange(path)
+                                            SdComponentRole.PHOTOMAKER -> onPhotoMakerChange(path)
+                                            else -> Unit
+                                        }
+                                    },
+                                    allowNone = role !in selectedGenerationSpec?.requiredRoles.orEmpty(),
+                                    emptyMessage = stringResource(workflowEmptyMessageRes(role))
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 // Prompt
@@ -1148,15 +1380,15 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 
                 // Dimensions
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = width.toString(),
-                        onValueChange = { it.toIntOrNull()?.let(onWidthChange) },
+                    DraftIntTextField(
+                        value = width,
+                        onValueChange = onWidthChange,
                         label = { Text(stringResource(R.string.workflow_width_label)) },
                         modifier = Modifier.weight(1f)
                     )
-                    OutlinedTextField(
-                        value = height.toString(),
-                        onValueChange = { it.toIntOrNull()?.let(onHeightChange) },
+                    DraftIntTextField(
+                        value = height,
+                        onValueChange = onHeightChange,
                         label = { Text(stringResource(R.string.workflow_height_label)) },
                         modifier = Modifier.weight(1f)
                     )
@@ -1217,9 +1449,10 @@ private fun Txt2ImgUpscaleWorkflowContent(
                 
                 // Seed
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = if (seed == -1L) "" else seed.toString(),
-                        onValueChange = { onSeedChange(it.toLongOrNull() ?: -1L) },
+                    DraftLongTextField(
+                        value = seed,
+                        onValueChange = onSeedChange,
+                        blankValue = -1L,
                         modifier = Modifier.weight(1f),
                         label = { Text(stringResource(R.string.workflow_seed_label)) }
                     )
@@ -1357,7 +1590,12 @@ private fun Txt2ImgUpscaleWorkflowContent(
         
         // Run and Cancel buttons
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val canRun = modelPath != null && upscalerPath != null && prompt.isNotBlank() && !isRunning
+            val canRun =
+                modelPath != null &&
+                    upscalerPath != null &&
+                    prompt.isNotBlank() &&
+                    missingRequiredComponents.isEmpty() &&
+                    !isRunning
             Button(
                 onClick = runWorkflow, 
                 enabled = canRun, 
@@ -1380,6 +1618,111 @@ private fun Txt2ImgUpscaleWorkflowContent(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.action_cancel))
                 }
+            }
+        }
+    }
+}
+
+private fun filterWorkflowSdComponents(
+    models: List<ModelEntity>,
+    family: com.example.llamadroid.sd.SdModelFamily?,
+    variant: String?
+): List<ModelEntity> {
+    if (family == null) return emptyList()
+    return models.filter { it.matchesSdFamily(family, variant) }
+}
+
+private fun workflowComponentRoleLabelRes(role: SdComponentRole): Int = when (role) {
+    SdComponentRole.MAIN_MODEL -> R.string.imagegen_component_main_model
+    SdComponentRole.VAE -> R.string.imagegen_component_vae
+    SdComponentRole.TAE -> R.string.imagegen_component_tae
+    SdComponentRole.CLIP_L -> R.string.imagegen_component_clip_l
+    SdComponentRole.CLIP_G -> R.string.imagegen_component_clip_g
+    SdComponentRole.T5XXL -> R.string.imagegen_component_t5xxl
+    SdComponentRole.LLM -> R.string.imagegen_component_llm
+    SdComponentRole.LLM_VISION -> R.string.imagegen_component_llm_vision
+    SdComponentRole.CONTROLNET -> R.string.imagegen_component_controlnet
+    SdComponentRole.LORA -> R.string.imagegen_component_lora
+    SdComponentRole.PHOTOMAKER -> R.string.imagegen_component_photomaker
+    SdComponentRole.UPSCALER -> R.string.imagegen_component_upscaler
+}
+
+private fun workflowEmptyMessageRes(role: SdComponentRole): Int = when (role) {
+    SdComponentRole.VAE -> R.string.imagegen_no_vae_installed
+    SdComponentRole.TAE -> R.string.imagegen_no_tae_installed
+    SdComponentRole.CLIP_L -> R.string.imagegen_no_clip_l
+    SdComponentRole.CLIP_G -> R.string.imagegen_no_clip_g
+    SdComponentRole.T5XXL -> R.string.imagegen_no_t5xxl
+    SdComponentRole.LLM -> R.string.imagegen_no_llm
+    SdComponentRole.LLM_VISION -> R.string.imagegen_no_llm_vision
+    SdComponentRole.PHOTOMAKER -> R.string.imagegen_no_photomaker
+    SdComponentRole.CONTROLNET -> R.string.imagegen_no_controlnet
+    SdComponentRole.LORA -> R.string.imagegen_no_lora
+    else -> R.string.imagegen_no_models_installed
+}
+
+private fun workflowComponentRoleLabel(context: Context, role: SdComponentRole): String =
+    context.getString(workflowComponentRoleLabelRes(role))
+
+@Composable
+private fun workflowComponentRoleLabel(role: SdComponentRole): String =
+    stringResource(workflowComponentRoleLabelRes(role))
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkflowSdComponentPickerField(
+    label: String,
+    models: List<ModelEntity>,
+    selectedPath: String?,
+    onSelectionChange: (String?) -> Unit,
+    allowNone: Boolean,
+    emptyMessage: String
+) {
+    Text(label, style = MaterialTheme.typography.labelMedium)
+    Spacer(modifier = Modifier.height(4.dp))
+    if (models.isEmpty()) {
+        Text(
+            emptyMessage,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+        return
+    }
+
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selectedPath?.substringAfterLast("/")
+                ?: if (allowNone) stringResource(R.string.imagegen_none_builtin) else "",
+            onValueChange = {},
+            readOnly = true,
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            if (allowNone) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.imagegen_none_builtin)) },
+                    onClick = {
+                        onSelectionChange(null)
+                        expanded = false
+                    }
+                )
+            }
+            models.forEach { model ->
+                DropdownMenuItem(
+                    text = { Text(model.filename) },
+                    onClick = {
+                        onSelectionChange(model.path)
+                        expanded = false
+                    }
+                )
             }
         }
     }

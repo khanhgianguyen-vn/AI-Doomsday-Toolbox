@@ -1,10 +1,13 @@
 package com.example.llamadroid.ui.ai
 
+import androidx.annotation.StringRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
@@ -32,9 +35,25 @@ import com.example.llamadroid.data.api.HfModelDto
 import com.example.llamadroid.data.db.AppDatabase
 import com.example.llamadroid.data.db.ModelEntity
 import com.example.llamadroid.data.db.ModelType
+import com.example.llamadroid.data.db.SD_CAPABILITY_IMG2IMG
+import com.example.llamadroid.data.db.SD_CAPABILITY_TXT2IMG
+import com.example.llamadroid.data.db.SD_CAPABILITY_VID_GEN
+import com.example.llamadroid.data.db.buildSdCapabilities
+import com.example.llamadroid.data.db.hasSdCapability
+import com.example.llamadroid.data.db.parseSdCapabilities
 import com.example.llamadroid.data.model.DownloadProgressHolder
 import com.example.llamadroid.data.model.FileInfo
 import com.example.llamadroid.data.model.ModelRepository
+import com.example.llamadroid.sd.SdModelFamily
+import com.example.llamadroid.sd.SdComponentRole
+import com.example.llamadroid.sd.buildSdCompatProfiles
+import com.example.llamadroid.sd.defaultCapabilitiesForFamily
+import com.example.llamadroid.sd.defaultCompatProfilesFor
+import com.example.llamadroid.sd.inferSdFamily
+import com.example.llamadroid.sd.isSdImageSupportModel
+import com.example.llamadroid.sd.parseSdCompatProfiles
+import com.example.llamadroid.sd.sdFamilyEnum
+import com.example.llamadroid.ui.navigation.Screen
 import com.example.llamadroid.util.FormatUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,12 +69,45 @@ data class SDSearchSuggestion(
     val capabilities: List<SDCapability>
 )
 
-enum class SDCapability(val label: String, val color: Long) {
-    TXT2IMG("txt2img", 0xFF4CAF50),  // Green
-    IMG2IMG("img2img", 0xFF2196F3),   // Blue
-    UPSCALE("upscale", 0xFFFF9800),   // Orange
-    FLUX("FLUX", 0xFF9C27B0)          // Purple - for FLUX components
+data class PendingSdDiscoverDownload(
+    val repoId: String,
+    val fileInfo: FileInfo,
+    val suggestedType: SDModelSelectionType
+)
+
+enum class SDCapability(
+    val token: String,
+    @StringRes val labelRes: Int,
+    val color: Long
+) {
+    TXT2IMG(SD_CAPABILITY_TXT2IMG, R.string.sd_models_badge_txt2img, 0xFF4CAF50),
+    IMG2IMG(SD_CAPABILITY_IMG2IMG, R.string.sd_models_badge_img2img, 0xFF2196F3),
+    UPSCALE("upscale", R.string.sd_models_badge_upscale, 0xFFFF9800),
+    FLUX("flux", R.string.sd_models_badge_flux, 0xFF9C27B0),
+    VID_GEN(SD_CAPABILITY_VID_GEN, R.string.sd_models_badge_vid_gen, 0xFFE53935)
 }
+
+enum class SDModelSelectionType(
+    val storedType: ModelType,
+    @StringRes val labelRes: Int
+) {
+    CHECKPOINT(ModelType.SD_CHECKPOINT, R.string.sd_type_checkpoint),
+    DIFFUSION(ModelType.SD_DIFFUSION, R.string.sd_type_diffusion),
+    VIDEO_GEN(ModelType.SD_DIFFUSION, R.string.sd_type_video_gen),
+    CLIP_L(ModelType.SD_CLIP_L, R.string.sd_type_clip_l),
+    CLIP_G(ModelType.SD_CLIP_G, R.string.sd_type_clip_g),
+    T5XXL(ModelType.SD_T5XXL, R.string.sd_type_t5xxl),
+    TAE(ModelType.SD_TAE, R.string.sd_type_tae),
+    VAE(ModelType.SD_VAE, R.string.sd_type_vae),
+    CONTROLNET(ModelType.SD_CONTROLNET, R.string.sd_type_controlnet),
+    LORA(ModelType.SD_LORA, R.string.sd_type_lora),
+    PHOTOMAKER(ModelType.SD_PHOTOMAKER, R.string.sd_type_photomaker),
+    IMAGE_LLM(ModelType.LLM, R.string.sd_type_image_llm),
+    IMAGE_LLM_VISION(ModelType.VISION_PROJECTOR, R.string.sd_type_image_llm_vision),
+    UPSCALER(ModelType.SD_UPSCALER, R.string.sd_type_upscaler)
+}
+
+private val SD_MANAGER_SELECTION_TYPES = SDModelSelectionType.entries
 
 /**
  * SDModelsScreen - Manage Stable Diffusion models with HuggingFace search
@@ -81,7 +133,11 @@ fun SDModelsScreen(navController: NavController) {
         .collectAsState(initial = emptyList())
     val sdClipLModels by db.modelDao().getModelsByType(ModelType.SD_CLIP_L)
         .collectAsState(initial = emptyList())
+    val sdClipGModels by db.modelDao().getModelsByType(ModelType.SD_CLIP_G)
+        .collectAsState(initial = emptyList())
     val sdT5xxlModels by db.modelDao().getModelsByType(ModelType.SD_T5XXL)
+        .collectAsState(initial = emptyList())
+    val sdTaeModels by db.modelDao().getModelsByType(ModelType.SD_TAE)
         .collectAsState(initial = emptyList())
     val sdVaeModels by db.modelDao().getModelsByType(ModelType.SD_VAE)
         .collectAsState(initial = emptyList())
@@ -89,11 +145,18 @@ fun SDModelsScreen(navController: NavController) {
         .collectAsState(initial = emptyList())
     val sdLoraModels by db.modelDao().getModelsByType(ModelType.SD_LORA)
         .collectAsState(initial = emptyList())
-    
+    val sdPhotoMakerModels by db.modelDao().getModelsByType(ModelType.SD_PHOTOMAKER)
+        .collectAsState(initial = emptyList())
+    val sdImageSupportModels by db.modelDao().getModelsByTypes(listOf(ModelType.LLM, ModelType.VISION_PROJECTOR))
+        .collectAsState(initial = emptyList())
+    val imageLlmModels = sdImageSupportModels.filter { it.type == ModelType.LLM && it.isSdImageSupportModel() }
+    val imageVisionModels = sdImageSupportModels.filter { it.type == ModelType.VISION_PROJECTOR && it.isSdImageSupportModel() }
     // Total installed count
-    val totalInstalledCount = sdCheckpoints.size + sdUpscalers.size + 
-        sdDiffusionModels.size + sdClipLModels.size + sdT5xxlModels.size + 
-        sdVaeModels.size + sdControlNetModels.size + sdLoraModels.size
+    val totalInstalledCount = sdCheckpoints.size + sdUpscalers.size +
+        sdDiffusionModels.size + sdClipLModels.size + sdClipGModels.size +
+        sdT5xxlModels.size + sdTaeModels.size + sdVaeModels.size +
+        sdControlNetModels.size + sdLoraModels.size + sdPhotoMakerModels.size +
+        imageLlmModels.size + imageVisionModels.size
     
     // Download progress
     val downloadProgress by DownloadProgressHolder.progress.collectAsState()
@@ -110,6 +173,11 @@ fun SDModelsScreen(navController: NavController) {
     var selectedRepoId by remember { mutableStateOf<String?>(null) }
     var availableFiles by remember { mutableStateOf<List<FileInfo>>(emptyList()) }
     var isLoadingFiles by remember { mutableStateOf(false) }
+    var pendingDiscoverDownload by remember { mutableStateOf<PendingSdDiscoverDownload?>(null) }
+    var selectedDiscoverType by remember { mutableStateOf(SDModelSelectionType.CHECKPOINT) }
+    var discoverSdFamily by remember { mutableStateOf<SdModelFamily?>(null) }
+    var discoverSdVariant by remember { mutableStateOf("") }
+    var discoverCompatProfiles by remember { mutableStateOf("") }
     
     // FLUX component reminder dialog
     val showFluxReminderPending by settingsRepo.showFluxReminderPending.collectAsState()
@@ -231,6 +299,39 @@ fun SDModelsScreen(navController: NavController) {
             isLoadingFiles = false
         }
     }
+
+    val startDiscoverDownload: (String, FileInfo, SDModelSelectionType) -> Unit =
+        { repoId, fileInfo, selectionType ->
+            val type = selectionType.storedType
+            repository.startDownloadAsync(
+                repoId = repoId,
+                filename = fileInfo.filename,
+                type = type,
+                sdCapabilities = buildCapabilitiesForSelection(selectionType, sdFamily = discoverSdFamily),
+                sdFamily = if (isImageMainSelection(selectionType)) discoverSdFamily?.storedValue else null,
+                sdVariant = discoverSdVariant.ifBlank { null },
+                sdCompatProfiles = if (requiresCompatProfiles(selectionType)) discoverCompatProfiles.ifBlank { null } else null
+            )
+
+            if (
+                type == ModelType.SD_DIFFUSION ||
+                type == ModelType.SD_CLIP_L ||
+                type == ModelType.SD_CLIP_G ||
+                type == ModelType.SD_T5XXL ||
+                type == ModelType.SD_TAE ||
+                type == ModelType.SD_VAE
+            ) {
+                settingsRepo.setShowFluxReminderPending(true)
+            }
+
+            selectedRepoId = null
+            availableFiles = emptyList()
+            pendingDiscoverDownload = null
+            selectedDiscoverType = SDModelSelectionType.CHECKPOINT
+            discoverSdFamily = null
+            discoverSdVariant = ""
+            discoverCompatProfiles = ""
+        }
     
     // File selection dialog
     if (selectedRepoId != null && availableFiles.isNotEmpty()) {
@@ -261,51 +362,25 @@ fun SDModelsScreen(navController: NavController) {
                                 val repoLower = selectedRepoId?.lowercase() ?: ""
                                 val fileLower = fileInfo.filename.lowercase()
                                 
-                                val type = when {
-                                    // Upscalers
-                                    fileLower.contains("upscale") || fileLower.contains("esrgan") ||
-                                    repoLower.contains("esrgan") || repoLower.contains("upscale") -> 
-                                        ModelType.SD_UPSCALER
-                                    
-                                    // FLUX diffusion models
-                                    (repoLower.contains("flux") && (fileLower.endsWith(".gguf") || fileLower.contains("diffusion"))) ||
-                                    fileLower.contains("flux") && !fileLower.contains("vae") && !fileLower.contains("clip") && !fileLower.contains("t5") ->
-                                        ModelType.SD_DIFFUSION
-                                    
-                                    // T5-XXL encoders
-                                    fileLower.contains("t5") || repoLower.contains("t5-v1") || repoLower.contains("t5xxl") ->
-                                        ModelType.SD_T5XXL
-                                    
-                                    // CLIP-L encoders
-                                    fileLower.contains("clip") || repoLower.contains("clip-vit") ||
-                                    (repoLower.contains("clip") && fileLower.endsWith(".gguf")) ->
-                                        ModelType.SD_CLIP_L
-                                    
-                                    // VAE models
-                                    fileLower.contains("vae") || repoLower.contains("vae") ->
-                                        ModelType.SD_VAE
-                                    
-                                    // ControlNet
-                                    fileLower.contains("controlnet") || repoLower.contains("controlnet") ->
-                                        ModelType.SD_CONTROLNET
-                                    
-                                    // LoRA
-                                    fileLower.contains("lora") || repoLower.contains("lora") ->
-                                        ModelType.SD_LORA
-                                    
-                                    // Default to checkpoint for .gguf and .safetensors files
-                                    else -> ModelType.SD_CHECKPOINT
-                                }
-                                
-                                // Use non-suspend async function to avoid crash
-                                repository.startDownloadAsync(selectedRepoId!!, fileInfo.filename, type)
-                                
-                                // Show FLUX component reminder if downloading a FLUX diffusion model
-                                if (type == ModelType.SD_DIFFUSION || type == ModelType.SD_CLIP_L || 
-                                    type == ModelType.SD_T5XXL || type == ModelType.SD_VAE) {
-                                    settingsRepo.setShowFluxReminderPending(true)
-                                }
-                                
+                                val selectionType = inferSelectionType(
+                                    repoId = repoLower,
+                                    filename = fileLower
+                                )
+
+                                pendingDiscoverDownload = PendingSdDiscoverDownload(
+                                    repoId = selectedRepoId!!,
+                                    fileInfo = fileInfo,
+                                    suggestedType = selectionType
+                                )
+                                selectedDiscoverType = selectionType
+                                val metadata = defaultSdMetadataForSelection(
+                                    selectionType = selectionType,
+                                    repoId = selectedRepoId!!,
+                                    filename = fileInfo.filename
+                                )
+                                discoverSdFamily = metadata.family
+                                discoverSdVariant = metadata.variant.orEmpty()
+                                discoverCompatProfiles = metadata.compatProfiles.orEmpty()
                                 selectedRepoId = null
                                 availableFiles = emptyList()
                             },
@@ -356,6 +431,109 @@ fun SDModelsScreen(navController: NavController) {
             shape = RoundedCornerShape(16.dp)
         )
     }
+
+    if (pendingDiscoverDownload != null) {
+        LaunchedEffect(selectedDiscoverType, pendingDiscoverDownload?.fileInfo?.filename) {
+            pendingDiscoverDownload?.let { pending ->
+                val metadata = defaultSdMetadataForSelection(
+                    selectionType = selectedDiscoverType,
+                    repoId = pending.repoId,
+                    filename = pending.fileInfo.filename
+                )
+                if (isImageMainSelection(selectedDiscoverType)) {
+                    discoverSdFamily = metadata.family
+                    discoverSdVariant = metadata.variant.orEmpty()
+                } else {
+                    discoverCompatProfiles = metadata.compatProfiles.orEmpty()
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = {
+                pendingDiscoverDownload = null
+                selectedDiscoverType = SDModelSelectionType.CHECKPOINT
+                discoverSdFamily = null
+                discoverSdVariant = ""
+                discoverCompatProfiles = ""
+            },
+            title = { Text(stringResource(R.string.sd_models_download_confirm_title)) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 400.dp)
+                ) {
+                    item {
+                        Text(
+                            stringResource(
+                                R.string.sd_models_download_confirm_desc,
+                                pendingDiscoverDownload!!.fileInfo.filename
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    items(SD_MANAGER_SELECTION_TYPES) { type ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = selectedDiscoverType == type,
+                                    onClick = { selectedDiscoverType = type }
+                                )
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedDiscoverType == type,
+                                onClick = { selectedDiscoverType = type }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(type.labelRes))
+                        }
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SDMetadataEditor(
+                            selectionType = selectedDiscoverType,
+                            sdFamily = discoverSdFamily,
+                            onSdFamilyChange = { discoverSdFamily = it },
+                            sdVariant = discoverSdVariant,
+                            onSdVariantChange = { discoverSdVariant = it },
+                            compatProfiles = discoverCompatProfiles,
+                            onCompatProfilesChange = { discoverCompatProfiles = it }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingDiscoverDownload?.let { pending ->
+                            startDiscoverDownload(
+                                pending.repoId,
+                                pending.fileInfo,
+                                selectedDiscoverType
+                            )
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.action_download))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingDiscoverDownload = null
+                        selectedDiscoverType = SDModelSelectionType.CHECKPOINT
+                        discoverSdFamily = null
+                        discoverSdVariant = ""
+                        discoverCompatProfiles = ""
+                    }
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
     
     // Loading dialog
     if (isLoadingFiles) {
@@ -387,7 +565,7 @@ fun SDModelsScreen(navController: NavController) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = { navController.popBackStack() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
             }
             Text(
                 stringResource(R.string.sd_models_title),
@@ -433,17 +611,23 @@ fun SDModelsScreen(navController: NavController) {
                 upscalers = sdUpscalers,
                 diffusionModels = sdDiffusionModels,
                 clipLModels = sdClipLModels,
+                clipGModels = sdClipGModels,
                 t5xxlModels = sdT5xxlModels,
+                taeModels = sdTaeModels,
                 vaeModels = sdVaeModels,
                 controlNetModels = sdControlNetModels,
                 loraModels = sdLoraModels,
+                photoMakerModels = sdPhotoMakerModels,
+                imageLlmModels = imageLlmModels,
+                imageVisionModels = imageVisionModels,
                 onDelete = { model ->
                     scope.launch {
                         repository.deleteModel(model)
                     }
                 },
                 repository = repository,
-                settingsRepo = settingsRepo
+                settingsRepo = settingsRepo,
+                onOpenOnnxModels = { navController.navigate(Screen.OnnxModels.route) }
             )
             1 -> DownloadingTab(
                 downloadProgress = downloadProgress,
@@ -475,25 +659,34 @@ private fun InstalledSDModelsTab(
     upscalers: List<ModelEntity>,
     diffusionModels: List<ModelEntity>,
     clipLModels: List<ModelEntity>,
+    clipGModels: List<ModelEntity>,
     t5xxlModels: List<ModelEntity>,
+    taeModels: List<ModelEntity>,
     vaeModels: List<ModelEntity>,
     controlNetModels: List<ModelEntity>,
     loraModels: List<ModelEntity>,
+    photoMakerModels: List<ModelEntity>,
+    imageLlmModels: List<ModelEntity>,
+    imageVisionModels: List<ModelEntity>,
     onDelete: (ModelEntity) -> Unit,
     repository: ModelRepository,
-    settingsRepo: com.example.llamadroid.data.SettingsRepository
+    settingsRepo: com.example.llamadroid.data.SettingsRepository,
+    onOpenOnnxModels: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
     // Import state - FILE FIRST approach (FAB launches picker, then show dialog)
     var showImportDialog by remember { mutableStateOf(false) }
-    var selectedImportType by remember { mutableStateOf(ModelType.SD_CHECKPOINT) }
+    var selectedImportType by remember { mutableStateOf(SDModelSelectionType.CHECKPOINT) }
     var pendingUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var pendingFilename by remember { mutableStateOf("") }
     var supportsTxt2Img by remember { mutableStateOf(true) }
     var supportsImg2Img by remember { mutableStateOf(true) }
-    
+    var importSdFamily by remember { mutableStateOf<SdModelFamily?>(null) }
+    var importSdVariant by remember { mutableStateOf("") }
+    var importCompatProfiles by remember { mutableStateOf("") }
+
     // Import progress tracking
     var isImporting by remember { mutableStateOf(false) }
     var importProgress by remember { mutableFloatStateOf(0f) }
@@ -501,6 +694,22 @@ private fun InstalledSDModelsTab(
     
     // Export state
     var pendingExportModel by remember { mutableStateOf<ModelEntity?>(null) }
+    var editingModel by remember { mutableStateOf<ModelEntity?>(null) }
+    var editedFilename by remember { mutableStateOf("") }
+    var selectedEditType by remember { mutableStateOf(SDModelSelectionType.CHECKPOINT) }
+    var editSupportsTxt2Img by remember { mutableStateOf(true) }
+    var editSupportsImg2Img by remember { mutableStateOf(true) }
+    var editSdFamily by remember { mutableStateOf<SdModelFamily?>(null) }
+    var editSdVariant by remember { mutableStateOf("") }
+    var editCompatProfiles by remember { mutableStateOf("") }
+
+    LaunchedEffect(editingModel) {
+        editingModel?.let { model ->
+            editSdFamily = model.sdFamilyEnum()
+            editSdVariant = model.sdVariant.orEmpty()
+            editCompatProfiles = model.sdCompatProfiles.orEmpty()
+        }
+    }
     
     val exportPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -562,6 +771,30 @@ private fun InstalledSDModelsTab(
                         val nameIndex = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                         if (nameIndex >= 0) {
                             pendingFilename = c.getString(nameIndex)
+                            if (pendingFilename.endsWith(".onnx", ignoreCase = true) || pendingFilename.endsWith(".ort", ignoreCase = true)) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    context.getString(R.string.sd_models_unsupported_import),
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                                onOpenOnnxModels()
+                                pendingUri = null
+                                pendingFilename = ""
+                                return@use
+                            }
+                            val inferredSelectionType = inferSelectionType(
+                                repoId = "",
+                                filename = pendingFilename.lowercase()
+                            )
+                            selectedImportType = inferredSelectionType
+                            val metadata = defaultSdMetadataForSelection(
+                                selectionType = inferredSelectionType,
+                                repoId = "local-import",
+                                filename = pendingFilename
+                            )
+                            importSdFamily = metadata.family
+                            importSdVariant = metadata.variant.orEmpty()
+                            importCompatProfiles = metadata.compatProfiles.orEmpty()
                         }
                     }
                 }
@@ -575,6 +808,27 @@ private fun InstalledSDModelsTab(
     
     // Combined import dialog (type selection + capabilities)
     if (showImportDialog && pendingUri != null) {
+        LaunchedEffect(selectedImportType, pendingFilename) {
+            val metadata = defaultSdMetadataForSelection(
+                selectionType = selectedImportType,
+                repoId = "local-import",
+                filename = pendingFilename
+            )
+            if (isImageMainSelection(selectedImportType)) {
+                importSdFamily = metadata.family
+                importSdVariant = metadata.variant.orEmpty()
+            } else {
+                importCompatProfiles = metadata.compatProfiles.orEmpty()
+            }
+            if (selectedImportType == SDModelSelectionType.DIFFUSION || selectedImportType == SDModelSelectionType.CHECKPOINT) {
+                val defaultCaps = buildCapabilitiesForSelection(
+                    selectionType = selectedImportType,
+                    sdFamily = metadata.family
+                )?.parseSdCapabilities().orEmpty()
+                supportsTxt2Img = defaultCaps.isEmpty() || SD_CAPABILITY_TXT2IMG in defaultCaps
+                supportsImg2Img = SD_CAPABILITY_IMG2IMG in defaultCaps
+            }
+        }
         AlertDialog(
             onDismissRequest = { 
                 showImportDialog = false
@@ -582,17 +836,6 @@ private fun InstalledSDModelsTab(
             },
             title = { Text(stringResource(R.string.sd_models_import_title)) },
             text = {
-                val types = listOf(
-                    ModelType.SD_CHECKPOINT to stringResource(R.string.sd_type_checkpoint),
-                    ModelType.SD_DIFFUSION to stringResource(R.string.sd_type_diffusion),
-                    ModelType.SD_CLIP_L to stringResource(R.string.sd_type_clip_l),
-                    ModelType.SD_T5XXL to stringResource(R.string.sd_type_t5xxl),
-                    ModelType.SD_VAE to stringResource(R.string.sd_type_vae),
-                    ModelType.SD_CONTROLNET to stringResource(R.string.sd_type_controlnet),
-                    ModelType.SD_LORA to stringResource(R.string.sd_type_lora),
-                    ModelType.SD_UPSCALER to stringResource(R.string.sd_type_upscaler)
-                )
-                
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 400.dp)
                 ) {
@@ -615,7 +858,7 @@ private fun InstalledSDModelsTab(
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                     
-                    items(types) { (type, label) ->
+                    items(SD_MANAGER_SELECTION_TYPES) { type ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -631,12 +874,12 @@ private fun InstalledSDModelsTab(
                                 onClick = { selectedImportType = type }
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(label)
+                            Text(stringResource(type.labelRes))
                         }
                     }
                     
                     // SD capabilities (only shown for checkpoint type)
-                    if (selectedImportType == ModelType.SD_CHECKPOINT) {
+                    if (selectedImportType == SDModelSelectionType.CHECKPOINT || selectedImportType == SDModelSelectionType.DIFFUSION) {
                         item {
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(stringResource(R.string.sd_models_capabilities_label), style = MaterialTheme.typography.labelMedium)
@@ -661,6 +904,19 @@ private fun InstalledSDModelsTab(
                             }
                         }
                     }
+
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SDMetadataEditor(
+                            selectionType = selectedImportType,
+                            sdFamily = importSdFamily,
+                            onSdFamilyChange = { importSdFamily = it },
+                            sdVariant = importSdVariant,
+                            onSdVariantChange = { importSdVariant = it },
+                            compatProfiles = importCompatProfiles,
+                            onCompatProfilesChange = { importCompatProfiles = it }
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -668,16 +924,14 @@ private fun InstalledSDModelsTab(
                     showImportDialog = false
                     val uri = pendingUri!!
                     val filename = pendingFilename
-                    val type = selectedImportType
+                    val type = selectedImportType.storedType
                     
-                    val caps = if (type == ModelType.SD_CHECKPOINT) {
-                        listOfNotNull(
-                            if (supportsTxt2Img) "txt2img" else null,
-                            if (supportsImg2Img) "img2img" else null
-                        ).joinToString(",")
-                    } else {
-                        "upscale"
-                    }
+                    val caps = buildCapabilitiesForSelection(
+                        selectionType = selectedImportType,
+                        supportsTxt2Img = supportsTxt2Img,
+                        supportsImg2Img = supportsImg2Img,
+                        sdFamily = importSdFamily
+                    )
                     
                     // Show progress dialog
                     isImporting = true
@@ -685,7 +939,21 @@ private fun InstalledSDModelsTab(
                     importingFilename = filename
                     
                     scope.launch(Dispatchers.IO) {
-                        importSDModel(context, repository, uri, filename, type, caps) { progress ->
+                        importSDModel(
+                            context = context,
+                            repository = repository,
+                            uri = uri,
+                            filename = filename,
+                            type = type,
+                            capabilities = caps,
+                            sdFamily = if (isImageMainSelection(selectedImportType)) importSdFamily?.storedValue else null,
+                            sdVariant = importSdVariant.ifBlank { null },
+                            sdCompatProfiles = if (requiresCompatProfiles(selectedImportType)) {
+                                importCompatProfiles.ifBlank { null }
+                            } else {
+                                null
+                            }
+                        ) { progress ->
                             importProgress = progress
                         }
                         isImporting = false
@@ -700,9 +968,12 @@ private fun InstalledSDModelsTab(
                     // Reset
                     pendingUri = null
                     pendingFilename = ""
-                    selectedImportType = ModelType.SD_CHECKPOINT
+                    selectedImportType = SDModelSelectionType.CHECKPOINT
                     supportsTxt2Img = true
                     supportsImg2Img = true
+                    importSdFamily = null
+                    importSdVariant = ""
+                    importCompatProfiles = ""
                 }) {
                     Text(stringResource(R.string.action_import))
                 }
@@ -712,6 +983,12 @@ private fun InstalledSDModelsTab(
                     showImportDialog = false
                     pendingUri = null
                     pendingFilename = ""
+                    selectedImportType = SDModelSelectionType.CHECKPOINT
+                    supportsTxt2Img = true
+                    supportsImg2Img = true
+                    importSdFamily = null
+                    importSdVariant = ""
+                    importCompatProfiles = ""
                 }) {
                     Text(stringResource(R.string.action_cancel))
                 }
@@ -760,8 +1037,10 @@ private fun InstalledSDModelsTab(
     
     Box(modifier = Modifier.fillMaxSize()) {
         val hasAnyModels = checkpoints.isNotEmpty() || upscalers.isNotEmpty() ||
-            diffusionModels.isNotEmpty() || clipLModels.isNotEmpty() || t5xxlModels.isNotEmpty() ||
-            vaeModels.isNotEmpty() || controlNetModels.isNotEmpty() || loraModels.isNotEmpty()
+            diffusionModels.isNotEmpty() || clipLModels.isNotEmpty() || clipGModels.isNotEmpty() ||
+            t5xxlModels.isNotEmpty() || taeModels.isNotEmpty() || vaeModels.isNotEmpty() ||
+            controlNetModels.isNotEmpty() || loraModels.isNotEmpty() || photoMakerModels.isNotEmpty() ||
+            imageLlmModels.isNotEmpty() || imageVisionModels.isNotEmpty()
         
         if (!hasAnyModels) {
             Box(
@@ -809,9 +1088,16 @@ private fun InstalledSDModelsTab(
                     items(checkpoints) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = listOf(SDCapability.TXT2IMG, SDCapability.IMG2IMG),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
                         )
                     }
                 }
@@ -829,9 +1115,16 @@ private fun InstalledSDModelsTab(
                     items(diffusionModels) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = listOf(SDCapability.TXT2IMG),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
                         )
                     }
                 }
@@ -849,9 +1142,16 @@ private fun InstalledSDModelsTab(
                     items(clipLModels) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = emptyList(),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
                         )
                     }
                 }
@@ -869,9 +1169,74 @@ private fun InstalledSDModelsTab(
                     items(t5xxlModels) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = emptyList(),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
+                        )
+                    }
+                }
+
+                if (clipGModels.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.sd_models_clip_g_label, clipGModels.size),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(clipGModels) { model ->
+                        InstalledModelCard(
+                            model = model,
+                            capabilities = installedCapabilitiesFor(model),
+                            onDelete = { onDelete(model) },
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                                editSdFamily = model.sdFamilyEnum()
+                                editSdVariant = model.sdVariant.orEmpty()
+                                editCompatProfiles = model.sdCompatProfiles.orEmpty()
+                            }
+                        )
+                    }
+                }
+
+                if (taeModels.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.sd_models_tae_label, taeModels.size),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(taeModels) { model ->
+                        InstalledModelCard(
+                            model = model,
+                            capabilities = installedCapabilitiesFor(model),
+                            onDelete = { onDelete(model) },
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                                editSdFamily = model.sdFamilyEnum()
+                                editSdVariant = model.sdVariant.orEmpty()
+                                editCompatProfiles = model.sdCompatProfiles.orEmpty()
+                            }
                         )
                     }
                 }
@@ -889,9 +1254,16 @@ private fun InstalledSDModelsTab(
                     items(vaeModels) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = emptyList(),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
                         )
                     }
                 }
@@ -909,9 +1281,16 @@ private fun InstalledSDModelsTab(
                     items(controlNetModels) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = emptyList(),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
                         )
                     }
                 }
@@ -929,9 +1308,103 @@ private fun InstalledSDModelsTab(
                     items(loraModels) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = emptyList(),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
+                        )
+                    }
+                }
+
+                if (photoMakerModels.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.sd_models_photomaker_label, photoMakerModels.size),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(photoMakerModels) { model ->
+                        InstalledModelCard(
+                            model = model,
+                            capabilities = installedCapabilitiesFor(model),
+                            onDelete = { onDelete(model) },
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                                editSdFamily = model.sdFamilyEnum()
+                                editSdVariant = model.sdVariant.orEmpty()
+                                editCompatProfiles = model.sdCompatProfiles.orEmpty()
+                            }
+                        )
+                    }
+                }
+
+                if (imageLlmModels.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.sd_models_image_llm_label, imageLlmModels.size),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(imageLlmModels) { model ->
+                        InstalledModelCard(
+                            model = model,
+                            capabilities = installedCapabilitiesFor(model),
+                            onDelete = { onDelete(model) },
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                                editSdFamily = model.sdFamilyEnum()
+                                editSdVariant = model.sdVariant.orEmpty()
+                                editCompatProfiles = model.sdCompatProfiles.orEmpty()
+                            }
+                        )
+                    }
+                }
+
+                if (imageVisionModels.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.sd_models_image_llm_vision_label, imageVisionModels.size),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(imageVisionModels) { model ->
+                        InstalledModelCard(
+                            model = model,
+                            capabilities = installedCapabilitiesFor(model),
+                            onDelete = { onDelete(model) },
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                                editSdFamily = model.sdFamilyEnum()
+                                editSdVariant = model.sdVariant.orEmpty()
+                                editCompatProfiles = model.sdCompatProfiles.orEmpty()
+                            }
                         )
                     }
                 }
@@ -949,13 +1422,173 @@ private fun InstalledSDModelsTab(
                     items(upscalers) { model ->
                         InstalledModelCard(
                             model = model,
-                            capabilities = listOf(SDCapability.UPSCALE),
+                            capabilities = installedCapabilitiesFor(model),
                             onDelete = { onDelete(model) },
-                            onExport = { exportModel(model) }
+                            onExport = { exportModel(model) },
+                            onEdit = {
+                                editingModel = model
+                                editedFilename = model.filename
+                                selectedEditType = selectionTypeForModel(model)
+                                editSupportsTxt2Img = checkpointSupportsTxt2Img(model)
+                                editSupportsImg2Img = checkpointSupportsImg2Img(model)
+                            }
                         )
                     }
                 }
+
             }
+        }
+
+        if (editingModel != null) {
+            AlertDialog(
+                onDismissRequest = { editingModel = null },
+                title = { Text(stringResource(R.string.sd_models_edit_title)) },
+                text = {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 400.dp)
+                    ) {
+                        item {
+                            Text(stringResource(R.string.sd_models_filename_label), style = MaterialTheme.typography.labelMedium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = editedFilename,
+                                onValueChange = { editedFilename = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                placeholder = { Text(stringResource(R.string.sd_models_filename_hint)) }
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(stringResource(R.string.sd_models_type_label), style = MaterialTheme.typography.labelMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        items(SD_MANAGER_SELECTION_TYPES) { type ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = selectedEditType == type,
+                                        onClick = { selectedEditType = type }
+                                    )
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = selectedEditType == type,
+                                    onClick = { selectedEditType = type }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(type.labelRes))
+                            }
+                        }
+
+                        if (selectedEditType == SDModelSelectionType.CHECKPOINT || selectedEditType == SDModelSelectionType.DIFFUSION) {
+                            item {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(stringResource(R.string.sd_models_capabilities_label), style = MaterialTheme.typography.labelMedium)
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = editSupportsTxt2Img,
+                                        onCheckedChange = { editSupportsTxt2Img = it }
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(stringResource(R.string.sd_models_cap_txt2img))
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = editSupportsImg2Img,
+                                        onCheckedChange = { editSupportsImg2Img = it }
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(stringResource(R.string.sd_models_cap_img2img))
+                                }
+                            }
+                        }
+
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            SDMetadataEditor(
+                                selectionType = selectedEditType,
+                                sdFamily = editSdFamily,
+                                onSdFamilyChange = { editSdFamily = it },
+                                sdVariant = editSdVariant,
+                                onSdVariantChange = { editSdVariant = it },
+                                compatProfiles = editCompatProfiles,
+                                onCompatProfilesChange = { editCompatProfiles = it }
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val model = editingModel ?: return@TextButton
+                            val updatedType = selectedEditType.storedType
+                            val updatedCapabilities = buildCapabilitiesForSelection(
+                                selectionType = selectedEditType,
+                                supportsTxt2Img = editSupportsTxt2Img,
+                                supportsImg2Img = editSupportsImg2Img,
+                                sdFamily = editSdFamily
+                            )
+
+                            scope.launch {
+                                val result = repository.updateModel(
+                                    original = model,
+                                    newFilename = editedFilename,
+                                    newType = updatedType,
+                                    sdCapabilities = updatedCapabilities,
+                                    sdFamily = if (isImageMainSelection(selectedEditType)) editSdFamily?.storedValue else null,
+                                    sdVariant = editSdVariant.ifBlank { null },
+                                    sdCompatProfiles = if (requiresCompatProfiles(selectedEditType)) {
+                                        editCompatProfiles.ifBlank { null }
+                                    } else {
+                                        null
+                                    }
+                                )
+
+                                result.onSuccess { updated ->
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        context.getString(R.string.sd_models_update_success, updated.filename),
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+
+                                    if (
+                                        updated.type == ModelType.SD_DIFFUSION ||
+                                        updated.type == ModelType.SD_CLIP_L ||
+                                        updated.type == ModelType.SD_T5XXL ||
+                                        updated.type == ModelType.SD_VAE
+                                    ) {
+                                        settingsRepo.setShowFluxReminderPending(true)
+                                    }
+                                }.onFailure { error ->
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        context.getString(
+                                            R.string.sd_models_update_failed,
+                                            error.message ?: context.getString(R.string.error_generic)
+                                        ),
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+
+                            editingModel = null
+                        }
+                    ) {
+                        Text(stringResource(R.string.action_save))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingModel = null }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            )
         }
         
         // FAB for import - launches file picker directly
@@ -978,7 +1611,10 @@ private suspend fun importSDModel(
     uri: android.net.Uri,
     filename: String,
     type: ModelType,
-    capabilities: String,
+    capabilities: String?,
+    sdFamily: String? = null,
+    sdVariant: String? = null,
+    sdCompatProfiles: String? = null,
     onProgress: (Float) -> Unit = {}
 ) {
     try {
@@ -1016,7 +1652,7 @@ private suspend fun importSDModel(
                 }
             }
             
-            val modelsDir = File(context.filesDir, "models").apply { mkdirs() }
+            val modelsDir = repository.getModelDir(type).apply { mkdirs() }
             val targetFile = File(modelsDir, filename.ifBlank { "imported_sd_model.safetensors" })
             
             // Get file size for progress calculation
@@ -1058,7 +1694,10 @@ private suspend fun importSDModel(
             path = finalPath,
             sizeBytes = sizeBytes,
             type = type,
-            sdCapabilities = capabilities
+            sdCapabilities = capabilities,
+            sdFamily = sdFamily,
+            sdVariant = sdVariant,
+            sdCompatProfiles = sdCompatProfiles
         )
         
         repository.insertModel(modelEntity)
@@ -1069,12 +1708,383 @@ private suspend fun importSDModel(
     }
 }
 
+private data class SdMetadataDraft(
+    val family: SdModelFamily? = null,
+    val variant: String? = null,
+    val compatProfiles: String? = null
+)
+
+private fun isImageMainSelection(selectionType: SDModelSelectionType): Boolean =
+    selectionType == SDModelSelectionType.CHECKPOINT || selectionType == SDModelSelectionType.DIFFUSION
+
+private fun requiresCompatProfiles(selectionType: SDModelSelectionType): Boolean = when (selectionType) {
+    SDModelSelectionType.CLIP_L,
+    SDModelSelectionType.CLIP_G,
+    SDModelSelectionType.T5XXL,
+    SDModelSelectionType.TAE,
+    SDModelSelectionType.VAE,
+    SDModelSelectionType.CONTROLNET,
+    SDModelSelectionType.LORA,
+    SDModelSelectionType.PHOTOMAKER,
+    SDModelSelectionType.IMAGE_LLM,
+    SDModelSelectionType.IMAGE_LLM_VISION,
+    SDModelSelectionType.UPSCALER -> true
+    else -> false
+}
+
+private fun defaultSdMetadataForSelection(
+    selectionType: SDModelSelectionType,
+    repoId: String,
+    filename: String
+): SdMetadataDraft {
+    val normalizedFilename = filename.trim()
+    return when {
+        isImageMainSelection(selectionType) -> {
+            val inferred = inferSdFamily(selectionType.storedType, repoId, normalizedFilename)
+            SdMetadataDraft(
+                family = inferred.first,
+                variant = inferred.second
+            )
+        }
+        requiresCompatProfiles(selectionType) -> SdMetadataDraft(
+            compatProfiles = buildSdCompatProfiles(
+                *defaultCompatProfilesFor(selectionType.storedType).toTypedArray()
+            )
+        )
+        else -> SdMetadataDraft()
+    }
+}
+
+private fun buildCapabilitiesForSelection(
+    selectionType: SDModelSelectionType,
+    supportsTxt2Img: Boolean = true,
+    supportsImg2Img: Boolean = true,
+    sdFamily: SdModelFamily? = null
+): String? = when (selectionType) {
+    SDModelSelectionType.CHECKPOINT -> buildSdCapabilities(
+        if (supportsTxt2Img) SD_CAPABILITY_TXT2IMG else null,
+        if (supportsImg2Img) SD_CAPABILITY_IMG2IMG else null
+    )
+    SDModelSelectionType.DIFFUSION -> buildSdCapabilities(
+        if (supportsTxt2Img) SD_CAPABILITY_TXT2IMG else null,
+        if (supportsImg2Img) SD_CAPABILITY_IMG2IMG else null
+    ) ?: defaultCapabilitiesForFamily(sdFamily, selectionType.storedType)
+    SDModelSelectionType.VIDEO_GEN -> buildSdCapabilities(SD_CAPABILITY_VID_GEN)
+    else -> null
+}
+
+private fun selectionTypeForModel(model: ModelEntity): SDModelSelectionType = when (model.type) {
+    ModelType.SD_CHECKPOINT -> SDModelSelectionType.CHECKPOINT
+    ModelType.SD_DIFFUSION -> {
+        if (model.hasSdCapability(SD_CAPABILITY_VID_GEN)) {
+            SDModelSelectionType.VIDEO_GEN
+        } else {
+            SDModelSelectionType.DIFFUSION
+        }
+    }
+    ModelType.SD_CLIP_L -> SDModelSelectionType.CLIP_L
+    ModelType.SD_CLIP_G -> SDModelSelectionType.CLIP_G
+    ModelType.SD_T5XXL -> SDModelSelectionType.T5XXL
+    ModelType.SD_TAE -> SDModelSelectionType.TAE
+    ModelType.SD_VAE -> SDModelSelectionType.VAE
+    ModelType.SD_CONTROLNET -> SDModelSelectionType.CONTROLNET
+    ModelType.SD_LORA -> SDModelSelectionType.LORA
+    ModelType.SD_PHOTOMAKER -> SDModelSelectionType.PHOTOMAKER
+    ModelType.LLM -> SDModelSelectionType.IMAGE_LLM
+    ModelType.VISION_PROJECTOR -> SDModelSelectionType.IMAGE_LLM_VISION
+    ModelType.SD_UPSCALER -> SDModelSelectionType.UPSCALER
+    else -> SDModelSelectionType.CHECKPOINT
+}
+
+private fun checkpointSupportsTxt2Img(model: ModelEntity): Boolean =
+    (model.type == ModelType.SD_CHECKPOINT || model.type == ModelType.SD_DIFFUSION) &&
+        (model.sdCapabilities.isNullOrBlank() || model.hasSdCapability(SD_CAPABILITY_TXT2IMG))
+
+private fun checkpointSupportsImg2Img(model: ModelEntity): Boolean =
+    (model.type == ModelType.SD_CHECKPOINT || model.type == ModelType.SD_DIFFUSION) &&
+        (model.sdCapabilities.isNullOrBlank() || model.hasSdCapability(SD_CAPABILITY_IMG2IMG))
+
+private fun inferSelectionType(repoId: String, filename: String): SDModelSelectionType = when {
+    isVideoGenHint(repoId) || isVideoGenHint(filename) ->
+        SDModelSelectionType.VIDEO_GEN
+    filename.contains("mmproj") || repoId.contains("mmproj") ||
+        filename.contains("vision", ignoreCase = true) && repoId.contains("qwen", ignoreCase = true) ->
+        SDModelSelectionType.IMAGE_LLM_VISION
+    filename.contains("upscale") || filename.contains("esrgan") ||
+        repoId.contains("esrgan") || repoId.contains("upscale") ->
+        SDModelSelectionType.UPSCALER
+    filename.contains("photomaker") || repoId.contains("photomaker") ->
+        SDModelSelectionType.PHOTOMAKER
+    filename.contains("taesd") || filename.contains("tae") || repoId.contains("taesd") ->
+        SDModelSelectionType.TAE
+    filename.contains("clip_g") || filename.contains("clip-g") || repoId.contains("clip-g") ->
+        SDModelSelectionType.CLIP_G
+    (repoId.contains("flux") && (filename.endsWith(".gguf") || filename.contains("diffusion"))) ||
+        repoId.contains("qwen-image") || repoId.contains("qwen image") ||
+        repoId.contains("chroma") || repoId.contains("z-image") || repoId.contains("ovis") ||
+        repoId.contains("anima") ||
+        (filename.contains("flux") && !filename.contains("vae") && !filename.contains("clip") && !filename.contains("t5")) ->
+        SDModelSelectionType.DIFFUSION
+    repoId.contains("qwen2.5-vl") || filename.contains("qwen2.5-vl") ||
+        repoId.contains("image-llm") || filename.contains("image-llm") ->
+        SDModelSelectionType.IMAGE_LLM
+    filename.contains("t5") || repoId.contains("t5-v1") || repoId.contains("t5xxl") ->
+        SDModelSelectionType.T5XXL
+    filename.contains("clip") || repoId.contains("clip-vit") ||
+        (repoId.contains("clip") && filename.endsWith(".gguf")) ->
+        SDModelSelectionType.CLIP_L
+    filename.contains("vae") || repoId.contains("vae") ->
+        SDModelSelectionType.VAE
+    filename.contains("controlnet") || repoId.contains("controlnet") ->
+        SDModelSelectionType.CONTROLNET
+    filename.contains("lora") || repoId.contains("lora") ->
+        SDModelSelectionType.LORA
+    else -> SDModelSelectionType.CHECKPOINT
+}
+
+private fun isVideoGenHint(value: String): Boolean {
+    val hints = listOf(
+        "t2v",
+        "i2v",
+        "txt2vid",
+        "img2vid",
+        "video",
+        "vidgen",
+        "self-forcing",
+        "self_forcing"
+    )
+    return hints.any { hint -> value.contains(hint) }
+}
+
+private fun installedCapabilitiesFor(model: ModelEntity): List<SDCapability> = when (model.type) {
+    ModelType.SD_CHECKPOINT -> {
+        val capabilities = mutableListOf<SDCapability>()
+        val showTxt2Img = model.sdCapabilities.isNullOrBlank() || model.hasSdCapability(SD_CAPABILITY_TXT2IMG)
+        val showImg2Img = model.sdCapabilities.isNullOrBlank() || model.hasSdCapability(SD_CAPABILITY_IMG2IMG)
+        if (showTxt2Img) capabilities += SDCapability.TXT2IMG
+        if (showImg2Img) capabilities += SDCapability.IMG2IMG
+        capabilities
+    }
+    ModelType.SD_DIFFUSION -> buildList {
+        if (model.hasSdCapability(SD_CAPABILITY_VID_GEN)) {
+            add(SDCapability.VID_GEN)
+        } else {
+            val fallback = defaultCapabilitiesForFamily(model.sdFamilyEnum(), model.type).parseSdCapabilities()
+            val capabilities = if (model.sdCapabilities.isNullOrBlank()) fallback else model.sdCapabilities.parseSdCapabilities()
+            if (SD_CAPABILITY_TXT2IMG in capabilities) add(SDCapability.TXT2IMG)
+            if (SD_CAPABILITY_IMG2IMG in capabilities) add(SDCapability.IMG2IMG)
+        }
+    }
+    ModelType.SD_UPSCALER -> listOf(SDCapability.UPSCALE)
+    else -> emptyList()
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun SDMetadataEditor(
+    selectionType: SDModelSelectionType,
+    sdFamily: SdModelFamily?,
+    onSdFamilyChange: (SdModelFamily?) -> Unit,
+    sdVariant: String,
+    onSdVariantChange: (String) -> Unit,
+    compatProfiles: String,
+    onCompatProfilesChange: (String) -> Unit
+) {
+    if (isImageMainSelection(selectionType)) {
+        Text(stringResource(R.string.sd_models_family_label), style = MaterialTheme.typography.labelMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        var familyExpanded by remember { mutableStateOf(false) }
+        ExposedDropdownMenuBox(
+            expanded = familyExpanded,
+            onExpandedChange = { familyExpanded = !familyExpanded }
+        ) {
+            OutlinedTextField(
+                value = sdFamily?.storedValue ?: "",
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                label = { Text(stringResource(R.string.sd_models_family_label)) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = familyExpanded) }
+            )
+            ExposedDropdownMenu(
+                expanded = familyExpanded,
+                onDismissRequest = { familyExpanded = false }
+            ) {
+                selectableFamiliesFor(selectionType).forEach { family ->
+                    DropdownMenuItem(
+                        text = { Text(family.storedValue) },
+                        onClick = {
+                            onSdFamilyChange(family)
+                            familyExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedTextField(
+            value = sdVariant,
+            onValueChange = onSdVariantChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.sd_models_variant_label)) },
+            placeholder = { Text(stringResource(R.string.sd_models_variant_hint)) },
+            singleLine = true
+        )
+    } else if (requiresCompatProfiles(selectionType)) {
+        Text(stringResource(R.string.sd_models_compat_profiles_label), style = MaterialTheme.typography.labelMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.sd_models_compat_profiles_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        val selectedProfiles = compatProfiles.parseSdCompatProfiles()
+        val suggestedProfiles = remember(selectionType) { compatProfileSuggestionsFor(selectionType) }
+
+        if (selectedProfiles.isEmpty()) {
+            Text(
+                stringResource(R.string.sd_models_compat_profiles_none),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                selectedProfiles.toList().sorted().forEach { profile ->
+                    InputChip(
+                        selected = true,
+                        onClick = {
+                            onCompatProfilesChange(
+                                buildSdCompatProfiles(
+                                    *(selectedProfiles - profile).toList().sorted().toTypedArray()
+                                ).orEmpty()
+                            )
+                        },
+                        label = {
+                            Text(
+                                profile,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(R.string.action_remove),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            suggestedProfiles.forEach { profile ->
+                val selected = profile in selectedProfiles
+                FilterChip(
+                    selected = selected,
+                    onClick = {
+                        val nextProfiles = if (selected) {
+                            selectedProfiles - profile
+                        } else {
+                            selectedProfiles + profile
+                        }
+                        onCompatProfilesChange(
+                            buildSdCompatProfiles(*nextProfiles.toList().sorted().toTypedArray()).orEmpty()
+                        )
+                    },
+                    label = {
+                        Text(
+                            profile,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+private fun selectableFamiliesFor(selectionType: SDModelSelectionType): List<SdModelFamily> = when (selectionType) {
+    SDModelSelectionType.CHECKPOINT -> listOf(
+        SdModelFamily.CHECKPOINT,
+        SdModelFamily.SD3
+    )
+    SDModelSelectionType.DIFFUSION -> listOf(
+        SdModelFamily.FLUX_1,
+        SdModelFamily.FLUX_KONTEXT,
+        SdModelFamily.FLUX_2,
+        SdModelFamily.CHROMA,
+        SdModelFamily.CHROMA_RADIANCE,
+        SdModelFamily.QWEN_IMAGE,
+        SdModelFamily.QWEN_IMAGE_EDIT,
+        SdModelFamily.Z_IMAGE,
+        SdModelFamily.OVIS_IMAGE,
+        SdModelFamily.ANIMA
+    )
+    else -> emptyList()
+}
+
+private fun compatProfileSuggestionsFor(selectionType: SDModelSelectionType): List<String> {
+    if (selectionType == SDModelSelectionType.UPSCALER) {
+        return listOf(SdComponentRole.UPSCALER.compatToken)
+    }
+    return buildList {
+        addAll(
+            listOf(
+                SdModelFamily.CHECKPOINT.storedValue,
+                "${SdModelFamily.CHECKPOINT.storedValue}:sd1",
+                "${SdModelFamily.CHECKPOINT.storedValue}:sd2",
+                "${SdModelFamily.CHECKPOINT.storedValue}:sdxl",
+                SdModelFamily.SD3.storedValue,
+                SdModelFamily.FLUX_1.storedValue,
+                "${SdModelFamily.FLUX_1.storedValue}:schnell",
+                "${SdModelFamily.FLUX_1.storedValue}:dev",
+                SdModelFamily.FLUX_KONTEXT.storedValue,
+                "${SdModelFamily.FLUX_KONTEXT.storedValue}:dev",
+                SdModelFamily.FLUX_2.storedValue,
+                "${SdModelFamily.FLUX_2.storedValue}:dev",
+                "${SdModelFamily.FLUX_2.storedValue}:base",
+                "${SdModelFamily.FLUX_2.storedValue}:klein_4b",
+                "${SdModelFamily.FLUX_2.storedValue}:klein_base_4b",
+                "${SdModelFamily.FLUX_2.storedValue}:klein_9b",
+                "${SdModelFamily.FLUX_2.storedValue}:klein_base_9b",
+                SdModelFamily.CHROMA.storedValue,
+                SdModelFamily.CHROMA_RADIANCE.storedValue,
+                SdModelFamily.QWEN_IMAGE.storedValue,
+                SdModelFamily.QWEN_IMAGE_EDIT.storedValue,
+                "${SdModelFamily.QWEN_IMAGE_EDIT.storedValue}:2509",
+                "${SdModelFamily.QWEN_IMAGE_EDIT.storedValue}:2511",
+                SdModelFamily.Z_IMAGE.storedValue,
+                "${SdModelFamily.Z_IMAGE.storedValue}:turbo",
+                "${SdModelFamily.Z_IMAGE.storedValue}:base",
+                SdModelFamily.OVIS_IMAGE.storedValue,
+                SdModelFamily.ANIMA.storedValue
+            )
+        )
+        addAll(defaultCompatProfilesFor(selectionType.storedType))
+    }.distinct().sorted()
+}
+
 @Composable
 private fun InstalledModelCard(
     model: ModelEntity,
     capabilities: List<SDCapability>,
     onDelete: () -> Unit,
-    onExport: () -> Unit = {}
+    onExport: () -> Unit = {},
+    onEdit: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1100,12 +2110,33 @@ private fun InstalledModelCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    model.sdFamily?.takeIf { it.isNotBlank() }?.let { family ->
+                        Text(
+                            text = family + model.sdVariant?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    model.sdCompatProfiles?.takeIf { it.isNotBlank() }?.let { compat ->
+                        Text(
+                            text = compat,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.action_edit),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
                 // Export button
                 IconButton(onClick = onExport) {
                     Icon(
                         Icons.Default.Share,
-                        contentDescription = "Export to Downloads",
+                        contentDescription = stringResource(R.string.action_share),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -1113,7 +2144,7 @@ private fun InstalledModelCard(
                 IconButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete",
+                        contentDescription = stringResource(R.string.action_delete),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -1439,7 +2470,7 @@ private fun CapabilityBadge(capability: SDCapability) {
         color = androidx.compose.ui.graphics.Color(capability.color).copy(alpha = 0.15f)
     ) {
         Text(
-            capability.label,
+            stringResource(capability.labelRes),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
             color = androidx.compose.ui.graphics.Color(capability.color)

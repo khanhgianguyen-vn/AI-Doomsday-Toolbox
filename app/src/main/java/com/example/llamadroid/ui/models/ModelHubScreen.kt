@@ -1,9 +1,9 @@
 package com.example.llamadroid.ui.models
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Star
@@ -15,13 +15,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import com.example.llamadroid.R
+import com.example.llamadroid.ui.components.AppContentColumn
+import com.example.llamadroid.ui.components.AppHeroCard
+import com.example.llamadroid.ui.components.AppPageBackground
+import com.example.llamadroid.ui.components.AppPageHeader
 import com.example.llamadroid.ui.navigation.Screen
 
 /**
@@ -32,99 +35,86 @@ import com.example.llamadroid.ui.navigation.Screen
 fun ModelHubScreen(navController: NavController) {
     val scrollState = rememberScrollState()
     
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                )
+    AppPageBackground {
+        AppContentColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+        ) {
+            AppPageHeader(
+                eyebrow = "MODELS",
+                title = stringResource(R.string.models_hub),
+                subtitle = stringResource(R.string.settings_subtitle)
             )
-            .verticalScroll(scrollState)
-            .padding(20.dp)
-    ) {
-        // Header
-        Text(
-            stringResource(R.string.models_hub),
-            style = MaterialTheme.typography.headlineLarge.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 32.sp
+
+            AppHeroCard(
+                title = stringResource(R.string.models_hub),
+                subtitle = stringResource(R.string.models_local_storage),
+                badge = stringResource(R.string.nav_models)
             )
-        )
-        Text(
-            stringResource(R.string.settings_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // LlamaCpp Models Card
-        ModelFeatureCard(
-            title = "🤖 " + stringResource(R.string.models_llm),
-            description = stringResource(R.string.models_llm_desc),
-            icon = Icons.Default.Star,
-            gradientColors = listOf(
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            ),
-            onClick = { navController.navigate(Screen.LLMModels.route) }
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // SD Models Card
-        ModelFeatureCard(
-            title = "🎨 " + stringResource(R.string.models_sd),
-            description = stringResource(R.string.models_sd_desc),
-            icon = Icons.Default.Create,
-            gradientColors = listOf(
-                MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
-                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-            ),
-            onClick = { navController.navigate(Screen.SDModels.route) }
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Whisper Models Card
-        ModelFeatureCard(
-            title = "🎙️ " + stringResource(R.string.models_whisper),
-            description = stringResource(R.string.models_whisper_desc),
-            icon = Icons.Default.Create,
-            gradientColors = listOf(
-                Color(0xFF00BCD4).copy(alpha = 0.15f),
-                Color(0xFF00ACC1).copy(alpha = 0.3f)
-            ),
-            onClick = { navController.navigate(Screen.WhisperModels.route) }
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Share Models Card
-        ModelFeatureCard(
-            title = "📤 " + stringResource(R.string.models_share),
-            description = stringResource(R.string.models_share_desc),
-            icon = Icons.Default.Star,
-            gradientColors = listOf(
-                Color(0xFF4CAF50).copy(alpha = 0.15f),
-                Color(0xFF388E3C).copy(alpha = 0.3f)
-            ),
-            onClick = { navController.navigate("model_share") }
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // Info text
-        Text(
-            stringResource(R.string.models_local_storage),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
+
+            ModelFeatureCard(
+                title = "🤖 " + stringResource(R.string.models_llm),
+                description = stringResource(R.string.models_llm_desc),
+                icon = Icons.Default.Star,
+                gradientColors = listOf(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                ),
+                onClick = { navController.navigate(Screen.LLMModels.route) }
+            )
+
+            ModelFeatureCard(
+                title = "🎨 " + stringResource(R.string.models_sd),
+                description = stringResource(R.string.models_sd_desc),
+                icon = Icons.Default.Create,
+                gradientColors = listOf(
+                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                ),
+                onClick = { navController.navigate(Screen.SDModels.route) }
+            )
+
+            ModelFeatureCard(
+                title = "🧠 " + stringResource(R.string.models_onnx),
+                description = stringResource(R.string.models_onnx_desc),
+                icon = Icons.Default.Create,
+                gradientColors = listOf(
+                    Color(0xFFFFB74D).copy(alpha = 0.15f),
+                    Color(0xFFF57C00).copy(alpha = 0.3f)
+                ),
+                onClick = { navController.navigate(Screen.OnnxModels.route) }
+            )
+
+            ModelFeatureCard(
+                title = "🎙️ " + stringResource(R.string.models_whisper),
+                description = stringResource(R.string.models_whisper_desc),
+                icon = Icons.Default.Create,
+                gradientColors = listOf(
+                    Color(0xFF00BCD4).copy(alpha = 0.15f),
+                    Color(0xFF00ACC1).copy(alpha = 0.3f)
+                ),
+                onClick = { navController.navigate(Screen.WhisperModels.route) }
+            )
+
+            ModelFeatureCard(
+                title = "📤 " + stringResource(R.string.models_share),
+                description = stringResource(R.string.models_share_desc),
+                icon = Icons.Default.Star,
+                gradientColors = listOf(
+                    Color(0xFF4CAF50).copy(alpha = 0.15f),
+                    Color(0xFF388E3C).copy(alpha = 0.3f)
+                ),
+                onClick = { navController.navigate("model_share") }
+            )
+
+            Text(
+                stringResource(R.string.models_local_storage),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        }
     }
 }
 

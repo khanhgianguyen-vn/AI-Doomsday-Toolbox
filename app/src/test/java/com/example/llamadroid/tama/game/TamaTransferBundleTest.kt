@@ -1,0 +1,279 @@
+package com.example.llamadroid.tama.game
+
+import com.example.llamadroid.tama.adventure.StorySchematic
+import com.example.llamadroid.tama.data.TamaPet
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TamaTransferBundleTest {
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    @Test
+    fun `bundle round trip keeps full transfer sections`() {
+        val pet = TamaPet(id = "pet-1", name = "Peque")
+        val bundle = TamaTransferBundle(
+            version = 2,
+            exportDate = 1234L,
+            pet = pet,
+            events = listOf(
+                TamaTransferEvent(
+                    id = "event-1",
+                    timestamp = 11L,
+                    petId = pet.id,
+                    eventType = "PLANTED",
+                    details = "Planted Wheat Seeds (6 total)",
+                    statsChangeJson = "{\"energy\":-6.0}"
+                )
+            ),
+            chatMessages = listOf(
+                TamaTransferChatMessage(
+                    id = "chat-1",
+                    petId = pet.id,
+                    role = "assistant",
+                    content = "Hola",
+                    timestamp = 22L,
+                    thinking = "brief"
+                )
+            ),
+            summaries = listOf(
+                TamaTransferSummary(
+                    id = "summary-1",
+                    petId = pet.id,
+                    date = "2026-04-03",
+                    summary = "Busy farm day",
+                    createdAt = 33L,
+                    lastEventTimestamp = 11L,
+                    lastChatMessageTimestamp = 22L
+                )
+            ),
+            settings = TamaTransferSettings(
+                tamaNormalDreamingEnabled = false,
+                tamaDeepDreamDesiredLanguage = "Spanish",
+                tamaPetModel = "qwen-test",
+                adventureWorldImageEnabled = true,
+                adventureOnnxResolution = 768
+            ),
+            farmTiles = listOf(
+                TamaTransferFarmTile(
+                    id = 0,
+                    petId = pet.id,
+                    status = "PLANTED",
+                    cropJson = "{\"cropType\":\"wheat\"}",
+                    lastWateredTime = 44L
+                )
+            ),
+            farmUpgrades = listOf(
+                TamaTransferFarmUpgrade(
+                    type = "well",
+                    petId = pet.id,
+                    isPurchased = true,
+                    level = 2,
+                    lastProductionTime = 55L,
+                    storedOutput = 3
+                )
+            ),
+            deepDreamRuns = listOf(
+                TamaTransferDeepDreamRun(
+                    id = "run-1",
+                    petId = pet.id,
+                    signature = "sig-1",
+                    dreamDate = "2026-04-03",
+                    status = "COMPLETED",
+                    stage = "DONE",
+                    albumId = "album-1",
+                    ownsLocalLlama = true,
+                    startedAt = 60L,
+                    updatedAt = 61L,
+                    lastHeartbeatAt = 62L
+                )
+            ),
+            adventureSessions = listOf(
+                TamaTransferAdventureSession(
+                    id = "session-1",
+                    petId = pet.id,
+                    dungeonType = "forest",
+                    schematicJson = json.encodeToString(
+                        StorySchematic(
+                            totalStages = 5,
+                            storyThread = "Forest mystery",
+                            keyEvents = listOf("Trail", "Shrine"),
+                            possibleEndings = listOf("Peace"),
+                            tone = "Cozy",
+                            difficulty = "Low",
+                            worldImagePath = "/tmp/world.png"
+                        )
+                    ),
+                    relativeWorldImagePath = "adventure_worlds/session-1.png",
+                    currentStage = 2,
+                    isCompleted = false,
+                    cumulativeSummary = "Met a slime",
+                    createdAt = 66L,
+                    lastPlayedAt = 77L
+                )
+            ),
+            adventureStages = listOf(
+                TamaTransferAdventureStage(
+                    id = "stage-1",
+                    sessionId = "session-1",
+                    stageNumber = 1,
+                    storyContent = "A path opens",
+                    userResponse = "Go left",
+                    stageSummary = "Entered the forest",
+                    imagePath = "/tmp/stage.png",
+                    relativeImagePath = "adventure_stages/session-1/stage_1.png",
+                    timestamp = 88L
+                )
+            ),
+            dungeonProgress = TamaTransferDungeonProgress(
+                petId = pet.id,
+                completedDungeonCount = 4,
+                lastCompletedDungeonType = "cave"
+            )
+        )
+
+        val parsed = parseTamaTransferBundle(json.encodeToString(bundle), json)
+
+        assertEquals(pet.id, parsed.pet.id)
+        assertEquals(1, parsed.events.size)
+        assertEquals(1, parsed.chatMessages.size)
+        assertEquals(1, parsed.summaries.size)
+        assertEquals("qwen-test", parsed.settings?.tamaPetModel)
+        assertEquals(1, parsed.farmTiles.size)
+        assertEquals(1, parsed.farmUpgrades.size)
+        assertEquals(1, parsed.deepDreamRuns.size)
+        assertEquals(1, parsed.adventureSessions.size)
+        assertEquals(1, parsed.adventureStages.size)
+        assertEquals("adventure_worlds/session-1.png", parsed.adventureSessions.first().relativeWorldImagePath)
+        assertEquals("adventure_stages/session-1/stage_1.png", parsed.adventureStages.first().relativeImagePath)
+        assertEquals("cave", parsed.dungeonProgress?.lastCompletedDungeonType)
+    }
+
+    @Test
+    fun `legacy export parses with empty defaults for new sections`() {
+        val legacyJson = """
+            {
+              "version": 1,
+              "exportDate": 1000,
+              "pet": {
+                "id": "pet-legacy",
+                "name": "Legacy",
+                "species": "dragon",
+                "birthTimestamp": 1,
+                "lastDecayTime": 2,
+                "stage": "BABY",
+                "stats": {
+                  "hunger": 90.0,
+                  "happiness": 80.0,
+                  "health": 70.0,
+                  "energy": 60.0,
+                  "hygiene": 50.0
+                },
+                "mood": "HAPPY",
+                "personality": "CHEERFUL",
+                "genetics": {
+                  "eyeStyle": 0,
+                  "earStyle": 0,
+                  "mouthStyle": 0,
+                  "headShape": 0,
+                  "bodyStyle": 0,
+                  "armStyle": 0,
+                  "legStyle": 0,
+                  "colorTint": 0,
+                  "accessories": []
+                },
+                "relationships": {},
+                "ownerBondLevel": 50.0,
+                "educationLevel": 0.0,
+                "currentLocationId": "home",
+                "money": 100,
+                "inventory": [],
+                "currentActivity": "NONE",
+                "activityStartTime": null,
+                "isSleeping": false,
+                "sleepStartTime": null,
+                "lastSleepWarningTime": null,
+                "miscareCount": 0,
+                "isMad": false,
+                "discoveredLocationIds": ["home"]
+              },
+              "events": [
+                {
+                  "id": "event-legacy",
+                  "petId": "pet-legacy",
+                  "eventType": "PLANTED",
+                  "details": "Planted Wheat Seeds",
+                  "timestamp": 12
+                }
+              ],
+              "summaries": [
+                {
+                  "id": "summary-legacy",
+                  "petId": "pet-legacy",
+                  "date": "2026-04-03",
+                  "summary": "Legacy summary",
+                  "createdAt": 13
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = parseTamaTransferBundle(legacyJson, json)
+
+        assertEquals(1, parsed.version)
+        assertEquals("pet-legacy", parsed.pet.id)
+        assertEquals(1, parsed.events.size)
+        assertEquals(1, parsed.summaries.size)
+        assertTrue(parsed.chatMessages.isEmpty())
+        assertTrue(parsed.farmTiles.isEmpty())
+        assertTrue(parsed.farmUpgrades.isEmpty())
+        assertNull(parsed.settings)
+        assertTrue(parsed.deepDreamRuns.isEmpty())
+        assertTrue(parsed.adventureSessions.isEmpty())
+        assertTrue(parsed.adventureStages.isEmpty())
+        assertEquals(null, parsed.dungeonProgress)
+    }
+
+    @Test
+    fun `replacement pet ids clears all existing pets plus imported pet`() {
+        val ids = replacementPetIds(
+            existingPetIds = listOf("pet-a", "pet-b", " ", "pet-a"),
+            importedPetId = "pet-c"
+        )
+
+        assertEquals(setOf("pet-a", "pet-b", "pet-c"), ids)
+    }
+
+    @Test
+    fun `adventure session restore patches schematic world image path`() {
+        val transfer = TamaTransferAdventureSession(
+            id = "session-1",
+            petId = "pet-1",
+            dungeonType = "forest",
+            schematicJson = json.encodeToString(
+                StorySchematic(
+                    totalStages = 5,
+                    storyThread = "Forest mystery",
+                    keyEvents = listOf("Trail"),
+                    possibleEndings = listOf("Peace"),
+                    tone = "Cozy",
+                    difficulty = "Low",
+                    worldImagePath = "/old/path/world.png"
+                )
+            ),
+            relativeWorldImagePath = "adventure_worlds/session-1.png",
+            currentStage = 1,
+            isCompleted = false,
+            cumulativeSummary = "Started",
+            createdAt = 1L,
+            lastPlayedAt = 2L
+        )
+
+        val entity = transfer.toEntity("/restored/session-1.png")
+
+        assertEquals("/restored/session-1.png", decodeSchematicWorldImagePath(entity.schematicJson))
+    }
+}

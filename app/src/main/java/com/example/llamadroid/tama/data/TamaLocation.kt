@@ -1,5 +1,8 @@
 package com.example.llamadroid.tama.data
 
+import android.content.Context
+import androidx.annotation.StringRes
+import com.example.llamadroid.R
 import java.util.UUID
 
 /**
@@ -19,67 +22,91 @@ data class TamaLocation(
     val jobs: List<Job>? = null  // Available jobs if workplace
 )
 
-enum class LocationType(val emoji: String, val displayName: String, val description: String, val asciiArt: String) {
-    HOME("🏠", "Home", "Your cozy home. Rest and recover here.", """
+enum class LocationType(
+    val emoji: String,
+    @StringRes val displayNameRes: Int,
+    @StringRes val descriptionRes: Int,
+    val asciiArt: String,
+    val mapIconAssetPath: String
+) {
+    HOME("🏠", R.string.tama_location_home, R.string.tama_location_home_desc, """
      /\
     /  \
    /____\
    |[][]|
    |____|
-    """.trimIndent()),
-    
-    SCHOOL("🏫", "School", "Study to increase intelligence.", """
+    """.trimIndent(), "tama/map/home.png"),
+
+    SCHOOL("🏫", R.string.tama_location_school, R.string.tama_location_school_desc, """
      ___
     |SCH|
     |OOL|
     |___|
    /|   |\
-    """.trimIndent()),
-    
-    WORKPLACE("🏢", "Office", "Work to earn money.", """
+    """.trimIndent(), "tama/map/school.png"),
+
+    WORKPLACE("🏢", R.string.tama_location_workplace, R.string.tama_location_workplace_desc, """
     _____
    |WORK|
    |    |
    |    |
    |____|
-    """.trimIndent()),
-    
-    SHOP("🏪", "Shop", "Buy food and items.", """
+    """.trimIndent(), "tama/map/workplace.png"),
+
+    SHOP("🏪", R.string.tama_location_shop, R.string.tama_location_shop_desc, """
      ____
     |SHOP|
     | $$ |
     |____|
-    """.trimIndent()),
-    
-    PARK("🌳", "Park", "Relax and meet new friends.", """
+    """.trimIndent(), "tama/map/shop.png"),
+
+    ARCADE("🕹️", R.string.tama_location_arcade, R.string.tama_location_arcade_desc, """
+     ____
+    |GAME|
+    |PLAY|
+    |____|
+    """.trimIndent(), "tama/map/arcade.png"),
+
+    PARK("🌳", R.string.tama_location_park, R.string.tama_location_park_desc, """
       ^
      /|\
     / | \
      _|_
     |___|
-    """.trimIndent()),
-    
-    HOSPITAL("🏥", "Hospital", "Heal sickness and injuries.", """
+    """.trimIndent(), "tama/map/park.png"),
+
+    HOSPITAL("🏥", R.string.tama_location_hospital, R.string.tama_location_hospital_desc, """
      _+_
     |   |
     | + |
     |___|
-    """.trimIndent()),
-    
-    FARM("🌾", "Farm", "Plant and harvest crops.", """
+    """.trimIndent(), "tama/map/hospital.png"),
+
+    ALCHEMIST("⚗️", R.string.tama_location_alchemist, R.string.tama_location_alchemist_desc, """
+     ____
+    |POTN|
+    | ** |
+    |____|
+    """.trimIndent(), "tama/map/alchemist.png"),
+
+    FARM("🌾", R.string.tama_location_farm, R.string.tama_location_farm_desc, """
     ~ ~ ~
    ~~~~~~
    |FARM|
    |____|
-    """.trimIndent()),
-    
-    DUNGEON("🏚️", "Dungeon", "Dangerous adventures await!", """
+    """.trimIndent(), "tama/map/farm.png"),
+
+    DUNGEON("🏚️", R.string.tama_location_dungeon, R.string.tama_location_dungeon_desc, """
      ___
     |DNG|
     | ? |
     |___|
-    """.trimIndent())
+    """.trimIndent(), "tama/map/dungeon.png")
 }
+
+fun LocationType.localizedName(context: Context): String = context.getString(displayNameRes)
+
+fun LocationType.localizedDescription(context: Context): String = context.getString(descriptionRes)
 
 /**
  * Job available at a workplace.
