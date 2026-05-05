@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+    font-family:'Plus Jakarta Sans',sans-serif;
+    background:transparent;
+    color:#e2e8f0;
+    padding:0;
+    overflow-x:hidden;
+}
+h1,h2,h3,.font-display{font-family:'Space Grotesk',sans-serif}
+.glass-card{
+    background:rgba(14,17,22,0.40);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:inset 0 1px 0 0 rgba(255,255,255,0.05),0 4px 6px -1px rgba(0,0,0,0.1);
+}
+</style>
+</head>
+<body>
+<div class="flex flex-col gap-3 p-0">
+    <!-- ====== GLOBAL NETWORK STRIP ====== -->
+    <section class="rounded-[20px] p-3 relative flex flex-col gap-2.5" style="background:linear-gradient(to bottom right,rgba(14,17,22,0.8),rgba(16,185,129,0.05));backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(16,185,129,0.15);box-shadow:0 4px 20px -2px rgba(16,185,129,0.1);">
+        <div class="flex items-center justify-between">
+            <h2 class="text-emerald-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+                Global Network
+            </h2>
+        </div>
+
+        <div class="flex items-center gap-2 text-[10px] pl-1 relative z-10 w-full justify-between">
+            <!-- Nodes -->
+            <div class="flex flex-col flex-1 gap-1">
+                <div class="flex items-baseline gap-1">
+                    <span id="val-nodes" class="text-white font-bold text-[17px] font-display leading-none drop-shadow-md pb-[1px]">1.2M</span>
+                    <span class="text-slate-500 uppercase tracking-widest text-[8px]">Nodes</span>
+                </div>
+                <div class="h-[14px] w-[85%] flex items-end justify-between opacity-80 gap-[2px]" id="chart-nodes"></div>
+            </div>
+
+            <div class="h-8 w-px bg-white/10 shrink-0"></div>
+
+            <!-- TPS -->
+            <div class="flex flex-col flex-1 pl-2 gap-1">
+                <div class="flex items-baseline gap-1">
+                    <span id="val-tps" class="text-white font-bold text-[17px] font-display leading-none drop-shadow-md pb-[1px]">800K</span>
+                    <span class="text-slate-500 uppercase tracking-widest text-[8px]">TPS</span>
+                </div>
+                <div class="h-[14px] w-[85%] flex items-end justify-between opacity-90" id="chart-tps"></div>
+            </div>
+
+            <div class="h-8 w-px bg-white/10 shrink-0"></div>
+
+            <!-- Campaigns -->
+            <div class="flex flex-col flex-1 pl-2 gap-1">
+                <div class="flex items-baseline gap-1">
+                    <span id="val-tasks" class="text-white font-bold text-[17px] font-display leading-none drop-shadow-md pb-[1px]">47</span>
+                    <span class="text-slate-500 uppercase tracking-widest text-[8px]">Campaigns</span>
+                </div>
+                <div class="flex items-center h-[14px] gap-1">
+                    <span id="val-util" class="text-cyan-400 font-bold text-[11px] leading-none">85%</span>
+                    <span class="text-slate-500 text-[8px] uppercase tracking-wider leading-none">Util</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- MY STATS -->
+        <div class="bg-black/30 rounded-xl p-2.5 border border-white/5 flex items-center justify-between relative overflow-hidden">
+            <div class="absolute -top-4 -left-4 w-16 h-16 bg-emerald-500/10 blur-xl rounded-full"></div>
+            <h2 class="text-slate-400 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 relative z-10 shrink-0">
+                <svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                My Stats
+            </h2>
+            <div class="flex items-center gap-2.5 text-[10px] relative z-10 text-right">
+                <div class="flex flex-col items-end">
+                    <span class="text-slate-500 text-[8px] uppercase">Rank</span>
+                    <span class="text-amber-500 font-bold">#436<span class="text-slate-500 text-[8px] font-normal">/1.2M</span></span>
+                </div>
+                <div class="flex flex-col items-end">
+                    <span class="text-slate-500 text-[8px] uppercase">Uptime</span>
+                    <span id="stat-uptime" class="text-white font-bold">94%</span>
+                </div>
+                <div class="flex flex-col items-end">
+                    <span class="text-slate-500 text-[8px] uppercase">Quality</span>
+                    <span class="text-emerald-400 font-bold">92/100</span>
+                </div>
+                <div class="flex flex-col items-end">
+                    <span class="text-slate-500 text-[8px] uppercase">Processed</span>
+                    <span id="stat-processed" class="text-white font-bold">283 <span class="text-[8px] font-normal text-slate-400">/wk</span></span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== EARNINGS STRIP ====== -->
+    <section class="glass-card rounded-[20px] p-3 flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+            <h2 class="text-slate-400 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-purple-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+                Earnings
+            </h2>
+            <button class="bg-white/5 border border-white/10 text-white rounded px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider">Claim</button>
+        </div>
+
+        <div class="flex gap-2">
+            <!-- CLX -->
+            <div class="flex-1 bg-black/20 rounded-xl p-3 border border-white/5 flex flex-col relative overflow-hidden">
+                <div class="relative z-10 flex items-center justify-between pb-[14px]">
+                    <span class="text-white font-bold leading-none font-display flex items-baseline gap-1 text-[17px]"><span id="val-clx">47</span> <span class="text-[8px] text-purple-400 font-bold tracking-wider">CLX</span></span>
+                    <span id="val-clx-today" class="text-emerald-400 text-[9px] font-bold bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-[3px] rounded shadow-sm">+12 today</span>
+                </div>
+                <div id="chart-clx-7d" class="absolute bottom-0 left-0 right-0 h-8 flex items-end gap-[2px] opacity-50 px-1.5 pointer-events-none"></div>
+            </div>
+
+            <!-- USDC -->
+            <div class="flex-1 bg-black/20 rounded-xl p-3 border border-white/5 flex flex-col relative overflow-hidden">
+                <div class="relative z-10 flex items-center justify-between pb-[14px]">
+                    <span class="text-white font-bold leading-none font-display flex items-baseline justify-start gap-1 text-[17px]"><span id="val-usdc">$4.20</span></span>
+                    <span id="val-usdc-today" class="text-emerald-400 text-[9px] font-bold bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-[3px] rounded shadow-sm whitespace-nowrap">+$1.2 today</span>
+                </div>
+                <div id="chart-usdc-7d" class="absolute bottom-0 left-0 right-0 h-8 flex items-end gap-[2px] opacity-50 px-1.5 pointer-events-none"></div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. Nodes Chart (vertical bars - emerald)
+    var nodeContainer = document.getElementById('chart-nodes');
+    var numNodes = 20;
+    var nodeData = [];
+    for(var i=0;i<numNodes;i++) nodeData.push(10+Math.random()*80);
+    for(var i=0;i<numNodes;i++){
+        var bar = document.createElement('div');
+        bar.style.cssText = 'width:4px;border-radius:1px 1px 0 0;height:'+nodeData[i]+'%;background:linear-gradient(180deg,#10b981 0%,rgba(16,185,129,0.1) 100%)';
+        nodeContainer.appendChild(bar);
+    }
+    setInterval(function(){
+        nodeData.shift();
+        nodeData.push(10+Math.random()*90);
+        var bars = nodeContainer.children;
+        for(var i=0;i<numNodes;i++) bars[i].style.height = nodeData[i]+'%';
+    }, 100);
+
+    // 2. TPS Chart (dot equalizer)
+    var tpsContainer = document.getElementById('chart-tps');
+    var tpsCols = 16, tpsRows = 4;
+    var tpsData = [];
+    for(var i=0;i<tpsCols;i++) tpsData.push(Math.floor(Math.random()*(tpsRows+1)));
+    for(var i=0;i<tpsCols;i++){
+        var col = document.createElement('div');
+        col.style.cssText = 'display:flex;flex-direction:column;gap:1px;justify-content:flex-end;height:100%';
+        for(var j=0;j<tpsRows;j++){
+            var dot = document.createElement('div');
+            dot.style.cssText = 'width:3px;height:3px;border-radius:1px;background:rgba(51,65,85,0.4);transition:background-color 0.2s';
+            col.appendChild(dot);
+        }
+        tpsContainer.appendChild(col);
+    }
+    setInterval(function(){
+        tpsData.shift();
+        tpsData.push(Math.floor(Math.random()*(tpsRows+1)));
+        var cols = tpsContainer.children;
+        for(var i=0;i<tpsCols;i++){
+            var dots = [];
+            for(var k=cols[i].children.length-1;k>=0;k--) dots.push(cols[i].children[k]);
+            for(var idx=0;idx<dots.length;idx++){
+                if(idx < tpsData[i]){
+                    if(idx===tpsRows-1) dots[idx].style.backgroundColor='#fbbf24';
+                    else if(idx===tpsRows-2) dots[idx].style.backgroundColor='#34d399';
+                    else dots[idx].style.backgroundColor='#059669';
+                } else {
+                    dots[idx].style.backgroundColor='rgba(51,65,85,0.4)';
+                }
+            }
+        }
+    }, 250);
+
+    // 3. Earnings Charts
+    var clxData = [30,45,20,60,80,50,100];
+    var chartClx = document.getElementById('chart-clx-7d');
+    clxData.forEach(function(h){
+        var bar = document.createElement('div');
+        bar.style.cssText = 'flex:1;border-radius:1px 1px 0 0;height:'+h+'%;background:#a855f7';
+        chartClx.appendChild(bar);
+    });
+    var usdcData = [25,40,15,65,75,45,90];
+    var chartUsdc = document.getElementById('chart-usdc-7d');
+    usdcData.forEach(function(h){
+        var bar = document.createElement('div');
+        bar.style.cssText = 'flex:1;border-radius:1px 1px 0 0;height:'+h+'%;background:#10b981';
+        chartUsdc.appendChild(bar);
+    });
+});
+
+// Bridge: Kotlin calls this to update data
+function updateData(nodes, tps, tasks, clx, clxToday, usdc, usdcToday, processed, isOnline) {
+    var el;
+    el = document.getElementById('val-nodes'); if(el) el.textContent = nodes;
+    el = document.getElementById('val-tps'); if(el) el.textContent = tps;
+    el = document.getElementById('val-tasks'); if(el) el.textContent = tasks;
+    el = document.getElementById('val-clx'); if(el) el.textContent = clx;
+    el = document.getElementById('val-clx-today'); if(el) el.textContent = '+' + clxToday + ' today';
+    el = document.getElementById('val-usdc'); if(el) el.textContent = usdc;
+    el = document.getElementById('val-usdc-today'); if(el) el.textContent = '+' + usdcToday + ' today';
+    el = document.getElementById('stat-processed'); if(el) el.innerHTML = processed + ' <span class="text-[8px] font-normal text-slate-400">/wk</span>';
+    el = document.getElementById('stat-uptime'); if(el) el.textContent = isOnline ? '94%' : '0%';
+}
+</script>
+</body>
+</html>

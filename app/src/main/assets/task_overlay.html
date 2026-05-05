@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:rgba(8,12,16,0.98);color:#e2e8f0;margin:0;padding:0;width:100%;min-height:100vh;overflow:auto}
+body.no-scroll{overflow:hidden!important;touch-action:none;position:fixed;width:100%;height:100%}
+.hidden{display:none!important}
+h1,h2,h3,.font-display{font-family:'Space Grotesk',sans-serif}
+::-webkit-scrollbar{width:0;height:0}
+#overlay-root{touch-action:manipulation}
+#task-persona-result,#task-modal-expanded,#task-dispatch-card,#task-context-card,#task-action-card{touch-action:pan-y;-webkit-overflow-scrolling:touch}
+@keyframes ring-spin-slow{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes ring-spin-rev{from{transform:rotate(0)}to{transform:rotate(-360deg)}}
+@keyframes sonar-pulse{0%{transform:scale(0.8);opacity:0.9}100%{transform:scale(2.2);opacity:0}}
+@keyframes hud-flicker{0%,100%{opacity:1}50%{opacity:0.6}}
+@keyframes char-blink{0%,100%{opacity:1}50%{opacity:0}}
+.ring-slow{animation:ring-spin-slow 4s linear infinite}
+.ring-rev{animation:ring-spin-rev 3s linear infinite}
+.sonar{animation:sonar-pulse 1.8s ease-out infinite}
+.hud-flicker{animation:hud-flicker 2.5s ease-in-out infinite}
+.cursor-blink{animation:char-blink 0.9s step-end infinite}
+</style>
+</head>
+<body>
+<div id="overlay-root" style="position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:16px;z-index:9999;overflow:hidden">
+
+<!-- ── Phase 1-3 HUD Card ── -->
+<div id="task-modal-center" class="relative w-[300px] bg-[#07090d] border border-emerald-500/25 rounded-2xl overflow-hidden transition-all duration-700 ease-out transform translate-y-4 hidden" style="box-shadow:0 0 0 1px rgba(16,185,129,0.08),0 8px 40px rgba(16,185,129,0.18),inset 0 1px 0 rgba(255,255,255,0.04);">
+    <div class="absolute inset-0 pointer-events-none" style="background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(16,185,129,0.015) 3px,rgba(16,185,129,0.015) 4px);z-index:1;"></div>
+    <div class="h-[2px] w-full" style="background:linear-gradient(90deg,transparent,rgba(16,185,129,0.8),transparent);"></div>
+    <div class="flex items-center justify-between px-4 pt-3 pb-1 relative z-10">
+        <div class="flex items-center gap-1.5">
+            <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 hud-flicker"></div>
+            <span class="text-emerald-400 text-[8px] font-mono tracking-[0.2em] uppercase">COLIX NODE · 0x89A</span>
+        </div>
+        <span id="task-phase-chip" class="text-[7px] font-mono tracking-wider px-2 py-0.5 rounded-full border" style="color:#fbbf24;border-color:rgba(251,191,36,0.35);background:rgba(251,191,36,0.07);">INCOMING</span>
+    </div>
+    <div class="relative flex justify-center items-center py-5 z-10">
+        <div class="absolute w-[70px] h-[70px] rounded-full border border-emerald-400/30 sonar"></div>
+        <div class="absolute w-[70px] h-[70px] rounded-full border border-emerald-400/20 sonar" style="animation-delay:0.6s;"></div>
+        <div class="absolute w-[88px] h-[88px] rounded-full ring-slow" style="border:1.5px dashed rgba(16,185,129,0.3);"></div>
+        <div class="absolute w-[72px] h-[72px] rounded-full ring-rev" style="border:1px solid transparent;border-top-color:rgba(16,185,129,0.9);border-right-color:rgba(16,185,129,0.3);"></div>
+        <div class="w-[52px] h-[52px] rounded-full flex items-center justify-center relative" style="background:radial-gradient(circle,rgba(16,185,129,0.15) 0%,rgba(0,0,0,0) 70%);border:1px solid rgba(16,185,129,0.25);">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+    </div>
+    <div class="text-center px-5 pb-2 z-10 relative">
+        <h3 id="task-modal-text" class="text-white font-bold text-[13px] tracking-wide leading-snug transition-all duration-300 min-h-[36px] flex items-center justify-center">Incoming Tasks</h3>
+    </div>
+    <div class="px-5 pb-2 z-10 relative">
+        <div class="h-[3px] w-full rounded-full bg-white/5 overflow-hidden">
+            <div id="task-progress-bar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-300" style="width:0%;transition:none;"></div>
+        </div>
+        <div class="flex justify-between mt-1">
+            <span id="task-phase-label" class="text-slate-500 text-[8px] font-mono">Phase 1/3</span>
+            <span id="task-progress-pct" class="text-emerald-400 text-[8px] font-mono">0%</span>
+        </div>
+    </div>
+    <div class="px-4 pb-4 flex flex-col gap-1.5 z-10 relative">
+        <div class="flex items-center justify-between bg-white/[0.03] rounded-lg px-3 py-1.5 border border-white/5">
+            <span class="text-slate-500 text-[8px] font-mono uppercase tracking-wider">Task ID</span>
+            <span class="text-slate-300 text-[9px] font-mono">#7xK91-DELTA</span>
+        </div>
+        <div class="flex items-center justify-between bg-white/[0.03] rounded-lg px-3 py-1.5 border border-white/5">
+            <span class="text-slate-500 text-[8px] font-mono uppercase tracking-wider">Status</span>
+            <span id="task-status-row" class="text-amber-400 text-[9px] font-mono flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-400 hud-flicker inline-block"></span>Scanning network</span>
+        </div>
+        <div class="flex items-center justify-between bg-white/[0.03] rounded-lg px-3 py-1.5 border border-white/5">
+            <span class="text-slate-500 text-[8px] font-mono uppercase tracking-wider">Persona</span>
+            <span id="task-persona-row" class="text-slate-400 text-[9px] font-mono">— — —</span>
+        </div>
+    </div>
+    <div class="h-[1px] w-full" style="background:linear-gradient(90deg,transparent,rgba(16,185,129,0.4),transparent);"></div>
+</div>
+
+<!-- ── Expanded Console Card ── -->
+<div id="task-modal-expanded" class="w-full max-w-[340px] h-[360px] bg-[#090b10]/95 border border-emerald-500/30 rounded-[20px] shadow-[0_0_40px_rgba(16,185,129,0.15)] flex flex-col hidden opacity-0 transition-all duration-500 transform scale-95 absolute">
+    <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between shrink-0 bg-white/[0.02] rounded-t-[20px]">
+        <div class="flex items-center gap-2">
+            <div class="w-2.5 h-2.5 rounded-full bg-red-400/80"></div>
+            <div class="w-2.5 h-2.5 rounded-full bg-amber-400/80"></div>
+            <div class="w-2.5 h-2.5 rounded-full bg-emerald-400/80"></div>
+        </div>
+        <h3 class="text-emerald-400 text-[9px] font-mono tracking-widest uppercase font-bold drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]">Developing Persona : Donald Trump</h3>
+        <div class="w-[34px]"></div>
+    </div>
+    <div id="task-console-output" class="p-4 overflow-y-auto flex-1 font-mono text-[10px] text-emerald-400/80 leading-relaxed flex flex-col gap-1.5" style="text-shadow:0 0 5px rgba(16,185,129,0.3);"></div>
+</div>
+
+<!-- ── Deep Inspection Result Card ── -->
+<div id="task-persona-result" class="w-full max-w-[340px] bg-[#090b10] border border-cyan-500/25 rounded-[20px] shadow-[0_0_50px_rgba(6,182,212,0.12)] flex flex-col hidden opacity-0 transition-all duration-500 transform scale-95 absolute" style="max-height:85vh;">
+    <div class="px-4 py-3 shrink-0 flex items-center justify-between" style="background:linear-gradient(90deg,rgba(6,182,212,0.08),transparent);border-bottom:1px solid rgba(6,182,212,0.12);">
+        <div class="flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <span class="text-cyan-400 text-[9px] font-mono font-bold tracking-widest uppercase">Deep Inspection</span>
+        </div>
+        <button onclick="closePersonaResult()" class="text-slate-500 hover:text-white text-[9px] font-mono tracking-wider transition-colors">CLOSE ✕</button>
+    </div>
+    <div class="overflow-y-auto flex-1 flex flex-col">
+        <div class="m-3 mb-0 p-3 rounded-xl border border-white/5 bg-white/[0.02]">
+            <div class="flex items-center gap-2.5 mb-2">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-[16px]" style="background:radial-gradient(circle,rgba(99,102,241,0.3),rgba(99,102,241,0.05));">👤</div>
+                <div>
+                    <h2 class="text-white font-bold text-[13px] leading-none">Donald Trump</h2>
+                    <p class="text-slate-500 text-[8px] mt-0.5 font-mono">45TH + 47TH POTUS</p>
+                </div>
+            </div>
+            <div class="flex gap-1.5 flex-wrap">
+                <span class="text-[7px] px-2 py-0.5 rounded-full font-mono font-bold" style="background:rgba(99,102,241,0.12);color:#818cf8;border:1px solid rgba(99,102,241,0.25);">POLITICAL FIGURE</span>
+                <span class="text-[7px] px-2 py-0.5 rounded-full font-mono font-bold" style="background:rgba(239,68,68,0.1);color:#f87171;border:1px solid rgba(239,68,68,0.25);">HIGH INFLUENCE</span>
+                <span class="text-[7px] px-2 py-0.5 rounded-full font-mono font-bold" style="background:rgba(251,191,36,0.08);color:#fbbf24;border:1px solid rgba(251,191,36,0.2);">THE RULER</span>
+            </div>
+        </div>
+        <div class="mx-3 mt-2 p-3 rounded-xl text-[9px] italic text-slate-300 leading-relaxed" style="background:rgba(6,182,212,0.04);border-left:2px solid rgba(6,182,212,0.5);">
+            &ldquo;Driven by a deep-seated belief in his own superiority and an acute sensitivity to perceived slights, he consistently seeks to dominate every interaction and assert control over his narrative.&rdquo;
+        </div>
+        <div class="mx-3 mt-3">
+            <p class="text-cyan-400 text-[8px] font-mono font-bold uppercase tracking-widest mb-2">Psychological Values</p>
+            <div class="flex justify-center"><canvas id="persona-radar" width="220" height="180"></canvas></div>
+        </div>
+        <div class="mx-3 mt-3">
+            <p class="text-red-400 text-[8px] font-mono font-bold uppercase tracking-widest mb-2">Bases of Power</p>
+            <div class="flex flex-col gap-1.5">
+                <div class="flex items-center gap-2"><span class="text-slate-400 text-[8px] w-[58px] text-right shrink-0">Coercive</span><div class="flex-1 h-[5px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:72%;background:rgba(239,68,68,0.8);"></div></div><span class="text-slate-500 text-[7px] w-6">72</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-400 text-[8px] w-[58px] text-right shrink-0">Reward</span><div class="flex-1 h-[5px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:55%;background:rgba(239,68,68,0.8);"></div></div><span class="text-slate-500 text-[7px] w-6">55</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-400 text-[8px] w-[58px] text-right shrink-0">Legitimate</span><div class="flex-1 h-[5px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:88%;background:rgba(239,68,68,0.8);"></div></div><span class="text-slate-500 text-[7px] w-6">88</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-400 text-[8px] w-[58px] text-right shrink-0">Expert</span><div class="flex-1 h-[5px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:48%;background:rgba(239,68,68,0.8);"></div></div><span class="text-slate-500 text-[7px] w-6">48</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-400 text-[8px] w-[58px] text-right shrink-0">Referent</span><div class="flex-1 h-[5px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:65%;background:rgba(239,68,68,0.8);"></div></div><span class="text-slate-500 text-[7px] w-6">65</span></div>
+            </div>
+        </div>
+        <div class="mx-3 mt-3">
+            <p class="text-amber-400 text-[8px] font-mono font-bold uppercase tracking-widest mb-2">Behavioral Defaults</p>
+            <div class="flex flex-col gap-1.5">
+                <div class="flex items-center gap-2"><span class="text-slate-300 text-[8px] w-[72px] shrink-0">Risk Tolerance</span><div class="flex-1 h-[4px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:80%;background:linear-gradient(90deg,#ef4444,#f97316);"></div></div><span class="text-slate-500 text-[7px] w-6">80%</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-300 text-[8px] w-[72px] shrink-0">Adaptability</span><div class="flex-1 h-[4px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:30%;background:linear-gradient(90deg,#f59e0b,#fbbf24);"></div></div><span class="text-slate-500 text-[7px] w-6">30%</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-300 text-[8px] w-[72px] shrink-0">Transparency</span><div class="flex-1 h-[4px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:20%;background:linear-gradient(90deg,#06b6d4,#22d3ee);"></div></div><span class="text-slate-500 text-[7px] w-6">20%</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-300 text-[8px] w-[72px] shrink-0">Decisiveness</span><div class="flex-1 h-[4px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:92%;background:linear-gradient(90deg,#8b5cf6,#a78bfa);"></div></div><span class="text-slate-500 text-[7px] w-6">92%</span></div>
+                <div class="flex items-center gap-2"><span class="text-slate-300 text-[8px] w-[72px] shrink-0">Cooperativeness</span><div class="flex-1 h-[4px] bg-white/5 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:25%;background:linear-gradient(90deg,#10b981,#34d399);"></div></div><span class="text-slate-500 text-[7px] w-6">25%</span></div>
+            </div>
+        </div>
+        <div class="mx-3 mt-3 p-3 rounded-xl text-[8px] leading-relaxed" style="background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);">
+            <p class="text-red-400 font-bold uppercase tracking-wider text-[7px] mb-1.5">⚠ The Shadow</p>
+            <p class="text-slate-300"><span class="text-red-400 font-bold">Bias:</span> Tendency to prioritize personal loyalty and brand above all, with extreme sensitivity to criticism and a reflexive counter-attack pattern.</p>
+            <p class="text-slate-300 mt-1.5"><span class="text-red-400 font-bold">Break Point:</span> Loss of public attention or perceived humiliation triggers erratic, high-variance behavioral outputs.</p>
+        </div>
+        <div class="mx-3 mt-3">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-purple-400 text-[8px] font-mono font-bold uppercase tracking-widest">Core Identity</p>
+                <span class="text-[7px] px-2 py-0.5 rounded-full font-mono font-bold" style="background:rgba(251,191,36,0.08);color:#fbbf24;border:1px solid rgba(251,191,36,0.2);">THE RULER</span>
+            </div>
+            <div class="flex flex-col gap-1.5 text-[8px] leading-relaxed">
+                <p class="text-slate-300"><span class="text-white font-bold">Self:</span> Understands the world through the lens of dominance and dealmaking. Views himself as uniquely capable of solving problems others cannot.</p>
+                <div class="flex gap-2 mt-0.5"><span class="text-emerald-400 mt-0.5 shrink-0">▪</span><p class="text-slate-400"><span class="text-slate-200 font-semibold">Core Resource:</span> Brand equity, media attention, loyal base, and financial leverage.</p></div>
+                <div class="flex gap-2"><span class="text-amber-400 mt-0.5 shrink-0">▲</span><p class="text-slate-400"><span class="text-slate-200 font-semibold">Leverage:</span> Ability to mobilize mass public opinion and dominate news cycles.</p></div>
+                <div class="flex gap-2"><span class="text-red-400 mt-0.5 shrink-0">▼</span><p class="text-slate-400"><span class="text-slate-200 font-semibold">Fear:</span> Loss of relevance, public humiliation, and legal accountability.</p></div>
+            </div>
+        </div>
+        <div class="mx-3 mt-3 mb-3">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-cyan-400 text-[8px] font-mono font-bold uppercase tracking-widest">Connections <span class="text-slate-500 font-normal">(5)</span></p>
+            </div>
+            <p class="text-slate-500 text-[7px] font-mono uppercase tracking-widest mb-1.5">Outgoing → (3)</p>
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-[6px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">INFLUENCE</span><span class="text-slate-300 text-[8px] flex-1">→ Republican Party (GOP)</span><span class="text-slate-500 text-[7px] font-mono">w=95</span></div>
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-[6px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">INFLUENCE</span><span class="text-slate-300 text-[8px] flex-1">→ Truth Social / Media</span><span class="text-slate-500 text-[7px] font-mono">w=88</span></div>
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-[6px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(148,163,184,0.1);color:#94a3b8;border:1px solid rgba(148,163,184,0.2);">COOPERATION</span><span class="text-slate-300 text-[8px] flex-1">→ Elon Musk / X Corp</span><span class="text-slate-500 text-[7px] font-mono">w=72</span></div>
+            </div>
+            <p class="text-slate-500 text-[7px] font-mono uppercase tracking-widest mt-2.5 mb-1.5">Incoming ← (2)</p>
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-[6px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">INFLUENCE</span><span class="text-slate-300 text-[8px] flex-1">← MAGA Voter Base</span><span class="text-slate-500 text-[7px] font-mono">w=68</span></div>
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-[6px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">INFLUENCE</span><span class="text-slate-300 text-[8px] flex-1">← Fox News / Right Media</span><span class="text-slate-500 text-[7px] font-mono">w=80</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Task Dispatch Card ── -->
+<div id="task-dispatch-card" class="w-full max-w-[340px] bg-[#07090d] border border-amber-500/25 rounded-[20px] flex flex-col hidden opacity-0 transition-all duration-500 transform scale-95 absolute" style="box-shadow:0 0 0 1px rgba(251,191,36,0.06),0 8px 40px rgba(251,191,36,0.12);">
+    <div class="h-[2px] w-full rounded-t-[20px]" style="background:linear-gradient(90deg,transparent,rgba(251,191,36,0.8),transparent);"></div>
+    <div class="px-4 py-3 flex items-center justify-between border-b border-white/5 shrink-0">
+        <div class="flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+            <span class="text-amber-400 text-[9px] font-mono font-bold tracking-widest uppercase">Task Dispatch</span>
+        </div>
+        <span class="text-[7px] font-mono px-2 py-0.5 rounded-full border" style="color:#fbbf24;border-color:rgba(251,191,36,0.3);background:rgba(251,191,36,0.07);">ORCHESTRATOR → NODE_0x89A</span>
+    </div>
+    <div class="p-4 flex flex-col gap-3">
+        <div class="p-3 rounded-xl text-[8px] leading-relaxed" style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.15);">
+            <p class="text-amber-400 font-mono font-bold uppercase tracking-wider text-[7px] mb-1.5">⚡ Event</p>
+            <p class="text-white font-semibold text-[10px] mb-1">Stock Market Crash Day — S&P 500 -5.2%</p>
+            <p class="text-slate-400">Major indices plunge on tariff escalation news. All assigned personas must respond within their influence sphere.</p>
+        </div>
+        <div>
+            <p class="text-slate-500 text-[7px] font-mono uppercase tracking-widest mb-1.5">Influencing Nodes (3)</p>
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2 px-2 pb-1"><span class="text-slate-600 text-[7px] font-mono w-[50px]">NODE</span><span class="text-slate-600 text-[7px] font-mono flex-1">PERSONA</span><span class="text-slate-600 text-[7px] font-mono">RELATION</span></div>
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-slate-400 text-[8px] font-mono w-[50px]">#9fk21</span><span class="text-slate-200 text-[8px] font-semibold flex-1">Elon Musk</span><span class="text-emerald-400 text-[7px] font-mono font-bold">ALLY</span></div>
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-slate-400 text-[8px] font-mono w-[50px]">#1az99</span><span class="text-slate-200 text-[8px] font-semibold flex-1">Jerome Powell</span><span class="text-red-400 text-[7px] font-mono font-bold">RIVAL</span></div>
+                <div class="flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5"><span class="text-slate-400 text-[8px] font-mono w-[50px]">#4mn32</span><span class="text-slate-200 text-[8px] font-semibold flex-1">CNN Media</span><span class="text-orange-400 text-[7px] font-mono font-bold">HOSTILE</span></div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 justify-center pt-1">
+            <div class="w-1.5 h-1.5 rounded-full bg-amber-400 hud-flicker"></div>
+            <span class="text-amber-400 text-[8px] font-mono tracking-wider">Processing context...</span>
+        </div>
+    </div>
+</div>
+
+<!-- ── Context Processing Console ── -->
+<div id="task-context-card" class="w-full max-w-[340px] h-[240px] bg-[#090b10]/95 border border-purple-500/25 rounded-[20px] shadow-[0_0_30px_rgba(139,92,246,0.12)] flex flex-col hidden opacity-0 transition-all duration-500 transform scale-95 absolute">
+    <div class="px-4 py-2.5 border-b border-white/5 flex items-center gap-2 shrink-0">
+        <div class="w-2 h-2 rounded-full bg-red-400/80"></div>
+        <div class="w-2 h-2 rounded-full bg-amber-400/80"></div>
+        <div class="w-2 h-2 rounded-full bg-purple-400/80"></div>
+        <span class="text-purple-400 text-[8px] font-mono tracking-widest ml-1 font-bold">PERSONA CONTEXT ENGINE</span>
+    </div>
+    <div id="task-context-output" class="p-4 overflow-y-auto flex-1 font-mono text-[10px] text-purple-300/80 leading-relaxed flex flex-col gap-1" style="text-shadow:0 0 6px rgba(139,92,246,0.4);"></div>
+</div>
+
+<!-- ── Action Resolution Card ── -->
+<div id="task-action-card" class="w-full max-w-[340px] bg-[#07090d] border border-emerald-500/20 rounded-[20px] flex flex-col hidden opacity-0 transition-all duration-500 transform scale-95 absolute" style="max-height:520px;box-shadow:0 0 0 1px rgba(16,185,129,0.06),0 8px 40px rgba(16,185,129,0.15);">
+    <div class="h-[2px] w-full rounded-t-[20px]" style="background:linear-gradient(90deg,transparent,rgba(16,185,129,0.8),transparent);"></div>
+    <div class="px-4 py-3 flex items-center justify-between border-b border-white/5 shrink-0">
+        <div class="flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <span class="text-emerald-400 text-[9px] font-mono font-bold tracking-widest uppercase">Action Response</span>
+        </div>
+        <span class="text-white text-[9px] font-semibold">Donald Trump</span>
+    </div>
+    <div class="overflow-y-auto flex-1 flex flex-col p-4 gap-3">
+        <div class="p-3 rounded-xl text-[9px] italic text-slate-200 leading-relaxed" style="background:rgba(16,185,129,0.05);border-left:2px solid rgba(16,185,129,0.6);">
+            &ldquo;The market is crashing because of WEAK people. I will rally my allies, destroy the fake news, and force the Fed to cut rates — IMMEDIATELY.&rdquo;
+        </div>
+        <div>
+            <p class="text-slate-500 text-[7px] font-mono uppercase tracking-widest mb-1.5">Node Actions</p>
+            <div class="flex flex-col gap-1.5">
+                <div class="bg-white/[0.02] rounded-xl p-2.5 border border-white/5">
+                    <div class="flex items-center justify-between mb-1"><div class="flex items-center gap-1.5"><span class="text-slate-400 text-[7px] font-mono">#9fk21</span><span class="text-slate-200 text-[8px] font-bold">Elon Musk</span><span class="text-emerald-400 text-[6px] font-mono">ALLY</span></div><span class="text-[7px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3);">COORDINATE</span></div>
+                    <p class="text-slate-400 text-[8px]">Amplify market crash narrative on X. Joint post calling for Fed rate cut.</p>
+                    <div class="flex items-center gap-1.5 mt-1.5"><span class="text-slate-500 text-[7px]">Intensity:</span><div class="flex gap-0.5"><div class="w-5 h-1.5 rounded-sm bg-emerald-500"></div><div class="w-5 h-1.5 rounded-sm bg-emerald-500"></div><div class="w-5 h-1.5 rounded-sm bg-emerald-500"></div><div class="w-5 h-1.5 rounded-sm bg-emerald-500"></div><div class="w-5 h-1.5 rounded-sm bg-white/10"></div></div><span class="text-emerald-400 text-[7px] font-mono">HIGH</span></div>
+                </div>
+                <div class="bg-white/[0.02] rounded-xl p-2.5 border border-white/5">
+                    <div class="flex items-center justify-between mb-1"><div class="flex items-center gap-1.5"><span class="text-slate-400 text-[7px] font-mono">#1az99</span><span class="text-slate-200 text-[8px] font-bold">Jerome Powell</span><span class="text-red-400 text-[6px] font-mono">RIVAL</span></div><span class="text-[7px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.3);">ATTACK</span></div>
+                    <p class="text-slate-400 text-[8px]">Public denouncement. Demand immediate rate cuts via Truth Social + press statement.</p>
+                    <div class="flex items-center gap-1.5 mt-1.5"><span class="text-slate-500 text-[7px]">Intensity:</span><div class="flex gap-0.5"><div class="w-5 h-1.5 rounded-sm bg-red-500"></div><div class="w-5 h-1.5 rounded-sm bg-red-500"></div><div class="w-5 h-1.5 rounded-sm bg-red-500"></div><div class="w-5 h-1.5 rounded-sm bg-red-500"></div><div class="w-5 h-1.5 rounded-sm bg-red-500"></div></div><span class="text-red-400 text-[7px] font-mono">EXTREME</span></div>
+                </div>
+                <div class="bg-white/[0.02] rounded-xl p-2.5 border border-white/5">
+                    <div class="flex items-center justify-between mb-1"><div class="flex items-center gap-1.5"><span class="text-slate-400 text-[7px] font-mono">#4mn32</span><span class="text-slate-200 text-[8px] font-bold">CNN Media</span><span class="text-orange-400 text-[6px] font-mono">HOSTILE</span></div><span class="text-[7px] font-mono font-bold px-1.5 py-0.5 rounded" style="background:rgba(249,115,22,0.12);color:#fb923c;border:1px solid rgba(249,115,22,0.3);">DISCREDIT</span></div>
+                    <p class="text-slate-400 text-[8px]">Counter-narrative with &ldquo;Fake News&rdquo; framing. Redirect blame to Biden-era policies.</p>
+                    <div class="flex items-center gap-1.5 mt-1.5"><span class="text-slate-500 text-[7px]">Intensity:</span><div class="flex gap-0.5"><div class="w-5 h-1.5 rounded-sm bg-orange-500"></div><div class="w-5 h-1.5 rounded-sm bg-orange-500"></div><div class="w-5 h-1.5 rounded-sm bg-orange-500"></div><div class="w-5 h-1.5 rounded-sm bg-white/10"></div><div class="w-5 h-1.5 rounded-sm bg-white/10"></div></div><span class="text-orange-400 text-[7px] font-mono">MEDIUM</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-6 pt-2 border-t border-white/5">
+            <div><p class="text-slate-500 text-[7px] font-mono uppercase">Reward</p><p class="text-emerald-400 font-bold text-[10px]">+$0.024 <span class="text-purple-400">+8 CLX</span></p></div>
+            <div><p class="text-slate-500 text-[7px] font-mono uppercase">Tokens</p><p class="text-white font-bold text-[10px]">9,200</p></div>
+            <div class="ml-auto flex items-center gap-1.5"><div class="w-1.5 h-1.5 rounded-full bg-emerald-400 hud-flicker"></div><span class="text-slate-500 text-[7px] font-mono">Auto-closing...</span></div>
+        </div>
+    </div>
+</div>
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // ── Parse URL hash: #persona:BASE64 or #reaction:BASE64 ──
+    var rawHash = window.location.hash.replace('#','');
+    var hashParts = rawHash.split(':');
+    var flowType = hashParts[0] || '';
+    var simData = null;
+    if (hashParts.length > 1) {
+        try {
+            var b64 = hashParts.slice(1).join(':').replace(/-/g,'+').replace(/_/g,'/');
+            simData = JSON.parse(atob(b64));
+        } catch(e) { simData = null; }
+    }
+    var personaName = (simData && simData.name) ? simData.name : 'Donald Trump';
+    var personaTitle = (simData && simData.title) ? simData.title : '45TH + 47TH POTUS';
+    var eventName = (simData && simData.event) ? simData.event : '';
+    var eventDesc = (simData && simData.eventDesc) ? simData.eventDesc : '';
+    var simNodes = (simData && simData.nodes) ? simData.nodes : [];
+
+    // ── Helpers ──
+    var setProgress = function(pct, phaseStr) {
+        var bar = document.getElementById('task-progress-bar');
+        var lbl = document.getElementById('task-phase-label');
+        var pctEl = document.getElementById('task-progress-pct');
+        bar.style.transition = 'none';
+        void bar.offsetWidth;
+        bar.style.transition = 'width 1.8s cubic-bezier(0.2,0.8,0.4,1)';
+        bar.style.width = pct + '%';
+        lbl.textContent = phaseStr;
+        pctEl.textContent = pct + '%';
+    };
+
+    var fadeText = function(el, newText, cb) {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(6px)';
+        setTimeout(function() {
+            el.innerHTML = newText;
+            el.style.opacity = '1';
+            el.style.transform = 'translateY(0)';
+            if (cb) setTimeout(cb, 50);
+        }, 320);
+    };
+
+    var setChip = function(text, color, bg, border) {
+        var chip = document.getElementById('task-phase-chip');
+        chip.textContent = text;
+        chip.style.color = color;
+        chip.style.background = bg;
+        chip.style.borderColor = border;
+    };
+
+    var transitionCard = function(fromCard, showNext) {
+        fromCard.style.transition = 'opacity 0.4s, transform 0.4s';
+        fromCard.style.opacity = '0';
+        fromCard.style.transform = 'scale(0.95) translateY(-6px)';
+        setTimeout(function() { fromCard.classList.add('hidden'); showNext(); }, 400);
+    };
+
+    var revealCard = function(card) {
+        document.body.classList.add('no-scroll');
+        card.classList.remove('hidden');
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.95)';
+        card.style.transition = 'opacity 0.5s, transform 0.5s';
+        requestAnimationFrame(function() { requestAnimationFrame(function() {
+            card.style.opacity = '1';
+            card.style.transform = 'scale(1)';
+        }); });
+    };
+
+    var typeLines = function(container, lines, onDone) {
+        var idx = 0;
+        var nextLine = function() {
+            if (idx >= lines.length) { if (onDone) onDone(); return; }
+            var div = document.createElement('div');
+            container.appendChild(div);
+            var text = lines[idx]; var ci = 0;
+            var typeChar = function() {
+                if (ci < text.length) {
+                    div.textContent += text.charAt(ci++);
+                    container.scrollTop = container.scrollHeight;
+                    setTimeout(typeChar, 8 + Math.random() * 15);
+                } else { idx++; setTimeout(nextLine, 150 + Math.random() * 200); }
+            };
+            typeChar();
+        };
+        nextLine();
+    };
+
+    var allCardIds = ['task-modal-center','task-modal-expanded','task-persona-result','task-dispatch-card','task-context-card','task-action-card'];
+
+    var resetAllCards = function() {
+        allCardIds.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) { el.classList.add('hidden'); el.style.opacity = ''; el.style.transform = ''; }
+        });
+        document.body.classList.remove('no-scroll');
+    };
+
+    // ── Draw Radar (accepts values array 0-1) ──
+    var drawRadar = function(values) {
+        var canvas = document.getElementById('persona-radar');
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        var W = canvas.width, H = canvas.height;
+        var cx = W / 2, cy = H / 2 + 4;
+        var labels = ['Power','Security','Conformity','Tradition','Benevolence','Universalism','Self-Dir.','Stimulation','Hedonism','Achievement'];
+        var vals = values || [0.92, 0.75, 0.55, 0.45, 0.3, 0.25, 0.4, 0.5, 0.6, 0.82];
+        var n = labels.length, R = 68;
+        ctx.clearRect(0, 0, W, H);
+        for (var ring = 1; ring <= 4; ring++) {
+            var r = (R / 4) * ring;
+            ctx.beginPath();
+            for (var i = 0; i <= n; i++) {
+                var angle = (Math.PI * 2 / n) * i - Math.PI / 2;
+                var x = cx + Math.cos(angle) * r;
+                var y = cy + Math.sin(angle) * r;
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            }
+            ctx.closePath(); ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5; ctx.stroke();
+        }
+        for (var i = 0; i < n; i++) {
+            var angle = (Math.PI * 2 / n) * i - Math.PI / 2;
+            ctx.beginPath(); ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(angle) * R, cy + Math.sin(angle) * R);
+            ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5; ctx.stroke();
+        }
+        ctx.beginPath();
+        for (var i = 0; i < n; i++) {
+            var angle = (Math.PI * 2 / n) * i - Math.PI / 2;
+            var r2 = R * vals[i];
+            var x = cx + Math.cos(angle) * r2;
+            var y = cy + Math.sin(angle) * r2;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath(); ctx.fillStyle = 'rgba(6,182,212,0.15)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(6,182,212,0.85)'; ctx.lineWidth = 1.5; ctx.stroke();
+        for (var i = 0; i < n; i++) {
+            var angle = (Math.PI * 2 / n) * i - Math.PI / 2;
+            var r2 = R * vals[i];
+            var x = cx + Math.cos(angle) * r2;
+            var y = cy + Math.sin(angle) * r2;
+            ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fillStyle = '#06b6d4'; ctx.fill();
+            var lx = cx + Math.cos(angle) * (R + 12);
+            var ly = cy + Math.sin(angle) * (R + 12);
+            ctx.fillStyle = 'rgba(148,163,184,0.85)'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(labels[i], lx, ly);
+        }
+    };
+
+    // ── Console typewriter (uses persona name) ──
+    var startConsoleOutput = function(container) {
+        var pn = personaName.toUpperCase().replace(/ /g,'_');
+        var lines = [
+            "> INITIALIZING SWARM PROTOCOL...",
+            "> ESTABLISHING SECURE P2P CONNECTION...",
+            "> NODE_ID: 0x89A_ALPHA_7 CONNECTED",
+            "> DOWNLOADING PERSONA CONFIG: '" + pn + "_V2.json'",
+            "> CONFIG VERIFIED. HASH: 9a7b...8c2f",
+            "> ALLOCATING 4.2GB VRAM FOR LLM ENGINE...",
+            "> VRAM ALLOCATED. INITIATING INFERENCE.",
+            "",
+            "Loading behavioral weights:",
+            " [■■■■■■■■■■■■■■■■■■■■] 100% trait_confidence (Extreme)",
+            " [■■■■■■■■■■■■■■■■■■■■] 100% trait_volatility (High)",
+            "",
+            "> [USER_PROMPT] 'Analyze " + personaName + " — generate persona profile'",
+            "> [GENERATING] token_speed: 45 t/s ...",
+            "",
+            "> [SYSTEM] Generating persona analysis...",
+            "> [SYSTEM] Awaiting AI response..."
+        ];
+        container.innerHTML = '';
+        var idx = 0;
+        var typeLine = function() {
+            if (idx >= lines.length) {
+                // Mock lines done — now ready for real AI streaming tokens
+                // Create a streaming output div
+                var streamDiv = document.createElement('div');
+                streamDiv.id = 'ai-stream-output';
+                streamDiv.style.color = '#34d399';
+                streamDiv.style.whiteSpace = 'pre-wrap';
+                streamDiv.style.wordBreak = 'break-word';
+                container.appendChild(streamDiv);
+                container.scrollTop = container.scrollHeight;
+                // If no sim data, show mock result after delay
+                if (!simData) {
+                    setTimeout(function() { showPersonaResult(document.getElementById('task-modal-expanded'), null); }, 2000);
+                }
+                return;
+            }
+            var div = document.createElement('div');
+            container.appendChild(div);
+            var text = lines[idx]; var ci = 0;
+            var typeChar = function() {
+                if (ci < text.length) {
+                    div.textContent += text.charAt(ci++);
+                    container.scrollTop = container.scrollHeight;
+                    setTimeout(typeChar, 10 + Math.random() * 20);
+                } else { idx++; setTimeout(typeLine, 200 + Math.random() * 400); }
+            };
+            typeChar();
+        };
+        setTimeout(typeLine, 800);
+    };
+
+    // ── Populate Deep Inspection with AI data ──
+    var populatePersonaResult = function(data) {
+        if (!data) return;
+        var card = document.getElementById('task-persona-result');
+        // Name + Title
+        var nameEl = card.querySelector('h2.text-white');
+        if (nameEl) nameEl.textContent = data.name || personaName;
+        var titleEl = card.querySelector('p.text-slate-500');
+        if (titleEl) titleEl.textContent = data.title || personaTitle;
+        // Tags
+        var tagContainer = card.querySelector('.flex.gap-1\\.5.flex-wrap');
+        if (tagContainer && data.tags) {
+            var colors = [
+                {bg:'rgba(99,102,241,0.12)',c:'#818cf8',bc:'rgba(99,102,241,0.25)'},
+                {bg:'rgba(239,68,68,0.1)',c:'#f87171',bc:'rgba(239,68,68,0.25)'},
+                {bg:'rgba(251,191,36,0.08)',c:'#fbbf24',bc:'rgba(251,191,36,0.2)'}
+            ];
+            tagContainer.innerHTML = '';
+            data.tags.forEach(function(tag, i) {
+                var s = colors[i % colors.length];
+                tagContainer.innerHTML += '<span class="text-[7px] px-2 py-0.5 rounded-full font-mono font-bold" style="background:'+s.bg+';color:'+s.c+';border:1px solid '+s.bc+';">'+tag+'</span>';
+            });
+        }
+        // Quote
+        var quoteEl = card.querySelectorAll('.italic.text-slate-300')[0];
+        if (quoteEl && data.quote) quoteEl.innerHTML = '&ldquo;' + data.quote + '&rdquo;';
+        // Radar
+        if (data.radar) {
+            var rv = data.radar;
+            drawRadar([rv.power/100, rv.security/100, rv.conformity/100, rv.tradition/100, rv.benevolence/100, rv.universalism/100, rv.selfDirection/100, rv.stimulation/100, rv.hedonism/100, rv.achievement/100]);
+        }
+        // Power bars
+        if (data.powerBases) {
+            var pb = data.powerBases;
+            var keys = ['coercive','reward','legitimate','expert','referent'];
+            var labels = ['Coercive','Reward','Legitimate','Expert','Referent'];
+            var powerSection = card.querySelectorAll('.mx-3.mt-3')[1];
+            if (powerSection) {
+                var bars = powerSection.querySelectorAll('.flex.items-center.gap-2');
+                bars.forEach(function(bar, i) {
+                    if (keys[i] && pb[keys[i]] !== undefined) {
+                        var val = pb[keys[i]];
+                        var inner = bar.querySelector('.h-full');
+                        if (inner) inner.style.width = val + '%';
+                        var numEl = bar.querySelector('.text-slate-500.text-\\[7px\\]');
+                        if (numEl) numEl.textContent = val;
+                    }
+                });
+            }
+        }
+        // Behavioral defaults
+        if (data.behavioral) {
+            var bd = data.behavioral;
+            var bkeys = ['riskTolerance','adaptability','transparency','decisiveness','cooperativeness'];
+            var behavSection = card.querySelectorAll('.mx-3.mt-3')[2];
+            if (behavSection) {
+                var bars = behavSection.querySelectorAll('.flex.items-center.gap-2');
+                bars.forEach(function(bar, i) {
+                    if (bkeys[i] && bd[bkeys[i]] !== undefined) {
+                        var val = bd[bkeys[i]];
+                        var inner = bar.querySelector('.h-full');
+                        if (inner) inner.style.width = val + '%';
+                        var numEl = bar.querySelector('.text-slate-500.text-\\[7px\\]');
+                        if (numEl) numEl.textContent = val + '%';
+                    }
+                });
+            }
+        }
+        // Shadow
+        if (data.shadow) {
+            var shadowBox = card.querySelector('.mx-3.mt-3.p-3');
+            if (shadowBox) {
+                var ps = shadowBox.querySelectorAll('p.text-slate-300');
+                if (ps[0] && data.shadow.bias) ps[0].innerHTML = '<span class="text-red-400 font-bold">Bias:</span> ' + data.shadow.bias;
+                if (ps[1] && data.shadow.breakPoint) ps[1].innerHTML = '<span class="text-red-400 font-bold">Break Point:</span> ' + data.shadow.breakPoint;
+            }
+        }
+        // Identity
+        if (data.identity) {
+            var id = data.identity;
+            // Archetype chip
+            var archChip = card.querySelector('.text-purple-400 + span') || card.querySelectorAll('.rounded-full.font-mono.font-bold')[3];
+            // Self description
+            var identitySection = card.querySelectorAll('.mx-3.mt-3');
+            var lastSection = identitySection[identitySection.length - 2];
+            if (lastSection && id.self) {
+                var selfP = lastSection.querySelector('p.text-slate-300');
+                if (selfP) selfP.innerHTML = '<span class="text-white font-bold">Self:</span> ' + id.self;
+            }
+        }
+    };
+
+    // ── Populate Reaction cards with AI data ──
+    var populateReactionData = function(data) {
+        if (!data || !data.reaction) return;
+        var r = data.reaction;
+        // Action card quote
+        var actionCard = document.getElementById('task-action-card');
+        var quoteEl = actionCard.querySelector('.italic');
+        if (quoteEl && r.quote) quoteEl.innerHTML = '&ldquo;' + r.quote + '&rdquo;';
+        // Persona name in header
+        var nameEl = actionCard.querySelector('.text-white.text-\\[9px\\].font-semibold');
+        if (nameEl) nameEl.textContent = personaName;
+        // Dispatch card — update event if we have one
+        if (eventName) {
+            var dispatchCard = document.getElementById('task-dispatch-card');
+            var eventTitle = dispatchCard.querySelector('.text-white.font-semibold.text-\\[10px\\]');
+            if (eventTitle) eventTitle.textContent = eventName;
+            var eventDescEl = dispatchCard.querySelector('.text-slate-400');
+            if (eventDescEl && eventDesc) eventDescEl.textContent = eventDesc;
+        }
+        // Update dispatch card nodes if simNodes present
+        if (simNodes.length > 0) {
+            var nodeList = document.querySelector('#task-dispatch-card .flex.flex-col.gap-1');
+            if (nodeList) {
+                // Keep header row, rebuild node rows
+                var header = nodeList.children[0];
+                nodeList.innerHTML = '';
+                nodeList.appendChild(header);
+                simNodes.forEach(function(n, i) {
+                    var relColor = n.relation === 'ALLY' ? 'text-emerald-400' : (n.relation === 'RIVAL' ? 'text-red-400' : 'text-orange-400');
+                    var row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 bg-white/[0.02] rounded-lg px-2.5 py-1.5 border border-white/5';
+                    row.innerHTML = '<span class="text-slate-400 text-[8px] font-mono w-[50px]">#' + (i+1) + 'n' + Math.floor(Math.random()*99) + '</span><span class="text-slate-200 text-[8px] font-semibold flex-1">' + n.name + '</span><span class="' + relColor + ' text-[7px] font-mono font-bold">' + n.relation + '</span>';
+                    nodeList.appendChild(row);
+                });
+            }
+        }
+    };
+
+    // ── Show Persona Result ──
+    var showPersonaResult = function(consoleCard, aiData) {
+        var resultCard = document.getElementById('task-persona-result');
+        consoleCard.style.transition = 'opacity 0.5s, transform 0.5s';
+        consoleCard.style.opacity = '0';
+        consoleCard.style.transform = 'scale(0.95) translateY(-8px)';
+        setTimeout(function() {
+            consoleCard.classList.add('hidden');
+            if (aiData) populatePersonaResult(aiData);
+            document.body.classList.add('no-scroll');
+            resultCard.classList.remove('hidden');
+            resultCard.style.opacity = '0'; resultCard.style.transform = 'scale(0.95)';
+            resultCard.style.transition = 'opacity 0.5s, transform 0.5s';
+            requestAnimationFrame(function() { requestAnimationFrame(function() {
+                resultCard.style.opacity = '1'; resultCard.style.transform = 'scale(1)';
+                drawRadar(aiData && aiData.radar ? [aiData.radar.power/100, aiData.radar.security/100, aiData.radar.conformity/100, aiData.radar.tradition/100, aiData.radar.benevolence/100, aiData.radar.universalism/100, aiData.radar.selfDirection/100, aiData.radar.stimulation/100, aiData.radar.hedonism/100, aiData.radar.achievement/100] : null);
+            }); });
+        }, 500);
+    };
+
+    window.closePersonaResult = function() {
+        var resultCard = document.getElementById('task-persona-result');
+        resultCard.style.opacity = '0'; resultCard.style.transform = 'scale(0.95)';
+        setTimeout(function() {
+            resultCard.classList.add('hidden');
+            // In review mode, just close the overlay — don't chain animations
+            if (flowType === 'review') {
+                resetAllCards();
+                if (window.Android && window.Android.closeOverlay) {
+                    window.Android.closeOverlay();
+                }
+            } else {
+                setTimeout(showTaskDispatch, 1500);
+            }
+        }, 400);
+    };
+
+    // ── Task Dispatch → Context → Action ──
+    var showTaskDispatch = function() {
+        var card = document.getElementById('task-dispatch-card');
+        if (cachedAiData) populateReactionData(cachedAiData);
+        revealCard(card);
+        setTimeout(function() { transitionCard(card, showContextProcessing); }, 3500);
+    };
+
+    var showContextProcessing = function() {
+        var card = document.getElementById('task-context-card');
+        var output = document.getElementById('task-context-output');
+        output.innerHTML = '';
+        revealCard(card);
+        var nodeLines = simNodes.length > 0 ?
+            simNodes.map(function(n) { return '> FETCHING NODE STATE: ' + n.name + ' (' + n.relation + ')... OK'; }) :
+            ['> FETCHING NODE STATE: #9fk21 (Elon Musk)... OK', '> FETCHING NODE STATE: #1az99 (Jerome Powell)... OK', '> FETCHING NODE STATE: #4mn32 (CNN Media)... OK'];
+        var lines = [
+            '> LOADING EVENT: ' + (eventName || 'stock_market_crash_052025').toLowerCase().replace(/ /g,'_'),
+            '> BINDING PERSONA: ' + personaName.toUpperCase().replace(/ /g,'_') + '_V2'
+        ].concat(nodeLines).concat([
+            '> COMPUTING ACTION VECTORS...',
+            '> ACTION PLAN COMPILED. SUBMITTING...'
+        ]);
+        typeLines(output, lines, function() {
+            setTimeout(function() { transitionCard(card, showActionResolution); }, 1000);
+        });
+    };
+
+    var showActionResolution = function() {
+        revealCard(document.getElementById('task-action-card'));
+        setTimeout(function() { closeOverlay(); }, 6000);
+    };
+
+    // ── Close overlay (notify Kotlin) ──
+    var closeOverlay = function() {
+        var card = document.getElementById('task-action-card');
+        card.style.opacity = '0'; card.style.transform = 'scale(0.95)';
+        setTimeout(function() {
+            resetAllCards();
+            if (window.Android && window.Android.closeOverlay) {
+                window.Android.closeOverlay();
+            }
+        }, 400);
+    };
+    window.closeOverlay = closeOverlay;
+
+    // ── Store AI result for use across cards ──
+    var cachedAiData = null;
+
+    // ── Called from Kotlin to stream individual tokens ──
+    window.onStreamToken = function(token) {
+        var streamDiv = document.getElementById('ai-stream-output');
+        if (streamDiv) {
+            streamDiv.textContent += token;
+            var container = document.getElementById('task-console-output');
+            if (container) container.scrollTop = container.scrollHeight;
+        }
+    };
+
+    // ── Called from Kotlin when AI result arrives ──
+    window.onSimulationResult = function(jsonStr) {
+        try {
+            cachedAiData = JSON.parse(jsonStr);
+            // Add name/title from simData
+            cachedAiData.name = personaName;
+            cachedAiData.title = personaTitle;
+            // Show the result card (console → deep inspection)
+            var consoleCard = document.getElementById('task-modal-expanded');
+            if (consoleCard && !consoleCard.classList.contains('hidden')) {
+                // Console is visible, append success lines then transition
+                var output = document.getElementById('task-console-output');
+                var successDiv = document.createElement('div');
+                successDiv.textContent = '> [SYSTEM] Analysis complete. Rendering results...';
+                output.appendChild(successDiv);
+                output.scrollTop = output.scrollHeight;
+                setTimeout(function() { showPersonaResult(consoleCard, cachedAiData); }, 1500);
+            }
+        } catch(e) {
+            // If JSON parse fails, show mock result
+            var consoleCard = document.getElementById('task-modal-expanded');
+            if (consoleCard && !consoleCard.classList.contains('hidden')) {
+                setTimeout(function() { showPersonaResult(consoleCard, null); }, 1500);
+            }
+        }
+    };
+
+    // ── PERSONA FLOW (Tasks button) ──
+    window.startPersonaFlow = function() {
+        resetAllCards();
+        var centerView = document.getElementById('task-modal-center');
+        var textEl = document.getElementById('task-modal-text');
+        var statusEl = document.getElementById('task-status-row');
+        var personaEl = document.getElementById('task-persona-row');
+        var barEl = document.getElementById('task-progress-bar');
+
+        centerView.classList.remove('hidden');
+        centerView.style.opacity = '1'; centerView.style.transform = 'translateY(16px)';
+        textEl.style.transition = 'opacity 0.3s, transform 0.3s';
+        textEl.innerHTML = 'Incoming Tasks'; textEl.style.opacity = '1'; textEl.style.transform = 'translateY(0)';
+        setChip('INCOMING', '#fbbf24', 'rgba(251,191,36,0.07)', 'rgba(251,191,36,0.35)');
+        statusEl.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 hud-flicker inline-block"></span>&nbsp;Scanning network';
+        statusEl.style.color = '#fbbf24';
+        personaEl.textContent = '— — —'; personaEl.style.color = '#94a3b8';
+        barEl.style.transition = 'none'; barEl.style.width = '0%';
+
+        requestAnimationFrame(function() {
+            centerView.style.transition = 'opacity 0.6s, transform 0.6s';
+            centerView.style.transform = 'translateY(0)';
+            setTimeout(function() { setProgress(33, 'Phase 1 / 3'); }, 400);
+        });
+
+        // Phase 2
+        setTimeout(function() {
+            fadeText(textEl, 'Persona Development <span class="cursor-blink text-emerald-400">█</span>');
+            setTimeout(function() {
+                setChip('MATCHING', '#a78bfa', 'rgba(167,139,250,0.07)', 'rgba(167,139,250,0.35)');
+                statusEl.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-purple-400 hud-flicker inline-block"></span>&nbsp;Matching persona';
+                statusEl.style.color = '#a78bfa';
+                setProgress(66, 'Phase 2 / 3');
+            }, 350);
+        }, 2000);
+
+        // Phase 3 — show dynamic persona name
+        setTimeout(function() {
+            fadeText(textEl, 'Persona Assigned ✓');
+            setTimeout(function() {
+                setChip('ASSIGNED', '#34d399', 'rgba(52,211,153,0.08)', 'rgba(52,211,153,0.35)');
+                statusEl.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 hud-flicker inline-block"></span>&nbsp;Ready';
+                statusEl.style.color = '#34d399';
+                personaEl.textContent = personaName; personaEl.style.color = '#f0f0f0';
+                setProgress(100, 'Phase 3 / 3');
+            }, 350);
+        }, 4000);
+
+        // Phase 4: expand to console
+        setTimeout(function() {
+            centerView.style.transition = 'opacity 0.5s, transform 0.5s';
+            centerView.style.opacity = '0'; centerView.style.transform = 'scale(0.92) translateY(-8px)';
+            setTimeout(function() {
+                centerView.classList.add('hidden');
+                var expanded = document.getElementById('task-modal-expanded');
+                // Update console header with dynamic persona name
+                var hdr = expanded.querySelector('h3');
+                if (hdr) hdr.textContent = 'Developing Persona : ' + personaName;
+                expanded.classList.remove('hidden');
+                expanded.style.opacity = '0'; expanded.style.transform = 'scale(0.95)';
+                expanded.style.transition = 'opacity 0.5s, transform 0.5s';
+                requestAnimationFrame(function() { requestAnimationFrame(function() {
+                    expanded.style.opacity = '1'; expanded.style.transform = 'scale(1)';
+                    startConsoleOutput(document.getElementById('task-console-output'));
+                }); });
+            }, 500);
+        }, 6200);
+    };
+
+    // ── REACTION FLOW (Earn button) ──
+    window.startReactionFlow = function() {
+        resetAllCards();
+        showTaskDispatch();
+    };
+
+    // ── REVIEW FLOW (view saved task results) ──
+    window.startReviewFlow = function() {
+        resetAllCards();
+        if (simData && simData.result) {
+            // Parse result if it's a string
+            var resultData = (typeof simData.result === 'string') ? JSON.parse(simData.result) : simData.result;
+            resultData.name = personaName;
+            resultData.title = personaTitle;
+            cachedAiData = resultData;
+            // Directly show Deep Inspection with saved data — NO animation
+            var resultCard = document.getElementById('task-persona-result');
+            populatePersonaResult(resultData);
+            document.body.classList.add('no-scroll');
+            resultCard.classList.remove('hidden');
+            resultCard.style.opacity = '1';
+            resultCard.style.transform = 'scale(1)';
+            resultCard.style.transition = 'none';
+            drawRadar(resultData.radar ? [resultData.radar.power/100, resultData.radar.security/100, resultData.radar.conformity/100, resultData.radar.tradition/100, resultData.radar.benevolence/100, resultData.radar.universalism/100, resultData.radar.selfDirection/100, resultData.radar.stimulation/100, resultData.radar.hedonism/100, resultData.radar.achievement/100] : null);
+        }
+    };
+
+    // ── AUTO-START from parsed flow type ──
+    if (flowType === 'persona') {
+        window.startPersonaFlow();
+    } else if (flowType === 'reaction') {
+        window.startReactionFlow();
+    } else if (flowType === 'review') {
+        window.startReviewFlow();
+    }
+});
+</script>
+</body>
+</html>
+

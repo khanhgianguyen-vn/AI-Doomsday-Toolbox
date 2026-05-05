@@ -1,0 +1,110 @@
+# Personal documentation (not for GitHub)
+ARCHITECTURE.md
+
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Proguard folder
+proguard/
+
+# Log Files
+*.log
+
+# Android Studio Navigation Editor temp files
+.navigation/
+
+# Android Studio captures folder
+captures/
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Keystore files
+*.jks
+*.keystore
+
+# External native build folder
+.externalNativeBuild
+
+# CMake build folder
+.cxx/
+
+# Google Services (API keys)
+google-services.json
+
+# Mac files
+.DS_Store
+
+# Heap dumps
+*.hprof
+*.log
+
+# Termux app (if submodule or external dependency)  
+termux-app/
+
+# Icon source files - keep only necessary
+icon/*.psd
+icon/*.ai
+
+# Sync files
+.sync*
+.nextcloudsync*
+
+# Build logs
+build_log*.txt
+build*.txt
+be*.txt
+crash_log.txt
+device_log*.txt
+gallery_files.txt
+cmake_*.txt
+
+# Large model files (too big for GitHub)
+*.gguf
+*.bin
+*.task
+
+# llama.cpp build artifacts
+llama-build/
+
+# Scripts (local dev tools)
+scripts/
+
+# Worker mockup (dev only)
+worker-mockup.html
+
+# R history
+.Rhistory*
+
+# Local tooling/workspace files
+.codex
+.codex/
+.vscode/
+.gradle-home/
+Delete/
+
+# Local docs not intended for GitHub
+docs/

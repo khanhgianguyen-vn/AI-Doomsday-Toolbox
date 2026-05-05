@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;overflow:hidden}
+#map-container{width:100vw;height:100vh}
+svg{display:block}
+</style>
+</head>
+<body>
+<div id="map-container"></div>
+<script src="d3.v7.min.js"></script>
+<script src="topojson-client.min.js"></script>
+<script>
+(function(){
+    var mc = document.getElementById("map-container");
+    var W = mc.clientWidth || 360;
+    var H = mc.clientHeight || 200;
+
+    var svg = d3.select("#map-container").append("svg")
+        .attr("width", W).attr("height", H)
+        .attr("viewBox", "0 0 " + W + " " + H);
+
+    var proj = d3.geoEquirectangular()
+        .translate([W/2, H/1.7])
+        .scale(W * 0.155);
+
+    var pathGen = d3.geoPath().projection(proj);
+
+    var dense = ["United States of America","China","Japan","United Kingdom",
+        "Germany","India","France","Brazil","South Korea","Australia",
+        "Canada","Singapore","Italy","Spain","Vietnam"];
+
+    // Load JSON via XHR (works with file:// in WebView)
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "countries-110m.json", true);
+    xhr.onload = function() {
+        if (xhr.status === 0 || xhr.status === 200) {
+            var worldData = JSON.parse(xhr.responseText);
+            renderMap(worldData);
+        }
+    };
+    xhr.send();
+
+    function renderMap(worldData) {
+        var countries = topojson.feature(worldData, worldData.objects.countries).features;
+        var g = svg.append("g");
+
+        // Draw countries
+        g.append("g").selectAll("path")
+            .data(countries).join("path")
+            .attr("d", pathGen)
+            .attr("fill", function(d) {
+                var n = d.properties.name;
+                if (dense.indexOf(n) >= 0) return "rgba(16,185,129,0.15)";
+                var r = Math.random();
+                if (r > 0.7) return "rgba(16,185,129,0.08)";
+                if (r > 0.4) return "rgba(255,255,255,0.04)";
+                return "#1a2432";
+            })
+            .attr("stroke", "rgba(16,185,129,0.35)")
+            .attr("stroke-width", 0.5);
+
+        // Generate nodes on land
+        var nodesData = [];
+        for (var i = 0; i < 300; i++) {
+            var lon = Math.random() * 360 - 180;
+            var lat = Math.random() * 140 - 60;
+            for (var j = 0; j < countries.length; j++) {
+                if (d3.geoContains(countries[j], [lon, lat])) {
+                    var cols = ["#fbbf24","#fde68a","#34d399","#10b981","#059669"];
+                    nodesData.push({
+                        coords: [lon, lat],
+                        color: cols[Math.floor(Math.random()*cols.length)],
+                        baseSize: 0.5 + Math.random()
+                    });
+                    break;
+                }
+            }
+        }
+
+        var ng = g.append("g");
+        ng.selectAll("circle").data(nodesData).join("circle")
+            .attr("cx", function(d){ d.x=proj(d.coords)[0]; return d.x; })
+            .attr("cy", function(d){ d.y=proj(d.coords)[1]; return d.y; })
+            .attr("r", function(d){ return d.baseSize; })
+            .attr("fill", function(d){ return d.color; })
+            .style("opacity", 0.6);
+
+        // Ping animation
+        setInterval(function(){
+            var s = nodesData.slice().sort(function(){return .5-Math.random();}).slice(0,10);
+            s.forEach(function(node){
+                ng.append("circle")
+                    .attr("cx", node.x).attr("cy", node.y)
+                    .attr("r", node.baseSize)
+                    .attr("fill","none")
+                    .attr("stroke", node.color)
+                    .attr("stroke-width", 0.5)
+                    .style("opacity",1)
+                    .transition().duration(1500)
+                    .attr("r", node.baseSize*4)
+                    .style("opacity",0)
+                    .remove();
+            });
+        }, 1000);
+    }
+})();
+</script>
+</body>
+</html>
